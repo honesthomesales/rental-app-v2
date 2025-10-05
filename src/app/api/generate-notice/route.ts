@@ -78,17 +78,17 @@ export async function POST(request: Request) {
 
 Date: ${noticeDateFormatted}
 
-To: ${tenant.first_name} ${tenant.last_name}
+${tenant.first_name} ${tenant.last_name}
 ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
 
-BREAKDOWN OF AMOUNTS DUE:
-- Base Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+**BREAKDOWN OF AMOUNTS DUE:**
+- Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 ${lateFeeAmount > 0 ? `- Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 ${otherAmount > 0 ? `- Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-- TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
 As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
@@ -121,17 +121,17 @@ This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) an
 
 Date: ${noticeDateFormatted}
 
-To: ${tenant.first_name} ${tenant.last_name}
+${tenant.first_name} ${tenant.last_name}
 ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
 
-BREAKDOWN OF AMOUNTS DUE:
-- Base Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+**BREAKDOWN OF AMOUNTS DUE:**
+- Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 ${lateFeeAmount > 0 ? `- Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 ${otherAmount > 0 ? `- Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-- TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
 As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
@@ -164,17 +164,17 @@ This notice is generated pursuant to North Carolina General Statutes § 42-26 an
 
 Date: ${noticeDateFormatted}
 
-To: ${tenant.first_name} ${tenant.last_name}
+${tenant.first_name} ${tenant.last_name}
 ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
 
-BREAKDOWN OF AMOUNTS DUE:
-- Base Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+**BREAKDOWN OF AMOUNTS DUE:**
+- Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 ${lateFeeAmount > 0 ? `- Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 ${otherAmount > 0 ? `- Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-- TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
 As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 

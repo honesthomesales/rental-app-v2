@@ -1469,17 +1469,31 @@ export default function PaymentsPage() {
               <div className="bg-white p-8 border border-gray-200 rounded-lg print:border-0 print:shadow-none">
                 <div className="whitespace-pre-line text-sm leading-relaxed">
                   {noticeContent.split('\n').map((line, index) => {
-                    if (line.startsWith('**') && line.endsWith('**')) {
-                      // Bold text with larger font
+                    if (line.startsWith('**NOTICE TO PAY RENT OR QUIT')) {
+                      // Main title - extra large and bold
                       return (
-                        <div key={index} className="font-bold text-lg mb-2">
+                        <div key={index} className="font-bold text-2xl mb-4 text-center">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**BREAKDOWN OF AMOUNTS DUE:**')) {
+                      // Section header - bold
+                      return (
+                        <div key={index} className="font-bold text-base mb-2 mt-4">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**TOTAL DUE:')) {
+                      // Total due - bold and highlighted
+                      return (
+                        <div key={index} className="font-bold text-base mb-2 bg-yellow-100 p-2 rounded">
                           {line.replace(/\*\*/g, '')}
                         </div>
                       )
                     } else if (line.startsWith('**IMPORTANT:')) {
                       // Special formatting for important notice
                       return (
-                        <div key={index} className="font-bold text-base mb-2 text-red-600">
+                        <div key={index} className="font-bold text-base mb-2 text-red-600 bg-red-50 p-2 rounded">
                           {line.replace(/\*\*/g, '')}
                         </div>
                       )

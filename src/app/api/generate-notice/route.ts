@@ -60,11 +60,24 @@ export async function POST(request: Request) {
     const rentDueDateFormatted = dateFormatter.format(new Date(invoice.due_date + 'T12:00:00'))
     const sevenDaysFromNowFormatted = dateFormatter.format(sevenDaysFromNow)
 
-    // Calculate total amount due
-    const totalDue = parseFloat(invoice.balance_due || 0)
-    const rentAmount = parseFloat(invoice.amount_rent || 0)
-    const lateFeeAmount = parseFloat(invoice.amount_late || 0)
-    const otherAmount = parseFloat(invoice.amount_other || 0)
+    // Get ALL unpaid invoices for this lease to calculate total amount due
+    const { data: allUnpaidInvoices, error: invoicesError } = await supabaseServer
+      .from('RENT_invoices')
+      .select('amount_rent, amount_late, amount_other, balance_due')
+      .eq('lease_id', leaseId)
+      .eq('status', 'OPEN')
+      .gt('balance_due', 0)
+
+    if (invoicesError) {
+      console.error('Error fetching unpaid invoices:', invoicesError)
+      return NextResponse.json({ error: 'Failed to fetch invoice data' }, { status: 500 })
+    }
+
+    // Calculate total amounts across all unpaid invoices
+    const totalDue = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.balance_due || 0), 0) || 0
+    const rentAmount = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_rent || 0), 0) || 0
+    const lateFeeAmount = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_late || 0), 0) || 0
+    const otherAmount = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_other || 0), 0) || 0
 
     // Generate notice content based on state
     let noticeContent = ''
@@ -102,12 +115,12 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
+**LANDLORD INFORMATION:**
 Honest Home Sales, LLC: Member: Billy Rochester
-PO Box 705
-Cowpens, SC 29330
-Text: 864-322-3432
-Email: honesthomesales@gmail.com
+PO Box 705, Cowpens, SC 29330
+Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
+**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 
@@ -145,12 +158,12 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
+**LANDLORD INFORMATION:**
 Honest Home Sales, LLC: Member: Billy Rochester
-PO Box 705
-Cowpens, SC 29330
-Text: 864-322-3432
-Email: honesthomesales@gmail.com
+PO Box 705, Cowpens, SC 29330
+Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
+**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 
@@ -188,12 +201,12 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
+**LANDLORD INFORMATION:**
 Honest Home Sales, LLC: Member: Billy Rochester
-PO Box 705
-Cowpens, SC 29330
-Text: 864-322-3432
-Email: honesthomesales@gmail.com
+PO Box 705, Cowpens, SC 29330
+Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
+**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 

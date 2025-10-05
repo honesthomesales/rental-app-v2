@@ -1497,6 +1497,34 @@ export default function PaymentsPage() {
                           {line.replace(/\*\*/g, '')}
                         </div>
                       )
+                    } else if (line.startsWith('**LANDLORD INFORMATION:**')) {
+                      // Landlord info section header
+                      return (
+                        <div key={index} className="font-bold text-base mb-2 mt-6 text-gray-800">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**NOTICE DELIVERY:**')) {
+                      // Notice delivery section header
+                      return (
+                        <div key={index} className="font-bold text-base mb-2 mt-4 text-gray-800">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.includes('Honest Home Sales, LLC') || line.includes('PO Box 705') || line.includes('Text:') || line.includes('Email:')) {
+                      // Landlord contact info - better spacing
+                      return (
+                        <div key={index} className="text-sm mb-1 pl-4">
+                          {line}
+                        </div>
+                      )
+                    } else if (line.includes('Date Notice Delivered:') || line.includes('Method of Delivery:')) {
+                      // Delivery info - better spacing
+                      return (
+                        <div key={index} className="text-sm mb-1 pl-4">
+                          {line}
+                        </div>
+                      )
                     } else {
                       return <div key={index}>{line}</div>
                     }

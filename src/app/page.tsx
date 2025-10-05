@@ -176,6 +176,9 @@ export default function Dashboard() {
                 Current: ${metrics?.monthlyIncome?.toLocaleString() || 0} + 
                 Unoccupied: ${metrics?.potentialIncome?.toLocaleString() || 0}
               </p>
+              <p className="text-xs text-green-600 mt-1 font-medium">
+                ✓ PWA Ready - Install on Mobile!
+              </p>
             </div>
           </div>
         </div>

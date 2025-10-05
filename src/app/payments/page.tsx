@@ -1479,21 +1479,42 @@ export default function PaymentsPage() {
                     } else if (line.startsWith('**BREAKDOWN OF AMOUNTS DUE:**')) {
                       // Section header - bold
                       return (
-                        <div key={index} className="font-bold text-base mb-2 mt-4">
+                        <div key={index} className="font-bold text-base mb-3 mt-6 text-gray-800">
                           {line.replace(/\*\*/g, '')}
                         </div>
                       )
                     } else if (line.startsWith('**TOTAL DUE:')) {
                       // Total due - bold and highlighted
                       return (
-                        <div key={index} className="font-bold text-base mb-2 bg-yellow-100 p-2 rounded">
+                        <div key={index} className="font-bold text-lg mb-4 bg-yellow-100 p-3 rounded border-l-4 border-yellow-500">
                           {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other Charges:')) {
+                      // Amount breakdown lines - clean formatting
+                      return (
+                        <div key={index} className="text-sm mb-1 ml-4">
+                          {line}
                         </div>
                       )
                     } else if (line.startsWith('**IMPORTANT:')) {
                       // Special formatting for important notice
                       return (
                         <div key={index} className="font-bold text-base mb-2 text-red-600 bg-red-50 p-2 rounded">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**LANDLORD:**')) {
+                      // Landlord section header
+                      return (
+                        <div key={index} className="font-bold text-base mb-3 mt-6 text-gray-800">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**NOTICE DELIVERY:**')) {
+                      // Notice delivery section header
+                      return (
+                        <div key={index} className="font-bold text-base mb-3 mt-4 text-gray-800">
                           {line.replace(/\*\*/g, '')}
                         </div>
                       )

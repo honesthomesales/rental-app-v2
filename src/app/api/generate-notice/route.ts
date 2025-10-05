@@ -89,21 +89,22 @@ export async function POST(request: Request) {
       // South Carolina Notice Template
       noticeTitle = '7-Day Notice to Pay Rent or Quit - South Carolina'
       noticeContent = `**NOTICE TO PAY RENT OR QUIT - INTENT TO EVICT**
+
 7-DAY NOTICE PURSUANT TO SOUTH CAROLINA CODE ANN. § 27-40-710(B)
 
 Date: ${noticeDateFormatted}
 
-${tenant.first_name} ${tenant.last_name}
-${property.address}
+To: ${tenant.first_name} ${tenant.last_name}
+Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
 
 **BREAKDOWN OF AMOUNTS DUE:**
-- Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-${lateFeeAmount > 0 ? `- Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-${otherAmount > 0 ? `- Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-- **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
+Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+${otherAmount > 0 ? `Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+**TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
 As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
@@ -117,10 +118,12 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
+**LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
 Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
+**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 
@@ -130,21 +133,22 @@ This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) an
       // North Carolina Notice Template
       noticeTitle = '7-Day Notice to Pay Rent or Quit - North Carolina'
       noticeContent = `**NOTICE TO PAY RENT OR QUIT - INTENT TO EVICT**
+
 7-DAY NOTICE PURSUANT TO NORTH CAROLINA GENERAL STATUTES § 42-26
 
 Date: ${noticeDateFormatted}
 
-${tenant.first_name} ${tenant.last_name}
-${property.address}
+To: ${tenant.first_name} ${tenant.last_name}
+Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
 
 **BREAKDOWN OF AMOUNTS DUE:**
-- Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-${lateFeeAmount > 0 ? `- Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-${otherAmount > 0 ? `- Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-- **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
+Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+${otherAmount > 0 ? `Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+**TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
 As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
@@ -158,10 +162,12 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
+**LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
 Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
+**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 
@@ -171,21 +177,22 @@ This notice is generated pursuant to North Carolina General Statutes § 42-26 an
       // Default to SC template for unknown states
       noticeTitle = '7-Day Notice to Pay Rent or Quit'
       noticeContent = `**NOTICE TO PAY RENT OR QUIT - INTENT TO EVICT**
+
 7-DAY NOTICE
 
 Date: ${noticeDateFormatted}
 
-${tenant.first_name} ${tenant.last_name}
-${property.address}
+To: ${tenant.first_name} ${tenant.last_name}
+Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
 
 **BREAKDOWN OF AMOUNTS DUE:**
-- Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-${lateFeeAmount > 0 ? `- Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-${otherAmount > 0 ? `- Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-- **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
+Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+${otherAmount > 0 ? `Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+**TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
 As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
@@ -199,10 +206,12 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
+**LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
 Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
+**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 

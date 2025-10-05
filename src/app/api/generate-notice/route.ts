@@ -60,13 +60,15 @@ export async function POST(request: Request) {
     const rentDueDateFormatted = dateFormatter.format(new Date(invoice.due_date + 'T12:00:00'))
     const sevenDaysFromNowFormatted = dateFormatter.format(sevenDaysFromNow)
 
-    // Get ALL unpaid invoices for this lease to calculate total amount due
+    // Get only PAST DUE unpaid invoices for this lease to calculate total amount due
+    const today = new Date().toISOString().split('T')[0]
     const { data: allUnpaidInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
-      .select('amount_rent, amount_late, amount_other, balance_due')
+      .select('amount_rent, amount_late, amount_other, balance_due, due_date')
       .eq('lease_id', leaseId)
       .eq('status', 'OPEN')
       .gt('balance_due', 0)
+      .lt('due_date', today) // Only include invoices that are past due
 
     if (invoicesError) {
       console.error('Error fetching unpaid invoices:', invoicesError)
@@ -115,12 +117,10 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
-**LANDLORD INFORMATION:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
 Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
-**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 
@@ -158,12 +158,10 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
-**LANDLORD INFORMATION:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
 Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
-**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 
@@ -201,12 +199,10 @@ Failure to comply with this notice by the specified deadline will result in the 
 
 We urge you to take immediate action to resolve this matter.
 
-**LANDLORD INFORMATION:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
 Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
-**NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
 Method of Delivery: Physical Delivery to Premises
 

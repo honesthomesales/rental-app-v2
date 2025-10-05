@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { Property } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
-type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'isOccupied' | 'is_for_rent'
+type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'isOccupied' | 'is_for_rent' | 'insurance_premium' | 'property_tax'
 type SortDirection = 'asc' | 'desc'
 
 type PropertyWithLease = Property & {
@@ -292,6 +292,28 @@ export default function PropertiesPage() {
                 </th>
                 <th 
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('insurance_premium')}
+                >
+                  <div className="flex items-center">
+                    Insurance
+                    {sortField === 'insurance_premium' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('property_tax')}
+                >
+                  <div className="flex items-center">
+                    Taxes
+                    {sortField === 'property_tax' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('property_type')}
                 >
                   <div className="flex items-center">
@@ -345,17 +367,6 @@ export default function PropertiesPage() {
                     )}
                   </div>
                 </th>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('is_for_rent')}
-                >
-                  <div className="flex items-center">
-                    Status
-                    {sortField === 'is_for_rent' && (
-                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
@@ -365,17 +376,23 @@ export default function PropertiesPage() {
               {filteredProperties.map((property) => (
                 <React.Fragment key={property.id}>
                   <tr className="hover:bg-gray-50">
-                    <td className="px-4 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap w-1/4">
                       <div className="flex items-center">
                         <BuildingOfficeIcon className="h-5 w-5 text-blue-600 mr-3" />
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{property.name}</div>
-                          <div className="text-sm text-gray-500">{property.tenantName}</div>
+                          <div className="text-sm font-medium text-gray-900 truncate">{property.name}</div>
+                          <div className="text-sm text-gray-500 truncate">{property.tenantName}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {property.city}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      ${property.insurance_premium?.toLocaleString() || 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      ${property.property_tax?.toLocaleString() || 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full capitalize">
@@ -400,15 +417,6 @@ export default function PropertiesPage() {
                           : 'bg-gray-100 text-gray-800'
                       }`}>
                         {property.isOccupied ? 'Occupied' : 'Unoccupied'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        property.is_for_rent 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {property.is_for_rent ? 'For Rent' : 'Not Available'}
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -500,6 +508,8 @@ export default function PropertiesPage() {
                 bathrooms: parseFloat(formData.get('bathrooms') as string) || 0,
                 square_feet: parseInt(formData.get('square_feet') as string) || 0,
                 rent_value: parseFloat(formData.get('rent_value') as string) || 0,
+                insurance_premium: parseFloat(formData.get('insurance_premium') as string) || 0,
+                property_tax: parseFloat(formData.get('property_tax') as string) || 0,
                 is_for_rent: formData.get('is_for_rent') === 'on'
               }
               handleSaveProperty(propertyData)
@@ -579,6 +589,30 @@ export default function PropertiesPage() {
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     placeholder="Enter monthly rent value"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Insurance Premium (Yearly)</label>
+                    <input
+                      type="number"
+                      name="insurance_premium"
+                      step="0.01"
+                      defaultValue={editingProperty.insurance_premium || ''}
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                      placeholder="Enter yearly insurance premium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Property Tax (Yearly)</label>
+                    <input
+                      type="number"
+                      name="property_tax"
+                      step="0.01"
+                      defaultValue={editingProperty.property_tax || ''}
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                      placeholder="Enter yearly property tax"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>

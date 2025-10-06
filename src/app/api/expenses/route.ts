@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { supabaseServer } from '@/lib/supabase-server'
 import { Expense } from '@/types/database'
 
 export async function GET() {
   try {
-    const supabaseServer = createClient()
-    
     console.log('Fetching expenses from RENT_expenses table...')
     
     const { data: expenses, error } = await supabaseServer
@@ -30,7 +28,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseServer = createClient()
     const body = await request.json()
     
     console.log('Creating new expense:', body)
@@ -55,7 +52,6 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabaseServer = createClient()
     const body = await request.json()
     const { id, ...updateData } = body
     
@@ -87,7 +83,6 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabaseServer = createClient()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

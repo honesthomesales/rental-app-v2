@@ -295,7 +295,7 @@ export default function PropertiesPage() {
                   onClick={() => handleSort('insurance_premium')}
                 >
                   <div className="flex items-center">
-                    Insurance
+                    Insurance (Yearly)
                     {sortField === 'insurance_premium' && (
                       <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                     )}
@@ -306,7 +306,7 @@ export default function PropertiesPage() {
                   onClick={() => handleSort('property_tax')}
                 >
                   <div className="flex items-center">
-                    Taxes
+                    Taxes (Yearly)
                     {sortField === 'property_tax' && (
                       <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                     )}

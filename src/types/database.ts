@@ -390,3 +390,17 @@ export interface PeriodInvoiceMap {
   created_at?: string
   updated_at?: string
 }
+
+export interface Expense {
+  id: string
+  address: string
+  amount_owed: number
+  last_paid_date?: string
+  mail_info?: string
+  loan_number?: string
+  phone_number?: string
+  balance: number
+  interest_rate: number
+  created_at?: string
+  updated_at?: string
+}

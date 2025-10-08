@@ -393,6 +393,13 @@ export interface PeriodInvoiceMap {
 
 export interface Expense {
   id: string
+  property_id?: string
+  lease_id?: string
+  category?: string
+  amount?: number
+  expense_date?: string
+  memo?: string
+  attachment_url?: string
   address: string
   amount_owed: number
   last_paid_date?: string

@@ -4,21 +4,34 @@ import React, { useEffect, useState } from 'react'
 import { Expense } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
-type SortField = 'address' | 'amount_owed' | 'last_paid_date' | 'mail_info' | 'loan_number' | 'phone_number' | 'balance' | 'interest_rate'
+type SortField = 'category' | 'amount' | 'expense_date' | 'memo' | 'property_name'
 type SortDirection = 'asc' | 'desc'
 
+type ExpenseWithProperty = Expense & {
+  property_name?: string
+  property_address?: string
+}
+
+type Property = {
+  id: string
+  name: string
+  address: string
+}
+
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([])
+  const [expenses, setExpenses] = useState<ExpenseWithProperty[]>([])
+  const [filteredExpenses, setFilteredExpenses] = useState<ExpenseWithProperty[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [sortField, setSortField] = useState<SortField>('address')
+  const [sortField, setSortField] = useState<SortField>('expense_date')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
   useEffect(() => {
     fetchExpenses()
+    fetchProperties()
   }, [])
 
   useEffect(() => {
@@ -44,14 +57,33 @@ export default function ExpensesPage() {
     }
   }
 
+  const fetchProperties = async () => {
+    try {
+      const response = await fetch('/api/properties')
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('API error:', errorData)
+        throw new Error(errorData.error || 'Failed to fetch properties')
+      }
+      
+      const data = await response.json()
+      setProperties(data)
+    } catch (error) {
+      console.error('Error fetching properties:', error)
+    }
+  }
+
   const filterAndSortExpenses = () => {
     let filtered = expenses.filter(expense => {
       const searchLower = searchTerm.toLowerCase()
       return (
-        expense.address.toLowerCase().includes(searchLower) ||
+        expense.property_name?.toLowerCase().includes(searchLower) ||
+        expense.property_address?.toLowerCase().includes(searchLower) ||
         expense.mail_info?.toLowerCase().includes(searchLower) ||
         expense.loan_number?.toLowerCase().includes(searchLower) ||
-        expense.phone_number?.toLowerCase().includes(searchLower)
+        expense.phone_number?.toLowerCase().includes(searchLower) ||
+        expense.category?.toLowerCase().includes(searchLower)
       )
     })
 
@@ -160,7 +192,7 @@ export default function ExpensesPage() {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString()
+    return new Date(dateString + 'T12:00:00').toLocaleDateString()
   }
 
   const formatPercentage = (rate: number) => {
@@ -204,7 +236,7 @@ export default function ExpensesPage() {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search expenses by address, mail info, loan number, or phone..."
+              placeholder="Search expenses by property, category, mail info, loan number, or phone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -220,11 +252,11 @@ export default function ExpensesPage() {
                 <tr>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('address')}
+                    onClick={() => handleSort('property_name')}
                   >
                     <div className="flex items-center">
-                      Address
-                      {sortField === 'address' && (
+                      Property
+                      {sortField === 'property_name' && (
                         <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </div>
@@ -317,7 +349,9 @@ export default function ExpensesPage() {
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <BuildingOfficeIcon className="h-5 w-5 text-blue-600 mr-3" />
-                        <div className="text-sm font-medium text-gray-900">{expense.address}</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {expense.property_name || 'Unknown Property'}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -400,12 +434,16 @@ export default function ExpensesPage() {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
               const expenseData = {
-                address: formData.get('address') as string,
+                property_id: formData.get('property_id') as string,
+                category: formData.get('category') as string,
+                amount: parseFloat(formData.get('amount_owed') as string) || 0,
+                expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],
+                memo: formData.get('mail_info') as string || '',
                 amount_owed: parseFloat(formData.get('amount_owed') as string) || 0,
                 last_paid_date: formData.get('last_paid_date') as string || undefined,
                 mail_info: formData.get('mail_info') as string || undefined,
                 loan_number: formData.get('loan_number') as string || undefined,
-                phone_number: formData.get('phone_number') as string || undefined,
+                phone_number: (formData.get('phone_number') as string || '').substring(0, 20), // Truncate to 20 chars
                 balance: parseFloat(formData.get('balance') as string) || 0,
                 interest_rate: parseFloat(formData.get('interest_rate') as string) || 0
               }
@@ -413,14 +451,38 @@ export default function ExpensesPage() {
             }}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Address *</label>
-                  <input
-                    type="text"
-                    name="address"
-                    defaultValue={editingExpense?.address || ''}
+                  <label className="block text-sm font-medium text-gray-700">Property *</label>
+                  <select
+                    name="property_id"
+                    defaultValue={editingExpense?.property_id || ''}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     required
-                  />
+                  >
+                    <option value="">Select a property</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name} - {property.address}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Category *</label>
+                  <select
+                    name="category"
+                    defaultValue={editingExpense?.category || ''}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    required
+                  >
+                    <option value="">Select category</option>
+                    <option value="Property Tax">Property Tax</option>
+                    <option value="Insurance">Insurance</option>
+                    <option value="Mortgage">Mortgage</option>
+                    <option value="HOA">HOA</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Utilities">Utilities</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

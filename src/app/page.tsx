@@ -19,6 +19,10 @@ export default function Dashboard() {
   const [editingField, setEditingField] = useState<string>('')
   const [editingValue, setEditingValue] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<string>('')
+  const [insuranceSortField, setInsuranceSortField] = useState<string>('name')
+  const [insuranceSortDirection, setInsuranceSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [taxSortField, setTaxSortField] = useState<string>('name')
+  const [taxSortDirection, setTaxSortDirection] = useState<'asc' | 'desc'>('asc')
 
   useEffect(() => {
     fetchDashboardData()
@@ -104,6 +108,54 @@ export default function Dashboard() {
     setEditingProperty(null)
     setEditingField('')
     setEditingValue('')
+  }
+
+  const handleInsuranceSort = (field: string) => {
+    if (insuranceSortField === field) {
+      setInsuranceSortDirection(insuranceSortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setInsuranceSortField(field)
+      setInsuranceSortDirection('asc')
+    }
+  }
+
+  const handleTaxSort = (field: string) => {
+    if (taxSortField === field) {
+      setTaxSortDirection(taxSortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setTaxSortField(field)
+      setTaxSortDirection('asc')
+    }
+  }
+
+  const getSortedInsuranceProperties = () => {
+    const filtered = getFilteredProperties()
+    return [...filtered].sort((a, b) => {
+      let aValue = a[insuranceSortField] || ''
+      let bValue = b[insuranceSortField] || ''
+      
+      if (typeof aValue === 'string') aValue = aValue.toLowerCase()
+      if (typeof bValue === 'string') bValue = bValue.toLowerCase()
+      
+      if (aValue < bValue) return insuranceSortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return insuranceSortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+
+  const getSortedTaxProperties = () => {
+    const filtered = getFilteredProperties()
+    return [...filtered].sort((a, b) => {
+      let aValue = a[taxSortField] || ''
+      let bValue = b[taxSortField] || ''
+      
+      if (typeof aValue === 'string') aValue = aValue.toLowerCase()
+      if (typeof bValue === 'string') bValue = bValue.toLowerCase()
+      
+      if (aValue < bValue) return taxSortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return taxSortDirection === 'asc' ? 1 : -1
+      return 0
+    })
   }
 
   const getFilteredProperties = () => {
@@ -283,92 +335,126 @@ export default function Dashboard() {
         </div>
         
         {showInsuranceSection && (
-          <div className="space-y-4">
-            {/* Group by insurance provider */}
-            {Object.entries(
-              getFilteredProperties().reduce((acc: any, property) => {
-                const provider = property.insurance_provider || 'No Insurance'
-                if (!acc[provider]) acc[provider] = []
-                acc[provider].push(property)
-                return acc
-              }, {})
-            ).map(([provider, providerProperties]: [string, any]) => (
-              <div key={provider} className="border rounded-lg p-4">
-                <h3 className="font-medium text-gray-900 mb-2">
-                  {provider} ({(providerProperties as any[]).length} properties)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {(providerProperties as any[]).map((property) => (
-                    <div key={property.id} className="bg-gray-50 p-3 rounded cursor-pointer hover:bg-gray-100">
-                      <div className="font-medium text-sm">{property.name}</div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'insurance_provider')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Provider: {editingProperty?.id === property.id && editingField === 'insurance_provider' ? (
-                            <input
-                              type="text"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.insurance_provider || 'None')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'insurance_policy_number')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Policy: {editingProperty?.id === property.id && editingField === 'insurance_policy_number' ? (
-                            <input
-                              type="text"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.insurance_policy_number || 'None')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'insurance_premium')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Premium: {editingProperty?.id === property.id && editingField === 'insurance_premium' ? (
-                            <input
-                              type="number"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.insurance_premium ? `$${property.insurance_premium.toLocaleString()}` : 'Not set')}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+          <div className="space-y-2">
+            {/* Insurance List Header */}
+            <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
+              <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr' }}>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleInsuranceSort('name')}
+                >
+                  Property Name
+                  {insuranceSortField === 'name' && (
+                    <span className="ml-1">{insuranceSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleInsuranceSort('insurance_provider')}
+                >
+                  Provider
+                  {insuranceSortField === 'insurance_provider' && (
+                    <span className="ml-1">{insuranceSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleInsuranceSort('insurance_policy_number')}
+                >
+                  Policy Number
+                  {insuranceSortField === 'insurance_policy_number' && (
+                    <span className="ml-1">{insuranceSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleInsuranceSort('insurance_premium')}
+                >
+                  Premium
+                  {insuranceSortField === 'insurance_premium' && (
+                    <span className="ml-1">{insuranceSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
                 </div>
               </div>
-            ))}
+            </div>
+            
+            {/* Insurance List */}
+            {getSortedInsuranceProperties().length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No properties found. Total properties: {properties.length}
+              </div>
+            ) : (
+              getSortedInsuranceProperties().map((property) => (
+                <div key={property.id} className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100">
+                <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr' }}>
+                  <div className="font-medium text-sm">{property.name}</div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'insurance_provider')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'insurance_provider' ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.insurance_provider || 'None')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'insurance_policy_number')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'insurance_policy_number' ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.insurance_policy_number || 'None')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'insurance_premium')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'insurance_premium' ? (
+                        <input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.insurance_premium ? `$${property.insurance_premium.toLocaleString()}` : 'Not set')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -386,118 +472,216 @@ export default function Dashboard() {
         </div>
         
         {showTaxSection && (
-          <div className="space-y-4">
-            {/* Group by tax status */}
-            {[
-              { 
-                title: 'Tax Paid', 
-                properties: getFilteredProperties().filter(p => p.property_tax && p.property_tax > 0),
-                color: 'bg-green-50 border-green-200'
-              },
-              { 
-                title: 'Tax Not Set', 
-                properties: getFilteredProperties().filter(p => !p.property_tax || p.property_tax === 0),
-                color: 'bg-red-50 border-red-200'
-              }
-            ].map(({ title, properties: groupProperties, color }) => (
-              <div key={title} className={`border rounded-lg p-4 ${color}`}>
-                <h3 className="font-medium text-gray-900 mb-2">
-                  {title} ({groupProperties.length} properties)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {groupProperties.map((property) => (
-                    <div key={property.id} className="bg-white p-3 rounded border cursor-pointer hover:bg-gray-50">
-                      <div className="font-medium text-sm">{property.name}</div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'owner_name')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Owner: {editingProperty?.id === property.id && editingField === 'owner_name' ? (
-                            <input
-                              type="text"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.owner_name || 'Not set')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'property_tax')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Annual Tax: {editingProperty?.id === property.id && editingField === 'property_tax' ? (
-                            <input
-                              type="number"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.property_tax ? `$${property.property_tax.toLocaleString()}` : 'Not set')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'Map_ID')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Map ID: {editingProperty?.id === property.id && editingField === 'Map_ID' ? (
-                            <input
-                              type="text"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.Map_ID || 'Not set')}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        <span 
-                          onDoubleClick={() => handleDoubleClick(property, 'Interest_Rate')}
-                          className="hover:bg-yellow-100 px-1 rounded"
-                        >
-                          Interest Rate: {editingProperty?.id === property.id && editingField === 'Interest_Rate' ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={handleSaveEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEdit()
-                                if (e.key === 'Escape') handleCancelEdit()
-                              }}
-                              className="text-xs border rounded px-1 w-full"
-                              autoFocus
-                            />
-                          ) : (property.Interest_Rate ? `${property.Interest_Rate}%` : 'Not set')}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+          <div className="space-y-2">
+            {/* Tax List Header */}
+            <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
+              <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr 1.5fr' }}>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('name')}
+                >
+                  Property Name
+                  {taxSortField === 'name' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('owner_name')}
+                >
+                  Owner
+                  {taxSortField === 'owner_name' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('county')}
+                >
+                  County
+                  {taxSortField === 'county' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('property_tax')}
+                >
+                  Monthly Tax
+                  {taxSortField === 'property_tax' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('tax_paid_amount_current')}
+                >
+                  Current Year Paid
+                  {taxSortField === 'tax_paid_amount_current' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('tax_paid_amount_previous')}
+                >
+                  Previous Year Paid
+                  {taxSortField === 'tax_paid_amount_previous' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('Map_ID')}
+                >
+                  Map ID
+                  {taxSortField === 'Map_ID' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
                 </div>
               </div>
-            ))}
+            </div>
+            
+            {/* Tax List */}
+            {getSortedTaxProperties().length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No properties found. Total properties: {properties.length}
+              </div>
+            ) : (
+              getSortedTaxProperties().map((property) => (
+                <div key={property.id} className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100">
+                <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr 1.5fr' }}>
+                  <div className="font-medium text-sm">{property.name}</div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'owner_name')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'owner_name' ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.owner_name || 'Not set')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'county')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'county' ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.county || 'Not set')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'property_tax')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'property_tax' ? (
+                        <input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.property_tax ? `$${property.property_tax.toLocaleString()}` : 'Not set')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'tax_paid_amount_current')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'tax_paid_amount_current' ? (
+                        <input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.tax_paid_amount_current ? `$${property.tax_paid_amount_current.toLocaleString()}` : 'Not set')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'tax_paid_amount_previous')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'tax_paid_amount_previous' ? (
+                        <input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.tax_paid_amount_previous ? `$${property.tax_paid_amount_previous.toLocaleString()}` : 'Not set')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'Map_ID')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'Map_ID' ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.Map_ID || 'Not set')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              ))
+            )}
           </div>
         )}
       </div>

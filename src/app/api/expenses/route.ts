@@ -4,11 +4,12 @@ import { Expense } from '@/types/database'
 
 export async function GET() {
   try {
-    console.log('Fetching expenses from RENT_expenses table...')
-    
     const { data: expenses, error } = await supabaseServer
       .from('RENT_expenses')
-      .select('*')
+      .select(`
+        *,
+        property:property_id(name, address)
+      `)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -16,10 +17,14 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 })
     }
 
-    console.log('Expenses query result:', { expenses: expenses?.length || 0, error: null })
-    console.log('Returning expenses:', expenses?.length || 0)
+    // Process expenses to add property_name
+    const processedExpenses = expenses?.map(expense => ({
+      ...expense,
+      property_name: expense.property?.name || 'Unknown Property',
+      property_address: expense.property?.address || ''
+    })) || []
 
-    return NextResponse.json(expenses || [])
+    return NextResponse.json(processedExpenses)
   } catch (error) {
     console.error('Error in expenses API:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -29,8 +34,6 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    
-    console.log('Creating new expense:', body)
     
     const { data, error } = await supabaseServer
       .from('RENT_expenses')
@@ -54,8 +57,6 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { id, ...updateData } = body
-    
-    console.log('Updating expense:', id, updateData)
     
     // Filter out undefined values
     const filteredData = Object.fromEntries(
@@ -89,8 +90,6 @@ export async function DELETE(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: 'Expense ID is required' }, { status: 400 })
     }
-    
-    console.log('Deleting expense:', id)
     
     const { error } = await supabaseServer
       .from('RENT_expenses')

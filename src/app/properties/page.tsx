@@ -142,41 +142,42 @@ export default function PropertiesPage() {
   }
 
   const handleAddProperty = () => {
+    setEditingProperty(null)
     setShowAddModal(true)
   }
 
   const handleEditProperty = (property: Property) => {
     setEditingProperty(property)
+    setShowAddModal(true)
   }
 
 
 
   const handleSaveProperty = async (propertyData: Partial<PropertyWithLease>) => {
-    if (!editingProperty) return
-
     try {
-      const response = await fetch('/api/properties', {
-        method: 'PUT',
+      const url = '/api/properties'
+      const method = editingProperty ? 'PUT' : 'POST'
+      
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: editingProperty.id,
-          ...propertyData
-        })
+        body: JSON.stringify(editingProperty ? { id: editingProperty.id, ...propertyData } : propertyData)
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update property')
+        throw new Error(errorData.error || `Failed to ${editingProperty ? 'update' : 'create'} property`)
       }
 
       // Refresh the properties list
       await fetchProperties()
+      setShowAddModal(false)
       setEditingProperty(null)
     } catch (error) {
-      console.error('Error updating property:', error)
-      alert(`Failed to update property. Please try again. Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error(`Error ${editingProperty ? 'updating' : 'creating'} property:`, error)
+      alert(`Failed to ${editingProperty ? 'update' : 'create'} property. Please try again. Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -465,35 +466,13 @@ export default function PropertiesPage() {
         )}
       </div>
 
-      {/* Add Property Modal */}
+      {/* Add/Edit Property Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Property</h2>
-            <p className="text-gray-600 mb-4">Property form will be implemented here.</p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Property Modal */}
-      {editingProperty && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Edit Property</h2>
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              {editingProperty ? 'Edit Property' : 'Add New Property'}
+            </h2>
             <form onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
@@ -516,42 +495,42 @@ export default function PropertiesPage() {
             }}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Property Name</label>
+                  <label className="block text-sm font-medium text-gray-700">Property Name *</label>
                   <input
                     type="text"
                     name="name"
-                    defaultValue={editingProperty.name}
+                    defaultValue={editingProperty?.name || ''}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Address</label>
+                  <label className="block text-sm font-medium text-gray-700">Address *</label>
                   <input
                     type="text"
                     name="address"
-                    defaultValue={editingProperty.address}
+                    defaultValue={editingProperty?.address || ''}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     required
                   />
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">City</label>
+                    <label className="block text-sm font-medium text-gray-700">City *</label>
                     <input
                       type="text"
                       name="city"
-                      defaultValue={editingProperty.city}
+                      defaultValue={editingProperty?.city || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">State</label>
+                    <label className="block text-sm font-medium text-gray-700">State *</label>
                     <input
                       type="text"
                       name="state"
-                      defaultValue={editingProperty.state}
+                      defaultValue={editingProperty?.state || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                       required
                     />
@@ -561,18 +540,20 @@ export default function PropertiesPage() {
                     <input
                       type="text"
                       name="zip_code"
-                      defaultValue={editingProperty.zip_code}
+                      defaultValue={editingProperty?.zip_code || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Property Type</label>
+                  <label className="block text-sm font-medium text-gray-700">Property Type *</label>
                   <select
                     name="property_type"
-                    defaultValue={editingProperty.property_type}
+                    defaultValue={editingProperty?.property_type || ''}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    required
                   >
+                    <option value="">Select type</option>
                     <option value="house">House</option>
                     <option value="doublewide">Double Wide</option>
                     <option value="singlewide">Single Wide</option>
@@ -585,7 +566,7 @@ export default function PropertiesPage() {
                     type="number"
                     name="rent_value"
                     step="0.01"
-                    defaultValue={editingProperty.rent_value || ''}
+                    defaultValue={editingProperty?.rent_value || ''}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     placeholder="Enter monthly rent value"
                   />
@@ -597,7 +578,7 @@ export default function PropertiesPage() {
                       type="number"
                       name="insurance_premium"
                       step="0.01"
-                      defaultValue={editingProperty.insurance_premium || ''}
+                      defaultValue={editingProperty?.insurance_premium || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                       placeholder="Enter yearly insurance premium"
                     />
@@ -608,7 +589,7 @@ export default function PropertiesPage() {
                       type="number"
                       name="property_tax"
                       step="0.01"
-                      defaultValue={editingProperty.property_tax || ''}
+                      defaultValue={editingProperty?.property_tax || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                       placeholder="Enter yearly property tax"
                     />
@@ -620,7 +601,7 @@ export default function PropertiesPage() {
                     <input
                       type="number"
                       name="bedrooms"
-                      defaultValue={editingProperty.bedrooms || ''}
+                      defaultValue={editingProperty?.bedrooms || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     />
                   </div>
@@ -630,7 +611,7 @@ export default function PropertiesPage() {
                       type="number"
                       name="bathrooms"
                       step="0.5"
-                      defaultValue={editingProperty.bathrooms || ''}
+                      defaultValue={editingProperty?.bathrooms || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     />
                   </div>
@@ -639,7 +620,7 @@ export default function PropertiesPage() {
                     <input
                       type="number"
                       name="square_feet"
-                      defaultValue={editingProperty.square_feet || ''}
+                      defaultValue={editingProperty?.square_feet || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     />
                   </div>
@@ -649,32 +630,36 @@ export default function PropertiesPage() {
                     <input
                       type="checkbox"
                       name="is_for_rent"
-                      defaultChecked={editingProperty.is_for_rent}
+                      defaultChecked={editingProperty?.is_for_rent}
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                     />
                     <span className="ml-2 text-sm text-gray-700">Available for Rent</span>
                   </label>
                 </div>
               </div>
-              <div className="flex justify-end space-x-3 mt-6">
+              <div className="mt-6 flex justify-end space-x-3">
                 <button
                   type="button"
-                  onClick={() => setEditingProperty(null)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  onClick={() => {
+                    setShowAddModal(false)
+                    setEditingProperty(null)
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
-                  Save Changes
+                  {editingProperty ? 'Update Property' : 'Add Property'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   )
 }

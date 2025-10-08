@@ -1,38 +1,27 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
-import { createPaymentMaps, getPaymentsForLease } from '@/lib/rent/paymentBucket'
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const month = searchParams.get('month') || new Date().toISOString().slice(0, 7) // YYYY-MM format
+    let month = searchParams.get('month') || new Date().toISOString().slice(0, 7) // YYYY-MM format
+    
+    // If no month specified, use current month
+    if (!searchParams.get('month')) {
+      month = new Date().toISOString().slice(0, 7)
+    }
     
     console.log('Fetching profit metrics for month:', month)
     
     // Get start and end of month
     const startOfMonth = `${month}-01`
-    const endOfMonth = new Date(new Date(startOfMonth).getFullYear(), new Date(startOfMonth).getMonth() + 1, 0)
-      .toISOString().slice(0, 10)
+    const year = parseInt(month.split('-')[0])
+    const monthNum = parseInt(month.split('-')[1]) - 1 // JavaScript months are 0-indexed
+    const endOfMonth = new Date(year, monthNum + 1, 0).toISOString().slice(0, 10)
     
     console.log('Date range:', startOfMonth, 'to', endOfMonth)
     
-    // Fetch rent payments for the month using the same approach as payments grid
-    const { data: payments, error: paymentsError } = await supabaseServer
-      .from('RENT_payments')
-      .select('*')
-      .gte('payment_date', startOfMonth)
-      .lte('payment_date', endOfMonth)
-    
-    if (paymentsError) {
-      console.error('Error fetching payments:', paymentsError)
-      throw paymentsError
-    }
-    
-    console.log('Payments found:', payments?.length || 0)
-    console.log('Sample payment:', payments?.[0])
-    console.log('Payment types found:', payments?.map(p => p.payment_type))
-    
-    // Fetch all properties for insurance and tax calculations
+    // Fetch all properties for insurance and tax calculations (same as dashboard)
     const { data: properties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
       .select('*')
@@ -44,97 +33,82 @@ export async function GET(request: Request) {
     
     console.log('Properties found:', properties?.length || 0)
     
-    // Use the same payment processing approach as payments grid
-    const paymentMaps = createPaymentMaps(payments || [])
+    // Calculate total insurance (full annual premium) - same as dashboard
+    const totalInsurance = properties
+      ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
     
-    // Calculate totals using consistent approach
-    const rentCollected = payments
-      ?.filter(p => p.payment_type?.toLowerCase().includes('rent'))
-      ?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
+    // Calculate total taxes (full annual tax) - same as dashboard
+    const totalTaxes = properties
+      ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
     
-    const miscIncome = payments
-      ?.filter(p => !p.payment_type?.toLowerCase().includes('rent'))
-      ?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
+    console.log('Total insurance:', totalInsurance)
+    console.log('Total taxes:', totalTaxes)
     
-    console.log('Rent payments found:', payments?.filter(p => p.payment_type?.toLowerCase().includes('rent')).length)
-    console.log('Rent collected calculated:', rentCollected)
-    console.log('Misc income calculated:', miscIncome)
-    console.log('All payment amounts:', payments?.map(p => ({ 
-      type: p.payment_type, 
-      amount: p.amount, 
-      amountType: typeof p.amount,
-      date: p.payment_date 
-    })))
+    // Get total payments from expenses table (all expenses, not filtered by month)
+    const { data: expenses, error: expensesError } = await supabaseServer
+      .from('RENT_expenses')
+      .select('amount')
     
+    if (expensesError) {
+      console.error('Error fetching expenses:', expensesError)
+      throw expensesError
+    }
     
-    const totalIncome = rentCollected + miscIncome
+    const totalPayments = expenses
+      ?.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
     
-    // Calculate monthly insurance (annual premium / 12)
-    const monthlyInsurance = properties
-      ?.reduce((sum, p) => sum + ((Number(p.insurance_premium) || 0) / 12), 0) || 0
+    console.log('Expenses found:', expenses?.length || 0)
+    console.log('Total payments from expenses:', totalPayments)
     
-    // Calculate monthly taxes (annual tax / 12)
-    const monthlyTaxes = properties
-      ?.reduce((sum, p) => sum + ((Number(p.property_tax) || 0) / 12), 0) || 0
+    // Get invoices for rent calculation using the same approach as payments page
+    let rentCollected = 0
+    let expectedRent = 0
+    
+    try {
+      const invoicesResponse = await fetch(
+        `http://localhost:3000/api/invoices?from=${startOfMonth}&to=${endOfMonth}`
+      )
+      
+      if (invoicesResponse.ok) {
+        const invoices = await invoicesResponse.json()
+        console.log('Successfully fetched', invoices?.length || 0, 'invoices from API')
+        
+        if (invoices && invoices.length > 0) {
+          // Calculate rent collected from paid invoices
+          rentCollected = invoices
+            .filter(invoice => Number(invoice.amount_paid) > 0)
+            .reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0)
+          
+          // Calculate expected rent from all invoices
+          expectedRent = invoices
+            .reduce((sum, invoice) => sum + Number(invoice.amount_rent), 0)
+        }
+      } else {
+        console.error('Failed to fetch invoices from API:', invoicesResponse.status, invoicesResponse.statusText)
+      }
+    } catch (error) {
+      console.error('Error fetching invoices from API:', error)
+    }
+    
+    console.log('Rent collected:', rentCollected)
+    console.log('Expected rent:', expectedRent)
     
     // For now, set repairs and other expenses to 0 (would need expense tracking table)
     const repairs = 0
     const otherExpenses = 0
-    const totalPayments = 0 // Would need debt/payment tracking
+    const miscIncome = 0 // Would need to track non-rent income separately
     
-    const totalFixedExpenses = monthlyInsurance + monthlyTaxes + totalPayments
+    const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const totalDebt = totalFixedExpenses + repairs + otherExpenses
     
-    // Calculate expected rent using the same approach as payments grid
-    const { data: activeLeases, error: leasesError } = await supabaseServer
-      .from('RENT_leases')
-      .select(`
-        *,
-        RENT_properties(*),
-        RENT_tenants(*)
-      `)
-      .eq('status', 'active')
-      .lte('lease_start_date', endOfMonth)
-      .or(`lease_end_date.is.null,lease_end_date.gte.${startOfMonth}`)
-    
-    if (leasesError) {
-      console.error('Error fetching leases:', leasesError)
-    }
-    
-    const expectedRent = activeLeases
-      ?.reduce((sum, lease) => {
-        const rent = Number(lease.rent) || 0
-        // Convert to monthly amount based on cadence
-        if (lease.rent_cadence?.toLowerCase() === 'weekly') {
-          return sum + (rent * 4.33) // Average weeks per month
-        } else if (lease.rent_cadence?.toLowerCase().includes('bi')) {
-          return sum + (rent * 2.17) // Average bi-weekly periods per month
-        } else {
-          return sum + rent // Monthly
-        }
-      }, 0) || 0
-    
-    console.log('Active leases found:', activeLeases?.length || 0)
-    console.log('Expected rent calculated:', expectedRent)
-    
-    // Also check if we can match any payments to leases using the utility functions
-    if (activeLeases && activeLeases.length > 0) {
-      const sampleLease = activeLeases[0]
-      const leasePayments = getPaymentsForLease(sampleLease, paymentMaps)
-      console.log('Sample lease payments using utility:', {
-        leaseId: sampleLease.id,
-        property: sampleLease.RENT_properties?.name,
-        paymentCount: leasePayments.length,
-        totalAmount: leasePayments.reduce((sum, p) => sum + (p.amount || 0), 0)
-      })
-    }
+    const totalIncome = rentCollected + miscIncome
     
     const collectionRate = expectedRent > 0 ? (rentCollected / expectedRent) * 100 : 0
     
     const metrics = {
       fixedExpenses: {
-        insurance: Math.round(monthlyInsurance * 100) / 100,
-        taxes: Math.round(monthlyTaxes * 100) / 100,
+        insurance: Math.round(totalInsurance * 100) / 100,
+        taxes: Math.round(totalTaxes * 100) / 100,
         totalPayments: Math.round(totalPayments * 100) / 100,
         total: Math.round(totalFixedExpenses * 100) / 100
       },

@@ -28,6 +28,37 @@ export async function GET() {
   }
 }
 
+export async function POST(request: Request) {
+  try {
+    const propertyData = await request.json()
+    
+    console.log('Creating new property:', propertyData)
+    
+    const { data, error } = await supabaseServer
+      .from('RENT_properties')
+      .insert(propertyData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Supabase error creating property:', error)
+      return NextResponse.json(
+        { error: 'Database error', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    console.log('Property created successfully:', data)
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('Error in property creation API:', error)
+    return NextResponse.json(
+      { error: 'Failed to create property', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function PUT(request: Request) {
   try {
     const { id, ...updateData } = await request.json()

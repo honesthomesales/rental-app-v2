@@ -8,22 +8,12 @@ export default function ProfitPage() {
   const [metrics, setMetrics] = useState<ProfitMetrics | null>(null)
   const [propertyData, setPropertyData] = useState<PropertyProfitData[]>([])
   const [loading, setLoading] = useState(true)
-  const [dateRange, setDateRange] = useState('ytd')
-  const [granularity, setGranularity] = useState('monthly')
-  const [includeDebt, setIncludeDebt] = useState(false)
-  const [showMetrics, setShowMetrics] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
 
   useEffect(() => {
-    fetchProfitData()
-  }, [dateRange, granularity, includeDebt])
-
-  useEffect(() => {
-    if (showMetrics) {
-      fetchMonthlyMetrics()
-    }
-  }, [currentDate, showMetrics])
+    fetchMonthlyMetrics()
+  }, [currentDate])
 
   const fetchProfitData = async () => {
     try {
@@ -107,11 +97,13 @@ export default function ProfitPage() {
       }
     } catch (error) {
       console.error('Error fetching monthly metrics:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
   const formatCurrency = (amount: number) => {
-    return `$${amount.toLocaleString()}`
+    return `$${Math.round(amount).toLocaleString()}`
   }
 
   const formatMonth = (date: Date) => {
@@ -335,6 +327,16 @@ export default function ProfitPage() {
               </span>
             </div>
           </div>
+          
+          {/* Current Profit */}
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <div className="text-center">
+              <div className="text-sm text-gray-600 mb-2">CURRENT PROFIT</div>
+              <div className={`text-6xl font-bold ${((monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)) - (monthlyMetrics?.oneTimeExpenseIncome?.totalDebt || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatCurrency(((monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)) - (monthlyMetrics?.oneTimeExpenseIncome?.totalDebt || 0))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -361,72 +363,12 @@ export default function ProfitPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Profit Analysis</h1>
-        <p className="text-gray-600 mt-2">Income vs expenses → NOI → cash flow by Property, Month, and Portfolio</p>
+        <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.1</h1>
       </div>
 
-      {/* Controls */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Metrics Toggle */}
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="showMetrics"
-              checked={showMetrics}
-              onChange={(e) => setShowMetrics(e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="showMetrics" className="ml-2 text-sm text-gray-700 font-medium">
-              Show Monthly Metrics
-            </label>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="mtd">MTD</option>
-              <option value="qtd">QTD</option>
-              <option value="ytd">YTD</option>
-              <option value="last12m">Last 12M</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Granularity</label>
-            <select
-              value={granularity}
-              onChange={(e) => setGranularity(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="annual">Annual</option>
-            </select>
-          </div>
-          
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="includeDebt"
-              checked={includeDebt}
-              onChange={(e) => setIncludeDebt(e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="includeDebt" className="ml-2 text-sm text-gray-700">
-              Include Debt Service
-            </label>
-          </div>
-        </div>
-      </div>
 
-      {/* Show Metrics View if enabled */}
-      {showMetrics && renderMetricsView()}
+      {/* Monthly Metrics View */}
+      {renderMetricsView()}
 
       {/* Key Performance Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
@@ -554,16 +496,6 @@ export default function ProfitPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   NOI
                 </th>
-                {includeDebt && (
-                  <>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Debt Service
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CFAD
-                    </th>
-                  </>
-                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -600,16 +532,6 @@ export default function ProfitPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     ${property.netOperatingIncome.toLocaleString()}
                   </td>
-                  {includeDebt && (
-                    <>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        ${property.debtService.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        ${property.cashFlowAfterDebt.toLocaleString()}
-                      </td>
-                    </>
-                  )}
                 </tr>
               ))}
             </tbody>

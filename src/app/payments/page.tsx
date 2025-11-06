@@ -87,6 +87,43 @@ export default function PaymentsPage() {
     fetchLeases()
   }, [])
 
+  const handlePrintNotice = () => {
+    const printWin = window.open('', '_blank', 'width=900,height=1100')
+    if (!printWin) { alert('Please allow popups'); return }
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>${noticeTitle}</title><style>
+@page{margin:.5in;size:letter portrait}*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#000;background:#fff;padding:20px}
+.t{font-size:22px;font-weight:bold;text-align:center;margin-bottom:20px}
+.lr{font-size:11px;text-align:center;margin-bottom:15px}
+.s{margin-bottom:12px}.h{font-weight:bold;font-size:14px;margin-top:15px;margin-bottom:8px}
+.td{font-weight:bold;font-size:16px;background:#fef3cd;padding:12px;border-left:4px solid #ffc107;margin:15px 0}
+.i{font-weight:bold;color:#dc3545;background:#f8d7da;padding:10px;margin:15px 0;border-radius:4px}
+.ll{background:#f8f9fa;padding:12px;border-left:4px solid #007bff;margin:10px 0}
+.d{background:#d4edda;padding:12px;border-left:4px solid #28a745;margin:10px 0}
+.in{margin-left:20px;margin-bottom:4px}.dv{border-top:1px solid #ccc;margin:20px 0}
+@media print{body{padding:0}}
+</style></head><body>${noticeContent.split('\n').map(l=>{
+if(l.startsWith('**NOTICE TO PAY'))return'<div class="t">'+l.replace(/\*\*/g,'')+'</div>';
+if(l.startsWith('7-DAY NOTICE PURSUANT'))return'<div class="lr">'+l+'</div>';
+if(l.startsWith('**BREAKDOWN'))return'<div class="h">'+l.replace(/\*\*/g,'')+'</div>';
+if(l.startsWith('**TOTAL DUE:'))return'<div class="td">'+l.replace(/\*\*/g,'')+'</div>';
+if(l.startsWith('Rent:')||l.startsWith('Late Fee:')||l.startsWith('Other'))return'<div class="in">'+l+'</div>';
+if(l.startsWith('**IMPORTANT:'))return'<div class="i">'+l.replace(/\*\*/g,'')+'</div>';
+if(l.startsWith('**LANDLORD:'))return'<div class="h">'+l.replace(/\*\*/g,'')+'</div>';
+if(l.startsWith('**NOTICE DELIVERY:'))return'<div class="h">'+l.replace(/\*\*/g,'')+'</div>';
+if(l.includes('Honest Home')||l.includes('PO Box')||l.includes('Text:')||l.includes('Email:'))return'<div class="ll">'+l+'</div>';
+if(l.includes('Date Notice')||l.includes('Method of'))return'<div class="d">'+l+'</div>';
+if(l.trim()==='---')return'<div class="dv"></div>';
+if(l.trim()==='')return'<br>';
+if(l.startsWith('Date:')||l.startsWith('To:')||l.startsWith('Property:')){
+const p=l.split(':');return'<div class="s"><strong>'+p[0]+':</strong>'+p.slice(1).join(':')+'</div>';}
+return'<div class="s">'+l+'</div>';
+}).join('')}<script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`;
+    printWin.document.write(html);
+    printWin.document.close();
+  }
+
   const fetchLeases = async () => {
     try {
       setLoading(true)
@@ -1448,10 +1485,11 @@ export default function PaymentsPage() {
               </div>
               <div className="flex space-x-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintNotice}
                   className="px-4 py-2 bg-white text-purple-600 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="Opens clean print window"
                 >
-                  Print
+                  📄 Print
                 </button>
                 <button
                   onClick={() => setShowNoticeModal(false)}
@@ -1549,10 +1587,11 @@ export default function PaymentsPage() {
                 Close
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={handlePrintNotice}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                title="Opens clean print window"
               >
-                Print Notice
+                📄 Print Notice
               </button>
             </div>
           </div>

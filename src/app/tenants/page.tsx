@@ -1,16 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Tenant, Property } from '@/types/database'
 import { UsersIcon, PlusIcon, PhoneIcon, EnvelopeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
+type SortField = 'name' | 'email' | 'phone' | 'is_active' | 'property' | 'lease_start_date'
+type SortDirection = 'asc' | 'desc'
+
 export default function TenantsPage() {
-  const [tenants, setTenants] = useState<Tenant[]>([])
+  const [allTenants, setAllTenants] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null)
   const [showPropertyModal, setShowPropertyModal] = useState(false)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [sortField, setSortField] = useState<SortField>('name')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     fetchTenants()
@@ -30,12 +36,80 @@ export default function TenantsPage() {
       
       const data = await response.json()
       console.log('Tenants data received:', data?.length || 0)
-      setTenants(data || [])
+      setAllTenants(data || [])
     } catch (error) {
       console.error('Error fetching tenants:', error)
-      setTenants([])
+      setAllTenants([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Compute filtered and sorted tenants using useMemo
+  const tenants = useMemo(() => {
+    let filtered = allTenants.filter(tenant => {
+      if (!searchTerm) return true
+      
+      const searchLower = searchTerm.toLowerCase()
+      const fullName = (tenant.full_name || `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim()).toLowerCase()
+      const email = (tenant.email || '').toLowerCase()
+      const phone = (tenant.phone || '').toLowerCase()
+      const propertyName = (tenant.property?.name || '').toLowerCase()
+      
+      return fullName.includes(searchLower) || 
+             email.includes(searchLower) || 
+             phone.includes(searchLower) ||
+             propertyName.includes(searchLower)
+    })
+
+    filtered.sort((a, b) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortField) {
+        case 'name':
+          aValue = (a.full_name || `${a.first_name || ''} ${a.last_name || ''}`.trim() || 'NO TENANT').toLowerCase()
+          bValue = (b.full_name || `${b.first_name || ''} ${b.last_name || ''}`.trim() || 'NO TENANT').toLowerCase()
+          break
+        case 'email':
+          aValue = (a.email || '').toLowerCase()
+          bValue = (b.email || '').toLowerCase()
+          break
+        case 'phone':
+          aValue = a.phone || ''
+          bValue = b.phone || ''
+          break
+        case 'is_active':
+          aValue = a.is_active ? 1 : 0
+          bValue = b.is_active ? 1 : 0
+          break
+        case 'property':
+          aValue = (a.property?.name || '').toLowerCase()
+          bValue = (b.property?.name || '').toLowerCase()
+          break
+        case 'lease_start_date':
+          aValue = a.lease_start_date || ''
+          bValue = b.lease_start_date || ''
+          break
+        default:
+          aValue = ''
+          bValue = ''
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return filtered
+  }, [allTenants, sortField, sortDirection, searchTerm])
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
     }
   }
 
@@ -53,7 +127,8 @@ export default function TenantsPage() {
   }
 
   const handleDeleteTenant = async (tenant: Tenant) => {
-    if (!confirm(`Are you sure you want to delete ${tenant.full_name || `${tenant.first_name} ${tenant.last_name}`}?`)) {
+    const tenantName = tenant.full_name || `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim() || 'NO TENANT'
+    if (!confirm(`Are you sure you want to delete ${tenantName}?`)) {
       return
     }
 
@@ -157,7 +232,10 @@ export default function TenantsPage() {
       <div className="mb-6 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tenants</h1>
-          <p className="text-gray-600 mt-2">Manage your tenants</p>
+          <p className="text-gray-600 mt-2">
+            Manage your tenants {searchTerm && `(${tenants.length} of ${allTenants.length})`}
+            {!searchTerm && `(${allTenants.length})`}
+          </p>
         </div>
         <button
           onClick={handleAddTenant}
@@ -176,13 +254,10 @@ export default function TenantsPage() {
               <input
                 type="text"
                 placeholder="Search tenants..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <select className="px-3 py-2 border border-gray-300 rounded-lg">
-                <option>All Status</option>
-                <option>Active</option>
-                <option>Inactive</option>
-              </select>
             </div>
           </div>
         </div>
@@ -191,20 +266,60 @@ export default function TenantsPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('name')}
+                >
+                  <div className="flex items-center">
+                    Name
+                    {sortField === 'name' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contact
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('email')}
+                >
+                  <div className="flex items-center">
+                    Contact
+                    {sortField === 'email' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('is_active')}
+                >
+                  <div className="flex items-center">
+                    Status
+                    {sortField === 'is_active' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Property
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('property')}
+                >
+                  <div className="flex items-center">
+                    Property
+                    {sortField === 'property' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Lease Period
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('lease_start_date')}
+                >
+                  <div className="flex items-center">
+                    Lease Period
+                    {sortField === 'lease_start_date' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -219,15 +334,24 @@ export default function TenantsPage() {
                       <div className="flex-shrink-0 h-10 w-10">
                         <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
                           <span className="text-sm font-medium text-blue-800">
-                            {tenant.first_name?.[0]}{tenant.last_name?.[0]}
+                            {(() => {
+                              const fullName = tenant.full_name || `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim()
+                              if (fullName) {
+                                const parts = fullName.split(' ')
+                                return (parts[0]?.[0] || '') + (parts[1]?.[0] || '')
+                              }
+                              return 'NT'
+                            })()}
                           </span>
                         </div>
                       </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">
-                          {tenant.full_name || `${tenant.first_name} ${tenant.last_name}`}
+                          {tenant.full_name || `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim() || 'NO TENANT'}
                         </div>
-                        <div className="text-sm text-gray-500">Tenant ID: {tenant.id.slice(0, 8)}</div>
+                        <div className="text-xs text-gray-500">
+                          Tenant ID: {tenant.id?.toString().slice(0, 8) || 'N/A'}
+                        </div>
                       </div>
                     </div>
                   </td>

@@ -98,7 +98,7 @@ To: ${tenant.first_name} ${tenant.last_name}
 Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
-You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
+You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} is due as of the date of this notice.
 
 **BREAKDOWN OF AMOUNTS DUE:**
 Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -112,8 +112,6 @@ Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7
 
 **IMPORTANT: Payment in full will stop all eviction proceedings from moving forward.**
 
-This notice is being delivered by physical delivery to the premises.
-
 Failure to comply with this notice by the specified deadline will result in the commencement of eviction proceedings without further notice. This may include legal action to recover possession of the property, unpaid rent, and any other damages or costs as permitted by law.
 
 We urge you to take immediate action to resolve this matter.
@@ -125,7 +123,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises
+Method of Delivery: ☐ Physical Delivery to Premises  ☐ Mailed
 
 ---
 This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) and is legally binding.`
@@ -142,7 +140,7 @@ To: ${tenant.first_name} ${tenant.last_name}
 Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
-You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
+You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} is due as of the date of this notice.
 
 **BREAKDOWN OF AMOUNTS DUE:**
 Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -156,8 +154,6 @@ Pursuant to North Carolina law (NC Gen. Stat. § 42-26), you have seven (7) days
 
 **IMPORTANT: Payment in full will stop all eviction proceedings from moving forward.**
 
-This notice is being delivered by physical delivery to the premises.
-
 Failure to comply with this notice by the specified deadline will result in the commencement of eviction proceedings without further notice. This may include legal action to recover possession of the property, unpaid rent, and any other damages or costs as permitted by law.
 
 We urge you to take immediate action to resolve this matter.
@@ -169,7 +165,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises
+Method of Delivery: ☐ Physical Delivery to Premises  ☐ Mailed
 
 ---
 This notice is generated pursuant to North Carolina General Statutes § 42-26 and is legally binding.`
@@ -186,7 +182,7 @@ To: ${tenant.first_name} ${tenant.last_name}
 Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
-You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
+You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} is due as of the date of this notice.
 
 **BREAKDOWN OF AMOUNTS DUE:**
 Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -200,8 +196,6 @@ You have seven (7) days from the date of this notice (${noticeDateFormatted}) to
 
 **IMPORTANT: Payment in full will stop all eviction proceedings from moving forward.**
 
-This notice is being delivered by physical delivery to the premises.
-
 Failure to comply with this notice by the specified deadline will result in the commencement of eviction proceedings without further notice. This may include legal action to recover possession of the property, unpaid rent, and any other damages or costs as permitted by law.
 
 We urge you to take immediate action to resolve this matter.
@@ -213,7 +207,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises
+Method of Delivery: ☐ Physical Delivery to Premises  ☐ Mailed
 
 ---
 This notice is legally binding.`

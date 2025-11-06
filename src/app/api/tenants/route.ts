@@ -3,44 +3,80 @@ import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET() {
   try {
-    console.log('Fetching tenants from RENT_tenants table...')
+    console.log('Fetching tenants from leases...')
     
-    // Fetch tenants
-    const { data: tenants, error } = await supabaseServer
-      .from('RENT_tenants')
-      .select('*')
+    // Fetch all leases with their tenant and property data (this is the source of truth)
+    const { data: allLeases, error: leasesError } = await supabaseServer
+      .from('RENT_leases')
+      .select(`
+        *,
+        RENT_properties(*),
+        RENT_tenants(*)
+      `)
       .order('created_at', { ascending: false })
 
-    if (error) {
-      console.error('Supabase error:', error)
-      throw new Error(`Error fetching tenants: ${error.message}`)
+    if (leasesError) {
+      console.error('Error fetching leases:', leasesError)
+      throw new Error(`Error fetching leases: ${leasesError.message}`)
     }
 
-    // Fetch all properties
-    const { data: allProperties, error: propertiesError } = await supabaseServer
-      .from('RENT_properties')
-      .select('id, name, address, city, state, zip_code')
-      .limit(100) // Add limit to prevent timeout
-
-    if (propertiesError) {
-      console.error('Error fetching properties:', propertiesError)
-      // Continue without properties rather than failing completely
-    }
-
-    // Create a map of properties by ID for faster lookup
-    const propertiesMap = new Map()
-    if (allProperties && allProperties.length > 0) {
-      allProperties.forEach(property => {
-        propertiesMap.set(property.id, property)
+    // Create a map to store the most relevant lease for each tenant
+    const currentDate = new Date()
+    const tenantMap = new Map()
+    
+    if (allLeases && allLeases.length > 0) {
+      allLeases.forEach(lease => {
+        if (!lease.tenant_id || !lease.RENT_tenants) return
+        
+        const tenantId = lease.tenant_id
+        const startDate = new Date(lease.lease_start_date)
+        const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
+        const isWithinLeasePeriod = currentDate >= startDate && (!endDate || currentDate <= endDate)
+        const isActive = lease.status === 'active'
+        
+        // Build tenant object from lease data
+        const tenantData = {
+          id: tenantId,
+          first_name: lease.RENT_tenants.first_name,
+          last_name: lease.RENT_tenants.last_name,
+          full_name: lease.RENT_tenants.full_name,
+          email: lease.RENT_tenants.email,
+          phone: lease.RENT_tenants.phone,
+          is_active: lease.RENT_tenants.is_active ?? isActive,
+          notes: lease.RENT_tenants.notes,
+          lease_start_date: lease.lease_start_date,
+          lease_end_date: lease.lease_end_date,
+          property_id: lease.property_id,
+          property: lease.RENT_properties || null,
+          created_at: lease.RENT_tenants.created_at,
+          updated_at: lease.RENT_tenants.updated_at
+        }
+        
+        // Decide if we should use this lease for the tenant
+        const existingTenant = tenantMap.get(tenantId)
+        if (!existingTenant) {
+          // First lease for this tenant
+          tenantMap.set(tenantId, tenantData)
+        } else {
+          // Prefer active leases within the lease period
+          const existingIsActive = existingTenant.lease_start_date && existingTenant.lease_end_date ?
+            (currentDate >= new Date(existingTenant.lease_start_date) && 
+             currentDate <= new Date(existingTenant.lease_end_date || '9999-12-31')) : false
+          
+          if (isWithinLeasePeriod && isActive && !existingIsActive) {
+            tenantMap.set(tenantId, tenantData)
+          } else if (isActive && !existingIsActive) {
+            // Prefer active leases even if not currently in period
+            tenantMap.set(tenantId, tenantData)
+          }
+        }
       })
     }
-
-    // Merge properties with tenants
-    const tenantsWithProperties = tenants?.map(tenant => ({
-      ...tenant,
-      property: tenant.property_id ? propertiesMap.get(tenant.property_id) || null : null
-    })) || []
-    return NextResponse.json(tenantsWithProperties || [])
+    
+    // Convert map to array
+    const tenantsWithDetails = Array.from(tenantMap.values())
+    
+    return NextResponse.json(tenantsWithDetails || [])
   } catch (error) {
     console.error('Error in tenants API:', error)
     return NextResponse.json(

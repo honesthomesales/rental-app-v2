@@ -653,187 +653,6 @@ export default function PaymentsPage() {
     }
   }
 
-  const handlePrintNotice = () => {
-    // Get the invoice and lease info for the current notice
-    if (!selectedLease) {
-      alert('No lease selected')
-      return
-    }
-    
-    // Find the unpaid invoice for this lease
-    const unpaidInvoice = invoices.find(inv => 
-      parseFloat(inv.balance_due as any) > 0 && 
-      inv.status === 'OPEN'
-    )
-    
-    if (!unpaidInvoice) {
-      alert('No unpaid invoice found')
-      return
-    }
-    
-    // Open dedicated print page in new tab - this page has NO navigation, NO layout, just the notice
-    const printUrl = `/print-notice?invoiceId=${unpaidInvoice.id}&leaseId=${selectedLease.id}`
-    window.open(printUrl, '_blank')
-  }
-
-  const handlePrintNoticeOLD = () => {
-    // Create a new window with ONLY the notice content
-    const printWindow = window.open('', '_blank', 'width=800,height=1000')
-    if (!printWindow) {
-      alert('Please allow popups for this site to print notices')
-      return
-    }
-
-    // Build clean HTML with inline styles for printing
-    const htmlContentOLD = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Eviction Notice</title>
-  <meta charset="UTF-8">
-  <style>
-    @page {
-      size: letter portrait;
-      margin: 0.5in;
-    }
-    
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 14px;
-      line-height: 1.6;
-      color: #000;
-      background: #fff;
-      padding: 20px;
-    }
-    
-    .notice-title {
-      font-size: 24px;
-      font-weight: bold;
-      text-align: center;
-      margin-bottom: 20px;
-    }
-    
-    .legal-ref {
-      font-size: 12px;
-      text-align: center;
-      margin-bottom: 15px;
-    }
-    
-    .section {
-      margin-bottom: 15px;
-    }
-    
-    .section-header {
-      font-weight: bold;
-      font-size: 14px;
-      margin-top: 15px;
-      margin-bottom: 8px;
-    }
-    
-    .total-due {
-      font-weight: bold;
-      font-size: 16px;
-      background-color: #fef3cd;
-      padding: 12px;
-      border-left: 4px solid #ffc107;
-      margin: 15px 0;
-    }
-    
-    .important {
-      font-weight: bold;
-      color: #dc3545;
-      background-color: #f8d7da;
-      padding: 10px;
-      border-radius: 4px;
-      margin: 15px 0;
-    }
-    
-    .landlord-info {
-      background-color: #f8f9fa;
-      padding: 12px;
-      border-left: 4px solid #007bff;
-      margin: 15px 0;
-    }
-    
-    .delivery-info {
-      background-color: #d4edda;
-      padding: 12px;
-      border-left: 4px solid #28a745;
-      margin: 15px 0;
-    }
-    
-    .amount-line {
-      margin-left: 20px;
-      margin-bottom: 4px;
-    }
-    
-    .divider {
-      border-top: 1px solid #ccc;
-      margin: 20px 0;
-    }
-    
-    @media print {
-      body {
-        padding: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-${noticeContent.split('\n').map(line => {
-  if (line.startsWith('**NOTICE TO PAY RENT OR QUIT')) {
-    return `<div class="notice-title">${line.replace(/\*\*/g, '')}</div>`
-  } else if (line.startsWith('7-DAY NOTICE PURSUANT TO')) {
-    return `<div class="legal-ref">${line}</div>`
-  } else if (line.startsWith('**BREAKDOWN OF AMOUNTS DUE:**')) {
-    return `<div class="section-header">${line.replace(/\*\*/g, '')}</div>`
-  } else if (line.startsWith('**TOTAL DUE:')) {
-    return `<div class="total-due">${line.replace(/\*\*/g, '')}</div>`
-  } else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other Charges:')) {
-    return `<div class="amount-line">${line}</div>`
-  } else if (line.startsWith('**IMPORTANT:')) {
-    return `<div class="important">${line.replace(/\*\*/g, '')}</div>`
-  } else if (line.startsWith('**LANDLORD:**')) {
-    return `<div class="section-header">${line.replace(/\*\*/g, '')}</div>`
-  } else if (line.startsWith('**NOTICE DELIVERY:**')) {
-    return `<div class="section-header">${line.replace(/\*\*/g, '')}</div>`
-  } else if (line.includes('Honest Home Sales, LLC') || line.includes('PO Box 705') || line.includes('Text:') || line.includes('Email:')) {
-    return `<div class="landlord-info">${line}</div>`
-  } else if (line.includes('Date Notice Delivered:') || line.includes('Method of Delivery:')) {
-    return `<div class="delivery-info">${line}</div>`
-  } else if (line.trim() === '---') {
-    return `<div class="divider"></div>`
-  } else if (line.trim() === '') {
-    return '<br>'
-  } else if (line.startsWith('Date:') || line.startsWith('To:') || line.startsWith('Property:')) {
-    return `<div class="section"><strong>${line.split(':')[0]}:</strong> ${line.split(':').slice(1).join(':')}</div>`
-  } else {
-    return `<div class="section">${line}</div>`
-  }
-}).join('')}
-
-<script>
-  // Auto-print when window loads
-  window.onload = function() {
-    setTimeout(function() {
-      window.print();
-    }, 250);
-  };
-</script>
-</body>
-</html>
-`
-
-    printWindow.document.write(htmlContent)
-    printWindow.document.close()
-  }
-
   const getInvoiceStatusColor = (invoice: Invoice) => {
     const balance = parseFloat(invoice.balance_due as any)
     const total = parseFloat(invoice.amount_total as any)
@@ -1619,127 +1438,125 @@ ${noticeContent.split('\n').map(line => {
 
       {/* Late Notice Modal */}
       {showNoticeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 print:p-0 print:bg-white print:static">
-            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col print:max-w-full print:max-h-full print:shadow-none print:rounded-none">
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-4 flex justify-between items-center print:hidden">
-                <div>
-                  <h2 className="text-xl font-bold">{noticeTitle}</h2>
-                  <p className="text-purple-100 text-sm">Opens clean print page • In print dialog, uncheck "Headers and footers"</p>
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={handlePrintNotice}
-                    className="px-4 py-2 bg-white text-purple-600 rounded-lg hover:bg-gray-100 transition-colors font-medium"
-                    title="Opens clean print page with no UI elements"
-                  >
-                    📄 Print
-                  </button>
-                  <button
-                    onClick={() => setShowNoticeModal(false)}
-                    className="text-white hover:text-gray-200 transition-colors"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">{noticeTitle}</h2>
+                <p className="text-purple-100">7-Day Notice to Pay Rent or Quit</p>
               </div>
-
-              {/* Modal Body - Notice Content */}
-              <div className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-0">
-                <div id="notice-content-to-print" className="bg-white p-8 border border-gray-200 rounded-lg print:border-none print:rounded-none print:p-0">
-                  <div className="whitespace-pre-line text-sm leading-relaxed">
-                    {noticeContent.split('\n').map((line, index) => {
-                      if (line.startsWith('**NOTICE TO PAY RENT OR QUIT')) {
-                        // Main title - extra large and bold
-                        return (
-                          <div key={index} className="font-bold text-2xl mb-4 text-center">
-                            {line.replace(/\*\*/g, '')}
-                          </div>
-                        )
-                      } else if (line.startsWith('**BREAKDOWN OF AMOUNTS DUE:**')) {
-                        // Section header - bold
-                        return (
-                          <div key={index} className="font-bold text-base mb-3 mt-6 text-gray-800">
-                            {line.replace(/\*\*/g, '')}
-                          </div>
-                        )
-                      } else if (line.startsWith('**TOTAL DUE:')) {
-                        // Total due - bold and highlighted
-                        return (
-                          <div key={index} className="font-bold text-lg mb-4 bg-yellow-100 p-3 rounded border-l-4 border-yellow-500">
-                            {line.replace(/\*\*/g, '')}
-                          </div>
-                        )
-                      } else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other Charges:')) {
-                        // Amount breakdown lines - clean formatting
-                        return (
-                          <div key={index} className="text-sm mb-1 ml-4">
-                            {line}
-                          </div>
-                        )
-                      } else if (line.startsWith('**IMPORTANT:')) {
-                        // Special formatting for important notice
-                        return (
-                          <div key={index} className="font-bold text-base mb-2 text-red-600 bg-red-50 p-2 rounded">
-                            {line.replace(/\*\*/g, '')}
-                          </div>
-                        )
-                      } else if (line.startsWith('**LANDLORD:**')) {
-                        // Landlord section header
-                        return (
-                          <div key={index} className="font-bold text-base mb-3 mt-6 text-gray-800">
-                            {line.replace(/\*\*/g, '')}
-                          </div>
-                        )
-                      } else if (line.startsWith('**NOTICE DELIVERY:**')) {
-                        // Notice delivery section header
-                        return (
-                          <div key={index} className="font-bold text-base mb-3 mt-4 text-gray-800">
-                            {line.replace(/\*\*/g, '')}
-                          </div>
-                        )
-                      } else if (line.includes('Honest Home Sales, LLC') || line.includes('PO Box 705') || line.includes('Text:') || line.includes('Email:')) {
-                        // Landlord contact info - full width box
-                        return (
-                          <div key={index} className="text-sm mb-1 bg-gray-50 p-3 rounded border-l-4 border-blue-500">
-                            {line}
-                          </div>
-                        )
-                      } else if (line.includes('Date Notice Delivered:') || line.includes('Method of Delivery:')) {
-                        // Delivery info - full width box
-                        return (
-                          <div key={index} className="text-sm mb-1 bg-gray-50 p-3 rounded border-l-4 border-green-500">
-                            {line}
-                          </div>
-                        )
-                      } else {
-                        return <div key={index}>{line}</div>
-                      }
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3 print:hidden">
+              <div className="flex space-x-2">
                 <button
-                  onClick={() => setShowNoticeModal(false)}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-white text-purple-600 rounded-lg hover:bg-gray-100 transition-colors"
                 >
-                  Close
+                  Print
                 </button>
                 <button
-                  onClick={handlePrintNotice}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
-                  title="Opens clean print page with no UI elements"
+                  onClick={() => setShowNoticeModal(false)}
+                  className="text-white hover:text-gray-200 transition-colors"
                 >
-                  📄 Print Notice
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
             </div>
+
+            {/* Modal Body - Notice Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="bg-white p-8 border border-gray-200 rounded-lg print:border-0 print:shadow-none">
+                <div className="whitespace-pre-line text-sm leading-relaxed">
+                  {noticeContent.split('\n').map((line, index) => {
+                    if (line.startsWith('**NOTICE TO PAY RENT OR QUIT')) {
+                      // Main title - extra large and bold
+                      return (
+                        <div key={index} className="font-bold text-2xl mb-4 text-center">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**BREAKDOWN OF AMOUNTS DUE:**')) {
+                      // Section header - bold
+                      return (
+                        <div key={index} className="font-bold text-base mb-3 mt-6 text-gray-800">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**TOTAL DUE:')) {
+                      // Total due - bold and highlighted
+                      return (
+                        <div key={index} className="font-bold text-lg mb-4 bg-yellow-100 p-3 rounded border-l-4 border-yellow-500">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other Charges:')) {
+                      // Amount breakdown lines - clean formatting
+                      return (
+                        <div key={index} className="text-sm mb-1 ml-4">
+                          {line}
+                        </div>
+                      )
+                    } else if (line.startsWith('**IMPORTANT:')) {
+                      // Special formatting for important notice
+                      return (
+                        <div key={index} className="font-bold text-base mb-2 text-red-600 bg-red-50 p-2 rounded">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**LANDLORD:**')) {
+                      // Landlord section header
+                      return (
+                        <div key={index} className="font-bold text-base mb-3 mt-6 text-gray-800">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.startsWith('**NOTICE DELIVERY:**')) {
+                      // Notice delivery section header
+                      return (
+                        <div key={index} className="font-bold text-base mb-3 mt-4 text-gray-800">
+                          {line.replace(/\*\*/g, '')}
+                        </div>
+                      )
+                    } else if (line.includes('Honest Home Sales, LLC') || line.includes('PO Box 705') || line.includes('Text:') || line.includes('Email:')) {
+                      // Landlord contact info - full width box
+                      return (
+                        <div key={index} className="text-sm mb-1 bg-gray-50 p-3 rounded border-l-4 border-blue-500">
+                          {line}
+                        </div>
+                      )
+                    } else if (line.includes('Date Notice Delivered:') || line.includes('Method of Delivery:')) {
+                      // Delivery info - full width box
+                      return (
+                        <div key={index} className="text-sm mb-1 bg-gray-50 p-3 rounded border-l-4 border-green-500">
+                          {line}
+                        </div>
+                      )
+                    } else {
+                      return <div key={index}>{line}</div>
+                    }
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowNoticeModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Print Notice
+              </button>
+            </div>
           </div>
+        </div>
       )}
     </div>
   )

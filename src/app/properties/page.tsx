@@ -77,7 +77,9 @@ export default function PropertiesPage() {
           ...property,
           cadence: activeLease?.rent_cadence || 'N/A',
           tenantName: tenantName,
-          isOccupied: !!activeLease
+          isOccupied: !!activeLease,
+          // Show lease rent if occupied, otherwise show property rent_value
+          displayRent: activeLease ? activeLease.rent : property.rent_value
         }
       })
       
@@ -401,7 +403,7 @@ export default function PropertiesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${property.rent_value?.toLocaleString() || 'N/A'}
+                      ${property.displayRent?.toLocaleString() || property.rent_value?.toLocaleString() || 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full capitalize">

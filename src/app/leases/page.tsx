@@ -9,6 +9,9 @@ interface LeaseWithDetails extends Lease {
   RENT_tenants?: Tenant
 }
 
+type SortField = 'property' | 'tenant' | 'lease_start_date' | 'rent' | 'status'
+type SortDirection = 'asc' | 'desc'
+
 export default function LeasesPage() {
   const [allLeases, setAllLeases] = useState<LeaseWithDetails[]>([])
   const [properties, setProperties] = useState<Property[]>([])
@@ -21,6 +24,8 @@ export default function LeasesPage() {
     status: 'all'
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [sortField, setSortField] = useState<SortField>('property')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
   useEffect(() => {
     fetchLeases()
@@ -63,9 +68,9 @@ export default function LeasesPage() {
     }
   }
 
-  // Filter leases based on current filter state
+  // Filter and sort leases
   const filteredLeases = useMemo(() => {
-    return allLeases.filter(lease => {
+    let filtered = allLeases.filter(lease => {
       // Search filter
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase()
@@ -91,7 +96,54 @@ export default function LeasesPage() {
 
       return true
     })
-  }, [allLeases, filters])
+
+    // Sort filtered leases
+    filtered.sort((a, b) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortField) {
+        case 'property':
+          aValue = (a.RENT_properties?.name || '').toLowerCase()
+          bValue = (b.RENT_properties?.name || '').toLowerCase()
+          break
+        case 'tenant':
+          aValue = (a.RENT_tenants?.full_name || '').toLowerCase()
+          bValue = (b.RENT_tenants?.full_name || '').toLowerCase()
+          break
+        case 'lease_start_date':
+          aValue = a.lease_start_date || ''
+          bValue = b.lease_start_date || ''
+          break
+        case 'rent':
+          aValue = a.rent || 0
+          bValue = b.rent || 0
+          break
+        case 'status':
+          aValue = (a.status || 'active').toLowerCase()
+          bValue = (b.status || 'active').toLowerCase()
+          break
+        default:
+          aValue = ''
+          bValue = ''
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return filtered
+  }, [allLeases, filters, sortField, sortDirection])
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
 
   const handleAddLease = () => {
     setShowAddModal(true)
@@ -305,20 +357,52 @@ export default function LeasesPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Property / Tenant
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('property')}
+                >
+                  <div className="flex items-center">
+                    Property / Tenant
+                    {sortField === 'property' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Lease Period
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('lease_start_date')}
+                >
+                  <div className="flex items-center">
+                    Lease Period
+                    {sortField === 'lease_start_date' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rent
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('rent')}
+                >
+                  <div className="flex items-center">
+                    Rent
+                    {sortField === 'rent' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Due Date
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('status')}
+                >
+                  <div className="flex items-center">
+                    Status
+                    {sortField === 'status' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions

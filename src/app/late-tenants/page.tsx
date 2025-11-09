@@ -609,7 +609,12 @@ export default function LateTenantsPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredLateTenants.map((tenant, index) => (
-                    <tr key={index} className={`hover:bg-gray-50 ${getDaysLateBorder(tenant.daysLate)}`}>
+                    <tr 
+                      key={index} 
+                      className={`hover:bg-gray-50 cursor-pointer ${getDaysLateBorder(tenant.daysLate)}`}
+                      onDoubleClick={() => handleShowAllPayments(tenant)}
+                      title="Double-click to view payments"
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <ExclamationTriangleIcon className="h-5 w-5 text-red-600 mr-2" />
@@ -651,13 +656,10 @@ export default function LateTenantsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
-                          onClick={() => handleShowAllPayments(tenant)}
-                          className="text-blue-600 hover:text-blue-900 mr-3"
-                        >
-                          View Payments
-                        </button>
-                        <button
-                          onClick={() => handleWaiveLateFee(tenant)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleWaiveLateFee(tenant)
+                          }}
                           className="text-yellow-600 hover:text-yellow-900"
                         >
                           Waive Fee
@@ -672,7 +674,12 @@ export default function LateTenantsPage() {
             {/* Mobile Card View */}
             <div className="lg:hidden">
               {filteredLateTenants.map((tenant, index) => (
-                <div key={index} className={`p-4 border-b border-gray-200 last:border-b-0 ${getDaysLateBorder(tenant.daysLate)}`}>
+                <div 
+                  key={index} 
+                  className={`p-4 border-b border-gray-200 last:border-b-0 cursor-pointer ${getDaysLateBorder(tenant.daysLate)}`}
+                  onDoubleClick={() => handleShowAllPayments(tenant)}
+                  title="Double-tap to view payments"
+                >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center flex-1">
                       <ExclamationTriangleIcon className="h-5 w-5 text-red-600 mr-2 flex-shrink-0" />
@@ -718,16 +725,13 @@ export default function LateTenantsPage() {
                     </div>
                   </div>
 
-                  <div className="flex space-x-2">
+                  <div>
                     <button
-                      onClick={() => handleShowAllPayments(tenant)}
-                      className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-blue-700 transition-colors"
-                    >
-                      View Payments
-                    </button>
-                    <button
-                      onClick={() => handleWaiveLateFee(tenant)}
-                      className="flex-1 bg-yellow-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-yellow-700 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleWaiveLateFee(tenant)
+                      }}
+                      className="w-full bg-yellow-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-yellow-700 transition-colors"
                     >
                       Waive Fee
                     </button>

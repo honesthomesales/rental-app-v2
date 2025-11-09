@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { Expense } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
-type SortField = 'category' | 'amount' | 'expense_date' | 'memo' | 'property_name' | 'due_date' | 'amount_owed' | 'last_paid_date' | 'mail_info' | 'loan_number' | 'phone_number' | 'balance' | 'interest_rate'
+type SortField = 'category' | 'amount' | 'expense_date' | 'memo' | 'property_name' | 'day_of_month' | 'amount_owed' | 'last_paid_date' | 'mail_info' | 'loan_number' | 'phone_number' | 'balance' | 'interest_rate'
 type SortDirection = 'asc' | 'desc'
 
 type ExpenseWithProperty = Expense & {
@@ -290,11 +290,11 @@ export default function ExpensesPage() {
                   </th>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('due_date')}
+                    onClick={() => handleSort('day_of_month')}
                   >
                     <div className="flex items-center">
-                      Due Date
-                      {sortField === 'due_date' && (
+                      Due Day
+                      {sortField === 'day_of_month' && (
                         <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </div>
@@ -377,7 +377,7 @@ export default function ExpensesPage() {
                       {formatCurrency(expense.amount_owed)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDate(expense.due_date)}
+                      {expense.day_of_month ? `Day ${expense.day_of_month}` : 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatDate(expense.last_paid_date)}
@@ -483,7 +483,7 @@ export default function ExpensesPage() {
                 expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],
                 memo: formData.get('mail_info') as string || '',
                 amount_owed: parseFloat(formData.get('amount_owed') as string) || 0,
-                due_date: formData.get('due_date') as string || undefined,
+                day_of_month: formData.get('day_of_month') ? parseInt(formData.get('day_of_month') as string) : undefined,
                 last_paid_date: formData.get('last_paid_date') as string || undefined,
                 mail_info: formData.get('mail_info') as string || undefined,
                 loan_number: formData.get('loan_number') as string || undefined,
@@ -554,12 +554,15 @@ export default function ExpensesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Due Date</label>
+                    <label className="block text-sm font-medium text-gray-700">Due Day of Month</label>
                     <input
-                      type="date"
-                      name="due_date"
-                      defaultValue={editingExpense?.due_date || ''}
+                      type="number"
+                      name="day_of_month"
+                      min="1"
+                      max="31"
+                      defaultValue={editingExpense?.day_of_month || ''}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                      placeholder="Enter day (1-31)"
                     />
                   </div>
                   <div>

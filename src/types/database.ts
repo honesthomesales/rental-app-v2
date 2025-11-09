@@ -403,6 +403,7 @@ export interface Expense {
   address: string
   amount_owed: number
   due_date?: string
+  day_of_month?: number
   last_paid_date?: string
   mail_info?: string
   loan_number?: string

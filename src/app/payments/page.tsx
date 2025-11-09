@@ -91,7 +91,7 @@ export default function PaymentsPage() {
     const printWin = window.open('', '_blank', 'width=900,height=1100')
     if (!printWin) { alert('Please allow popups'); return }
     const html = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>${noticeTitle}</title><style>
+<html><head><meta charset="UTF-8"><title></title><style>
 @page{margin:.5in;size:letter portrait}*{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#000;background:#fff;padding:20px}
 .t{font-size:22px;font-weight:bold;text-align:center;margin-bottom:20px}

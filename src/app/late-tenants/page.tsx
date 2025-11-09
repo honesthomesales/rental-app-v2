@@ -21,7 +21,9 @@ export default function LateTenantsPage() {
   const [expandedTenant, setExpandedTenant] = useState<string | null>(null)
   const [selectedPeriod, setSelectedPeriod] = useState<{tenant: any, period: any} | null>(null)
   const [showPeriodModal, setShowPeriodModal] = useState(false)
-  const [viewMode, setViewMode] = useState<'detailed' | 'condensed'>('detailed')
+  const [viewMode, setViewMode] = useState<'detailed' | 'condensed'>('condensed')
+  const [sortField, setSortField] = useState<string>('daysLate')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showPaymentsModal, setShowPaymentsModal] = useState(false)
   const [selectedTenantPayments, setSelectedTenantPayments] = useState<any[]>([])
   const [selectedTenantInfo, setSelectedTenantInfo] = useState<any>(null)
@@ -61,10 +63,10 @@ export default function LateTenantsPage() {
     }
   }
 
-  // Filter late tenants based on current filter state
+  // Filter and sort late tenants
   const filteredLateTenants = useMemo(() => {
     console.log('🔄 Filtering with:', filters, 'Total tenants:', allLateTenants.length)
-    return allLateTenants.filter(tenant => {
+    let filtered = allLateTenants.filter(tenant => {
       // Days late filter
       if (filters.daysLate !== 'all') {
         const minDays = parseInt(filters.daysLate)
@@ -95,7 +97,54 @@ export default function LateTenantsPage() {
 
       return true
     })
-  }, [allLateTenants, filters])
+
+    // Sort filtered tenants
+    filtered.sort((a, b) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortField) {
+        case 'daysLate':
+          aValue = a.daysLate || 0
+          bValue = b.daysLate || 0
+          break
+        case 'tenant':
+          aValue = (a.tenant?.full_name || '').toLowerCase()
+          bValue = (b.tenant?.full_name || '').toLowerCase()
+          break
+        case 'property':
+          aValue = (a.property?.name || '').toLowerCase()
+          bValue = (b.property?.name || '').toLowerCase()
+          break
+        case 'totalOwedLate':
+          aValue = a.totalOwedLate || 0
+          bValue = b.totalOwedLate || 0
+          break
+        case 'cadence':
+          aValue = (a.lease?.rent_cadence || '').toLowerCase()
+          bValue = (b.lease?.rent_cadence || '').toLowerCase()
+          break
+        default:
+          aValue = ''
+          bValue = ''
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return filtered
+  }, [allLateTenants, filters, sortField, sortDirection])
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
 
   // Use filteredLateTenants directly - no need for separate lateTenants state
 
@@ -506,20 +555,52 @@ export default function LateTenantsPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Property Address
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('property')}
+                    >
+                      <div className="flex items-center">
+                        Property Address
+                        {sortField === 'property' && (
+                          <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Renter
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('tenant')}
+                    >
+                      <div className="flex items-center">
+                        Renter
+                        {sortField === 'tenant' && (
+                          <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Late Periods
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('daysLate')}
+                    >
+                      <div className="flex items-center">
+                        Late Periods
+                        {sortField === 'daysLate' && (
+                          <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Total Late Fees
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total Late Amount
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('totalOwedLate')}
+                    >
+                      <div className="flex items-center">
+                        Total Late Amount
+                        {sortField === 'totalOwedLate' && (
+                          <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions

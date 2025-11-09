@@ -23,6 +23,8 @@ export default function Dashboard() {
   const [insuranceSortDirection, setInsuranceSortDirection] = useState<'asc' | 'desc'>('asc')
   const [taxSortField, setTaxSortField] = useState<string>('name')
   const [taxSortDirection, setTaxSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [insuranceSearchTerm, setInsuranceSearchTerm] = useState<string>('')
+  const [taxSearchTerm, setTaxSearchTerm] = useState<string>('')
 
   useEffect(() => {
     fetchDashboardData()
@@ -130,7 +132,21 @@ export default function Dashboard() {
 
   const getSortedInsuranceProperties = () => {
     const filtered = getFilteredProperties()
-    return [...filtered].sort((a, b) => {
+    
+    // Apply search filter
+    const searchFiltered = insuranceSearchTerm
+      ? filtered.filter(property => {
+          const searchLower = insuranceSearchTerm.toLowerCase()
+          return (
+            property.name?.toLowerCase().includes(searchLower) ||
+            property.insurance_provider?.toLowerCase().includes(searchLower) ||
+            property.insurance_policy_number?.toLowerCase().includes(searchLower)
+          )
+        })
+      : filtered
+    
+    // Apply sorting
+    return [...searchFiltered].sort((a, b) => {
       let aValue = a[insuranceSortField] || ''
       let bValue = b[insuranceSortField] || ''
       
@@ -145,7 +161,22 @@ export default function Dashboard() {
 
   const getSortedTaxProperties = () => {
     const filtered = getFilteredProperties()
-    return [...filtered].sort((a, b) => {
+    
+    // Apply search filter
+    const searchFiltered = taxSearchTerm
+      ? filtered.filter(property => {
+          const searchLower = taxSearchTerm.toLowerCase()
+          return (
+            property.name?.toLowerCase().includes(searchLower) ||
+            property.owner_name?.toLowerCase().includes(searchLower) ||
+            property.county?.toLowerCase().includes(searchLower) ||
+            property.Map_ID?.toLowerCase().includes(searchLower)
+          )
+        })
+      : filtered
+    
+    // Apply sorting
+    return [...searchFiltered].sort((a, b) => {
       let aValue = a[taxSortField] || ''
       let bValue = b[taxSortField] || ''
       
@@ -225,11 +256,7 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-gray-500">Potential Income</p>
               <p className="text-2xl font-semibold text-gray-900">${metrics?.totalPotentialIncome?.toLocaleString() || 0}</p>
               <p className="text-xs text-gray-500 mt-1">
-                Current: ${metrics?.monthlyIncome?.toLocaleString() || 0} + 
                 Unoccupied: ${metrics?.potentialIncome?.toLocaleString() || 0}
-              </p>
-              <p className="text-xs text-green-600 mt-1 font-medium">
-                ✓ PWA Ready - Install on Mobile!
               </p>
             </div>
           </div>
@@ -336,6 +363,17 @@ export default function Dashboard() {
         
         {showInsuranceSection && (
           <div className="space-y-2">
+            {/* Search Bar */}
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Search by property name, provider, or policy number..."
+                value={insuranceSearchTerm}
+                onChange={(e) => setInsuranceSearchTerm(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
             {/* Insurance List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
               <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr' }}>
@@ -473,6 +511,17 @@ export default function Dashboard() {
         
         {showTaxSection && (
           <div className="space-y-2">
+            {/* Search Bar */}
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Search by property name, owner, county, or map ID..."
+                value={taxSearchTerm}
+                onChange={(e) => setTaxSearchTerm(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
             {/* Tax List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
               <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr 1.5fr' }}>

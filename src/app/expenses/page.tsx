@@ -4,12 +4,13 @@ import React, { useEffect, useState } from 'react'
 import { Expense } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
-type SortField = 'category' | 'amount' | 'expense_date' | 'memo' | 'property_name'
+type SortField = 'category' | 'amount' | 'expense_date' | 'memo' | 'property_name' | 'due_date' | 'amount_owed' | 'last_paid_date' | 'mail_info' | 'loan_number' | 'phone_number' | 'balance' | 'interest_rate'
 type SortDirection = 'asc' | 'desc'
 
 type ExpenseWithProperty = Expense & {
   property_name?: string
   property_address?: string
+  due_date?: string
 }
 
 type Property = {
@@ -199,6 +200,21 @@ export default function ExpensesPage() {
     return `${(rate * 100).toFixed(2)}%`
   }
 
+  const calculateTotals = () => {
+    return filteredExpenses.reduce(
+      (acc, expense) => ({
+        amount_owed: acc.amount_owed + (expense.amount_owed || 0),
+        balance: acc.balance + (expense.balance || 0)
+      }),
+      { amount_owed: 0, balance: 0 }
+    )
+  }
+
+  const calculateBalancePercent = (balance: number, amountOwed: number) => {
+    if (amountOwed === 0) return '0.00%'
+    return `${((balance / amountOwed) * 100).toFixed(2)}%`
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -274,6 +290,17 @@ export default function ExpensesPage() {
                   </th>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('due_date')}
+                  >
+                    <div className="flex items-center">
+                      Due Date
+                      {sortField === 'due_date' && (
+                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('last_paid_date')}
                   >
                     <div className="flex items-center">
@@ -296,28 +323,6 @@ export default function ExpensesPage() {
                   </th>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('loan_number')}
-                  >
-                    <div className="flex items-center">
-                      Loan Number
-                      {sortField === 'loan_number' && (
-                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('phone_number')}
-                  >
-                    <div className="flex items-center">
-                      Phone #
-                      {sortField === 'phone_number' && (
-                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('balance')}
                   >
                     <div className="flex items-center">
@@ -326,6 +331,9 @@ export default function ExpensesPage() {
                         <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Percent
                   </th>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -345,10 +353,21 @@ export default function ExpensesPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredExpenses.map((expense) => (
-                  <tr key={expense.id} className="hover:bg-gray-50">
+                  <tr 
+                    key={expense.id} 
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onDoubleClick={() => handleEditExpense(expense)}
+                    title="Double-click to edit"
+                  >
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <BuildingOfficeIcon className="h-5 w-5 text-blue-600 mr-3" />
+                        <button
+                          onClick={() => handleEditExpense(expense)}
+                          className="text-blue-600 hover:text-blue-900 mr-3"
+                          title="Edit Expense"
+                        >
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
                         <div className="text-sm font-medium text-gray-900">
                           {expense.property_name || 'Unknown Property'}
                         </div>
@@ -358,32 +377,25 @@ export default function ExpensesPage() {
                       {formatCurrency(expense.amount_owed)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatDate(expense.due_date)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatDate(expense.last_paid_date)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
                       {expense.mail_info || 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {expense.loan_number || 'N/A'}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {expense.phone_number || 'N/A'}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatCurrency(expense.balance)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {calculateBalancePercent(expense.balance, expense.amount_owed)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatPercentage(expense.interest_rate)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleEditExpense(expense)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Edit Expense"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
                         <button
                           onClick={() => handleDeleteExpense(expense)}
                           className="text-red-600 hover:text-red-900"
@@ -395,6 +407,37 @@ export default function ExpensesPage() {
                     </td>
                   </tr>
                 ))}
+                {filteredExpenses.length > 0 && (
+                  <tr className="bg-gray-100 font-semibold">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      TOTALS
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(calculateTotals().amount_owed)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      -
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      -
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      -
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(calculateTotals().balance)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {calculateBalancePercent(calculateTotals().balance, calculateTotals().amount_owed)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      -
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      -
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -440,6 +483,7 @@ export default function ExpensesPage() {
                 expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],
                 memo: formData.get('mail_info') as string || '',
                 amount_owed: parseFloat(formData.get('amount_owed') as string) || 0,
+                due_date: formData.get('due_date') as string || undefined,
                 last_paid_date: formData.get('last_paid_date') as string || undefined,
                 mail_info: formData.get('mail_info') as string || undefined,
                 loan_number: formData.get('loan_number') as string || undefined,
@@ -508,14 +552,25 @@ export default function ExpensesPage() {
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Last Paid Date</label>
-                  <input
-                    type="date"
-                    name="last_paid_date"
-                    defaultValue={editingExpense?.last_paid_date || ''}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Due Date</label>
+                    <input
+                      type="date"
+                      name="due_date"
+                      defaultValue={editingExpense?.due_date || ''}
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Last Paid Date</label>
+                    <input
+                      type="date"
+                      name="last_paid_date"
+                      defaultValue={editingExpense?.last_paid_date || ''}
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Mail Info</label>

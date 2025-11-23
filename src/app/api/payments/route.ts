@@ -221,9 +221,18 @@ export async function GET(request: Request) {
         }
         
         // Also fetch ALL payments for the same lease within the invoice month
-        // This ensures we get payments even if they're not linked via invoice_id
+        // Also try property_id as fallback in case payments aren't linked to lease
         let periodPayments: any[] = []
         if (invoice.lease_id) {
+          // Get the property_id from the lease
+          const { data: leaseData, error: leaseError } = await supabaseServer
+            .from('RENT_leases')
+            .select('property_id')
+            .eq('id', invoice.lease_id)
+            .single()
+          
+          const propertyId = leaseData?.property_id
+          
           // Always use due_date to determine the month
           const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date()
           const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1) // First day of month
@@ -232,21 +241,29 @@ export async function GET(request: Request) {
           const startDateStr = startDate.toISOString().split('T')[0]
           const endDateStr = endDate.toISOString().split('T')[0]
           
-          console.log('Fetching ALL payments for lease in month:', {
+          console.log('Fetching ALL payments for lease/property in month:', {
             lease_id: invoice.lease_id,
+            property_id: propertyId,
             due_date: invoice.due_date,
             month_start: startDateStr,
             month_end: endDateStr
           })
           
           // First, get all payments without joins to avoid filtering issues
+          // Query by lease_id OR property_id to catch all payments
           let periodQuery = supabaseServer
             .from('RENT_payments')
             .select('*')
-            .eq('lease_id', invoice.lease_id)
             .gte('payment_date', startDateStr)
             .lte('payment_date', endDateStr)
             .order('payment_date', { ascending: false })
+          
+          // Use OR condition: payments matching lease_id OR property_id
+          if (propertyId) {
+            periodQuery = periodQuery.or(`lease_id.eq.${invoice.lease_id},property_id.eq.${propertyId}`)
+          } else {
+            periodQuery = periodQuery.eq('lease_id', invoice.lease_id)
+          }
           
           const { data: periodPaymentsData, error: periodError } = await periodQuery
           

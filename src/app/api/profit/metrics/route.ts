@@ -168,29 +168,9 @@ export async function GET(request: Request) {
     
     console.log('One-time expenses found:', oneTimeExpenses?.length || 0)
     
-    // Calculate repairs (one-time expenses with category containing "repair" or "maintenance")
-    const repairs = oneTimeExpenses
-      ?.filter(expense => {
-        const category = (expense.category || '').toLowerCase()
-        const description = (expense.mail_info || '').toLowerCase()
-        return category.includes('repair') || 
-               category.includes('maintenance') || 
-               description.includes('repair') || 
-               description.includes('maintenance')
-      })
-      .reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
-    
-    // Calculate other expenses (one-time expenses that aren't repairs)
+    // Calculate other expenses (all one-time expenses)
     const otherExpenses = oneTimeExpenses
-      ?.filter(expense => {
-        const category = (expense.category || '').toLowerCase()
-        const description = (expense.mail_info || '').toLowerCase()
-        return !(category.includes('repair') || 
-                 category.includes('maintenance') || 
-                 description.includes('repair') || 
-                 description.includes('maintenance'))
-      })
-      .reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
+      ?.reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
     
     // Get misc income from expenses with interest_rate = -888
     const { data: miscIncomeExpenses, error: miscIncomeError } = await supabaseServer
@@ -210,9 +190,139 @@ export async function GET(request: Request) {
       ?.reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
     
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
-    const totalDebt = totalFixedExpenses + repairs + otherExpenses
+    const totalDebt = totalFixedExpenses + otherExpenses
     
     const totalIncome = rentCollected + miscIncome
+    
+    // Get property-level details for income and rent
+    const propertyDetails: any[] = []
+    
+    try {
+      // Get all properties
+      const { data: allProperties, error: propsError } = await supabaseServer
+        .from('RENT_properties')
+        .select('id, name, address')
+      
+      if (!propsError && allProperties) {
+        // Get payments grouped by property
+        const { data: paymentsByProperty, error: paymentsError } = await supabaseServer
+          .from('RENT_payments')
+          .select('property_id, amount')
+          .gte('payment_date', startOfMonth)
+          .lte('payment_date', endOfMonth)
+        
+        // Get invoices with lease info to get property_id
+        const { data: invoicesData, error: invoicesError } = await supabaseServer
+          .from('RENT_invoices')
+          .select(`
+            id,
+            lease_id,
+            property_id,
+            amount_total,
+            amount,
+            amount_rent,
+            amount_late,
+            amount_other,
+            due_date
+          `)
+          .gte('due_date', startOfMonth)
+          .lte('due_date', endOfMonth)
+        
+        // Get leases to map invoice lease_id to property_id
+        const { data: leases, error: leasesError } = await supabaseServer
+          .from('RENT_leases')
+          .select('id, property_id')
+        
+        // Create a map of lease_id to property_id
+        const leaseToPropertyMap = new Map<string, string>()
+        leases?.forEach((lease: any) => {
+          if (lease.property_id) {
+            leaseToPropertyMap.set(lease.id, lease.property_id)
+          }
+        })
+        
+        // Map invoices to include property_id from lease
+        const invoicesWithLeases = invoicesData?.map((inv: any) => ({
+          ...inv,
+          property_id: inv.property_id || leaseToPropertyMap.get(inv.lease_id) || null
+        })) || []
+        
+        // Get misc income grouped by property
+        const { data: miscIncomeByProperty, error: miscError } = await supabaseServer
+          .from('RENT_expenses')
+          .select('property_id, amount_owed')
+          .eq('interest_rate', 9.9999)
+          .gte('last_paid_date', startOfMonth)
+          .lte('last_paid_date', endOfMonth)
+        
+        // Get active leases for this property to calculate expected rent if no invoices
+        const { data: activeLeases, error: leasesError2 } = await supabaseServer
+          .from('RENT_leases')
+          .select('id, property_id, rent, rent_cadence, lease_start_date, lease_end_date')
+          .eq('status', 'active')
+        
+        // Build property details
+        allProperties.forEach((property: any) => {
+          const propertyPayments = paymentsByProperty?.filter((p: any) => p.property_id === property.id) || []
+          // Get invoices for this property (check both direct property_id and through lease)
+          const propertyInvoices = invoicesWithLeases?.filter((i: any) => 
+            i.property_id === property.id
+          ) || []
+          const propertyMiscIncome = miscIncomeByProperty?.filter((m: any) => m.property_id === property.id) || []
+          
+          const rentCollectedForProperty = propertyPayments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
+          
+          let expectedRentForProperty = propertyInvoices.reduce((sum: number, inv: any) => {
+            const expected = Number(inv.amount_total) || 
+                            Number(inv.amount) || 
+                            ((Number(inv.amount_rent) || 0) + 
+                             (Number(inv.amount_late) || 0) + 
+                             (Number(inv.amount_other) || 0))
+            return sum + expected
+          }, 0)
+          
+          // If no invoices, calculate from active leases for this property
+          if (expectedRentForProperty === 0 && activeLeases) {
+            const propertyLeases = activeLeases.filter((l: any) => l.property_id === property.id)
+            propertyLeases.forEach((lease: any) => {
+              const leaseStart = new Date(lease.lease_start_date)
+              const leaseEnd = lease.lease_end_date ? new Date(lease.lease_end_date) : new Date(endOfMonth)
+              const monthStart = new Date(startOfMonth)
+              const monthEnd = new Date(endOfMonth)
+              
+              if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
+                const rent = Number(lease.rent) || 0
+                const cadence = lease.rent_cadence?.toLowerCase()
+                
+                if (cadence === 'monthly') {
+                  expectedRentForProperty += rent
+                } else if (cadence === 'biweekly') {
+                  expectedRentForProperty += rent * 2
+                } else if (cadence === 'weekly') {
+                  expectedRentForProperty += rent * 4
+                }
+              }
+            })
+          }
+          
+          const miscIncomeForProperty = propertyMiscIncome.reduce((sum: number, m: any) => sum + (Number(m.amount_owed) || 0), 0)
+          
+          // Include property if it has any activity (rent, expected rent, or misc income)
+          if (rentCollectedForProperty > 0 || expectedRentForProperty > 0 || miscIncomeForProperty > 0) {
+            propertyDetails.push({
+              property_id: property.id,
+              property_name: property.name,
+              property_address: property.address,
+              expected_rent: expectedRentForProperty,
+              rent_collected: rentCollectedForProperty,
+              misc_income: miscIncomeForProperty
+            })
+          }
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching property details:', error)
+    }
     
     // Collection rate as percentage (0-100)
     const collectionRatePercent = expectedRent > 0 ? (rentCollected / expectedRent) * 100 : 0
@@ -228,16 +338,22 @@ export async function GET(request: Request) {
       },
       oneTimeExpenseIncome: {
         expenses: {
-          repairs: Math.round(repairs * 100) / 100,
           otherExpenses: Math.round(otherExpenses * 100) / 100
         },
         income: {
-          miscIncome: Math.round(miscIncome * 100) / 100,
-          rentCollected: Math.round(rentCollected * 100) / 100
+          miscIncome: Math.round(miscIncome * 100) / 100
         },
         totalIncome: Math.round(totalIncome * 100) / 100,
         totalDebt: Math.round(totalDebt * 100) / 100
       },
+      propertyDetails: propertyDetails.map((p: any) => ({
+        property_id: p.property_id,
+        property_name: p.property_name,
+        property_address: p.property_address,
+        expected_rent: Math.round(p.expected_rent * 100) / 100,
+        rent_collected: Math.round(p.rent_collected * 100) / 100,
+        misc_income: Math.round(p.misc_income * 100) / 100
+      }))
       rentCollection: {
         collected: Math.round(rentCollected * 100) / 100,
         expected: Math.round(expectedRent * 100) / 100,

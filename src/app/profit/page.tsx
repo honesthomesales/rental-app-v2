@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { ProfitMetrics, PropertyProfitData } from '@/types/database'
-import { ChartBarIcon, CurrencyDollarIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline'
 
 export default function ProfitPage() {
   const [metrics, setMetrics] = useState<ProfitMetrics | null>(null)
@@ -210,18 +209,10 @@ export default function ProfitPage() {
           {/* Expenses Section */}
           <div className="mb-6">
             <div className="text-sm font-medium text-gray-700 mb-3">Expenses</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-yellow-50 p-3 rounded-lg">
-                <div className="text-xs text-gray-600 mb-1">Repairs</div>
-                <div className="text-lg font-bold text-orange-600">
-                  {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.expenses?.repairs || 0)}
-                </div>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <div className="text-xs text-gray-600 mb-1">Other Expenses</div>
-                <div className="text-lg font-bold text-gray-600">
-                  {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.expenses?.otherExpenses || 0)}
-                </div>
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="text-xs text-gray-600 mb-1">Other Expenses</div>
+              <div className="text-lg font-bold text-gray-600">
+                {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.expenses?.otherExpenses || 0)}
               </div>
             </div>
           </div>
@@ -229,18 +220,10 @@ export default function ProfitPage() {
           {/* Income Section */}
           <div className="mb-6">
             <div className="text-sm font-medium text-gray-700 mb-3">Income</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-green-50 p-3 rounded-lg">
-                <div className="text-xs text-gray-600 mb-1">Misc Income</div>
-                <div className="text-lg font-bold text-green-600">
-                  {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)}
-                </div>
-              </div>
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="text-xs text-gray-600 mb-1">Rent Collected</div>
-                <div className="text-lg font-bold text-blue-600">
-                  {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.income?.rentCollected || 0)}
-                </div>
+            <div className="bg-green-50 p-3 rounded-lg">
+              <div className="text-xs text-gray-600 mb-1">Misc Income</div>
+              <div className="text-lg font-bold text-green-600">
+                {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)}
               </div>
             </div>
           </div>
@@ -250,7 +233,7 @@ export default function ProfitPage() {
             <div className="flex justify-between items-center">
               <span className="text-sm font-medium text-gray-700">Total Income:</span>
               <span className="text-lg font-bold text-green-600">
-                {formatCurrency(monthlyMetrics?.oneTimeExpenseIncome?.totalIncome || 0)}
+                {formatCurrency((monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0))}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -343,7 +326,7 @@ export default function ProfitPage() {
               <div className="text-sm text-gray-600 mb-2">CURRENT PROFIT</div>
               {(() => {
                 const totalIncome = (monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)
-                const totalExpenses = (monthlyMetrics?.fixedExpenses?.total || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.expenses?.repairs || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.expenses?.otherExpenses || 0)
+                const totalExpenses = (monthlyMetrics?.fixedExpenses?.total || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.expenses?.otherExpenses || 0)
                 const profit = totalIncome - totalExpenses
                 return (
                   <div className={`text-6xl font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -386,102 +369,11 @@ export default function ProfitPage() {
       {/* Monthly Metrics View */}
       {renderMetricsView()}
 
-      {/* Key Performance Indicators */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <CurrencyDollarIcon className="h-8 w-8 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">EGI</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                ${metrics?.effectiveGrossIncome?.toLocaleString() || 0}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <ArrowTrendingDownIcon className="h-8 w-8 text-red-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">OPEX</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                ${metrics?.operatingExpenses?.toLocaleString() || 0}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <ArrowTrendingUpIcon className="h-8 w-8 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">NOI</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                ${metrics?.netOperatingIncome?.toLocaleString() || 0}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <ChartBarIcon className="h-8 w-8 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">CFAD</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                ${metrics?.cashFlowAfterDebt?.toLocaleString() || 0}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-blue-600 font-bold text-sm">%</span>
-              </div>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Collection Rate</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {((metrics?.collectionRate || 0) * 100).toFixed(1)}%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="h-8 w-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                <span className="text-yellow-600 font-bold text-sm">$</span>
-              </div>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Late Fee Yield</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {((metrics?.lateFeeYield || 0) * 100).toFixed(1)}%
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Property Performance Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Detailed Income and Rent by Property */}
+      <div className="bg-white rounded-lg shadow overflow-hidden mt-8">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Property Performance</h2>
-          <p className="text-sm text-gray-600 mt-1">Financial metrics by property</p>
+          <h2 className="text-lg font-semibold text-gray-900">Income and Rent Details - {formatMonth(currentDate)}</h2>
+          <p className="text-sm text-gray-600 mt-1">Detailed breakdown by property for the selected month</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -492,95 +384,73 @@ export default function ProfitPage() {
                   Property
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Scheduled Rent
+                  Expected Rent
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Rent Collected
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Late Fees
+                  Misc Income
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Other Income
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  EGI
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  OPEX
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  NOI
+                  Total Income
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {propertyData.map((property, index) => (
+              {monthlyMetrics?.propertyDetails?.map((property: any, index: number) => (
                 <tr key={index} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10">
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {property.property.name}
+                        {property.property_name || 'Unknown Property'}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {property.property.address}
+                        {property.property_address || ''}
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${property.scheduledRent.toLocaleString()}
+                    {formatCurrency(property.expected_rent || 0)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${property.rentCollected.toLocaleString()}
+                    {formatCurrency(property.rent_collected || 0)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${property.lateFees.toLocaleString()}
+                    {formatCurrency(property.misc_income || 0)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${property.otherIncome.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    ${property.effectiveGrossIncome.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${property.operatingExpenses.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    ${property.netOperatingIncome.toLocaleString()}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                    {formatCurrency((property.rent_collected || 0) + (property.misc_income || 0))}
                   </td>
                 </tr>
-              ))}
+              )) || (
+                <tr>
+                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No property data available for {formatMonth(currentDate)}
+                  </td>
+                </tr>
+              )}
+              {monthlyMetrics?.propertyDetails && monthlyMetrics.propertyDetails.length > 0 && (
+                <tr className="bg-gray-100 font-semibold">
+                  <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-gray-100 z-10">
+                    TOTALS
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.expected_rent || 0), 0))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0), 0))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.misc_income || 0), 0))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Charts Placeholder */}
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">NOI Trend</h3>
-          <div className="h-64 bg-gray-100 rounded-lg flex items-center justify-center">
-            <p className="text-gray-500">Chart will be implemented here</p>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">EGI vs OPEX</h3>
-          <div className="h-64 bg-gray-100 rounded-lg flex items-center justify-center">
-            <p className="text-gray-500">Chart will be implemented here</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Export Options */}
-      <div className="mt-8 flex justify-end">
-        <div className="flex space-x-3">
-          <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-            Export CSV
-          </button>
-          <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-            Export XLSX
-          </button>
         </div>
       </div>
     </div>

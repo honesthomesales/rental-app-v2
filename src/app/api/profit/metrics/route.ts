@@ -61,39 +61,49 @@ export async function GET(request: Request) {
     console.log('Total payments from expenses:', totalPayments)
     
     // Get invoices for rent calculation directly from Supabase
+    // First try to get all fields to see what's available
     let rentCollected = 0
     let expectedRent = 0
     
     try {
       const { data: invoices, error: invoicesError } = await supabaseServer
         .from('RENT_invoices')
-        .select('amount_rent, amount_paid, amount_late, amount_other')
+        .select('*')
         .gte('due_date', startOfMonth)
         .lte('due_date', endOfMonth)
       
       if (invoicesError) {
         console.error('Error fetching invoices:', invoicesError)
+        console.error('Error details:', JSON.stringify(invoicesError, null, 2))
       } else {
         console.log('Successfully fetched', invoices?.length || 0, 'invoices')
         
         if (invoices && invoices.length > 0) {
-          // Calculate rent collected from paid invoices (amount_paid includes rent + late fees + other)
-          rentCollected = invoices
-            .filter(invoice => Number(invoice.amount_paid) > 0)
-            .reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0)
+          // Log first invoice to see structure
+          console.log('Sample invoice structure:', JSON.stringify(invoices[0], null, 2))
           
-          // Calculate expected rent from all invoices (amount_rent + amount_late + amount_other)
-          expectedRent = invoices
-            .reduce((sum, invoice) => {
-              const rent = Number(invoice.amount_rent) || 0
-              const late = Number(invoice.amount_late) || 0
-              const other = Number(invoice.amount_other) || 0
-              return sum + rent + late + other
-            }, 0)
+          // Try different field name combinations
+          // The table might use: amount, amount_paid, amount_total, or amount_rent, amount_late, amount_other
+          invoices.forEach((invoice: any) => {
+            // For rent collected, use amount_paid if available, otherwise 0
+            const paid = Number(invoice.amount_paid) || 0
+            rentCollected += paid
+            
+            // For expected rent, try amount_total first, then amount, then sum of amount_rent + amount_late + amount_other
+            const expected = Number(invoice.amount_total) || 
+                            Number(invoice.amount) || 
+                            ((Number(invoice.amount_rent) || 0) + 
+                             (Number(invoice.amount_late) || 0) + 
+                             (Number(invoice.amount_other) || 0))
+            expectedRent += expected
+          })
+        } else {
+          console.log('No invoices found for date range:', startOfMonth, 'to', endOfMonth)
         }
       }
     } catch (error) {
       console.error('Error fetching invoices:', error)
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
     }
     
     console.log('Rent collected:', rentCollected)

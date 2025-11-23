@@ -25,6 +25,8 @@ export default function Dashboard() {
   const [taxSortDirection, setTaxSortDirection] = useState<'asc' | 'desc'>('asc')
   const [insuranceSearchTerm, setInsuranceSearchTerm] = useState<string>('')
   const [taxSearchTerm, setTaxSearchTerm] = useState<string>('')
+  const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
+  const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
 
   useEffect(() => {
     fetchDashboardData()
@@ -45,6 +47,43 @@ export default function Dashboard() {
         const propertiesData = await propertiesResponse.json()
         console.log('Properties data for dashboard:', propertiesData?.length || 0)
         setProperties(propertiesData || [])
+        
+        // Calculate potential income properties (unoccupied with rent_value)
+        if (data && propertiesData) {
+          // Get occupied property IDs from active leases
+          const occupiedPropertyIds = new Set<string>()
+          const today = new Date().toISOString().split('T')[0]
+          
+          // Fetch all leases and filter for active ones
+          const leasesResponse = await fetch('/api/leases')
+          if (leasesResponse.ok) {
+            const leasesData = await leasesResponse.json()
+            leasesData.forEach((lease: any) => {
+              // Check if lease is active (status = 'active' and within date range)
+              if (lease.status === 'active' && lease.property_id) {
+                const startDate = new Date(lease.lease_start_date)
+                const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
+                const todayDate = new Date(today)
+                
+                // Lease is active if today is between start and end (or no end date)
+                if (todayDate >= startDate && (!endDate || todayDate <= endDate)) {
+                  occupiedPropertyIds.add(lease.property_id)
+                }
+              }
+            })
+          }
+          
+          // Filter unoccupied properties with rent_value
+          const potentialProps = propertiesData.filter((property: any) => 
+            !occupiedPropertyIds.has(property.id) && 
+            property.rent_value && 
+            property.rent_value > 0
+          )
+          
+          // Sort by potential income (rent_value) descending
+          potentialProps.sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
+          setPotentialIncomeProperties(potentialProps)
+        }
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
@@ -287,40 +326,81 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Property Type Breakdown */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Type Breakdown</h2>
-        <p className="text-sm text-gray-600 mb-6">Your properties by type</p>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center">
-            <div className="bg-gray-100 rounded-lg p-4 mb-2">
-              <p className="text-2xl font-bold text-gray-900">{metrics?.totalProperties || 0}</p>
-            </div>
-            <p className="text-sm text-gray-600">Total</p>
-          </div>
-          
-          <div className="text-center">
-            <div className="bg-green-100 rounded-lg p-4 mb-2">
-              <p className="text-2xl font-bold text-green-800">{metrics?.propertyTypeBreakdown?.house || 0}</p>
-            </div>
-            <p className="text-sm text-gray-600">House</p>
-          </div>
-          
-          <div className="text-center">
-            <div className="bg-purple-100 rounded-lg p-4 mb-2">
-              <p className="text-2xl font-bold text-purple-800">{metrics?.propertyTypeBreakdown?.doublewide || 0}</p>
-            </div>
-            <p className="text-sm text-gray-600">Doublewide</p>
-          </div>
-          
-          <div className="text-center">
-            <div className="bg-orange-100 rounded-lg p-4 mb-2">
-              <p className="text-2xl font-bold text-orange-800">{metrics?.propertyTypeBreakdown?.singlewide || 0}</p>
-            </div>
-            <p className="text-sm text-gray-600">Singlewide</p>
-          </div>
+      {/* Potential Income Properties */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Potential Income Properties</h2>
+          <button
+            onClick={() => setShowPotentialIncomeSection(!showPotentialIncomeSection)}
+            className="text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-2"
+          >
+            {showPotentialIncomeSection ? (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+                Hide
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                Show
+              </>
+            )}
+          </button>
         </div>
+        
+        {showPotentialIncomeSection && (
+          <div className="mt-4">
+            {potentialIncomeProperties.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No unoccupied properties with potential income found.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Property
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Potential Income
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {potentialIncomeProperties.map((property) => (
+                      <tr key={property.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
+                          {property.address && (
+                            <div className="text-sm text-gray-500">{property.address}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-indigo-600">
+                          ${(property.rent_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                    {potentialIncomeProperties.length > 0 && (
+                      <tr className="bg-gray-100 font-semibold">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          Total Potential Income
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600">
+                          ${potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Quick Actions */}

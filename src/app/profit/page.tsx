@@ -131,17 +131,26 @@ export default function ProfitPage() {
             <button
               onClick={() => navigateMonth('prev')}
               className="p-2 hover:bg-gray-100 rounded-lg"
+              title="Previous month"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <h2 className="text-xl font-semibold text-gray-900">
-              {formatMonth(currentDate)}
-            </h2>
+            <input
+              type="month"
+              value={currentDate.toISOString().slice(0, 7)}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setCurrentDate(new Date(e.target.value + '-01'))
+                }
+              }}
+              className="text-xl font-semibold text-gray-900 border-none bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
+            />
             <button
               onClick={() => navigateMonth('next')}
               className="p-2 hover:bg-gray-100 rounded-lg"
+              title="Next month"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -272,18 +281,18 @@ export default function ProfitPage() {
                   fill="none"
                   strokeLinecap="round"
                 />
-                {/* Progress arc - dynamic based on collection rate */}
+                {/* Progress arc - dynamic based on collection rate (use decimal 0-1) */}
                 <path
                   d="M 10 45 A 40 40 0 0 1 90 45"
                   stroke="#eab308"
                   strokeWidth="8"
                   fill="none"
                   strokeLinecap="round"
-                  strokeDasharray={`${(monthlyMetrics?.rentCollection?.collectionRate || 0) * 1.26}, 126`}
+                  strokeDasharray={`${(monthlyMetrics?.rentCollection?.collectionRateDecimal || 0) * 126}, 126`}
                 />
                 {/* Center dot */}
                 <circle cx="50" cy="45" r="3" fill="#6b7280" />
-                {/* Needle - rotated based on collection rate */}
+                {/* Needle - rotated based on collection rate (use decimal 0-1) */}
                 <line
                   x1="50"
                   y1="45"
@@ -292,7 +301,7 @@ export default function ProfitPage() {
                   stroke="#374151"
                   strokeWidth="2"
                   strokeLinecap="round"
-                  transform={`rotate(${((monthlyMetrics?.rentCollection?.collectionRate || 0) * 180) - 90} 50 45)`}
+                  transform={`rotate(${((monthlyMetrics?.rentCollection?.collectionRateDecimal || 0) * 180) - 90} 50 45)`}
                 />
               </svg>
               <div className="absolute inset-0 flex items-end justify-center pb-2">
@@ -332,9 +341,16 @@ export default function ProfitPage() {
           <div className="mt-6 pt-4 border-t border-gray-200">
             <div className="text-center">
               <div className="text-sm text-gray-600 mb-2">CURRENT PROFIT</div>
-              <div className={`text-6xl font-bold ${((monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)) - (monthlyMetrics?.oneTimeExpenseIncome?.totalDebt || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(((monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)) - (monthlyMetrics?.oneTimeExpenseIncome?.totalDebt || 0))}
-              </div>
+              {(() => {
+                const totalIncome = (monthlyMetrics?.rentCollection?.collected || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.income?.miscIncome || 0)
+                const totalExpenses = (monthlyMetrics?.fixedExpenses?.total || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.expenses?.repairs || 0) + (monthlyMetrics?.oneTimeExpenseIncome?.expenses?.otherExpenses || 0)
+                const profit = totalIncome - totalExpenses
+                return (
+                  <div className={`text-6xl font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(profit)}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>

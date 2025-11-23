@@ -60,50 +60,97 @@ export async function GET(request: Request) {
     console.log('Expenses found:', expenses?.length || 0)
     console.log('Total payments from expenses:', totalPayments)
     
-    // Get invoices for rent calculation using the same approach as payments page
+    // Get invoices for rent calculation directly from Supabase
     let rentCollected = 0
     let expectedRent = 0
     
     try {
-      const invoicesResponse = await fetch(
-        `http://localhost:3000/api/invoices?from=${startOfMonth}&to=${endOfMonth}`
-      )
+      const { data: invoices, error: invoicesError } = await supabaseServer
+        .from('RENT_invoices')
+        .select('amount_rent, amount_paid, amount_late, amount_other')
+        .gte('due_date', startOfMonth)
+        .lte('due_date', endOfMonth)
       
-      if (invoicesResponse.ok) {
-        const invoices = await invoicesResponse.json()
-        console.log('Successfully fetched', invoices?.length || 0, 'invoices from API')
+      if (invoicesError) {
+        console.error('Error fetching invoices:', invoicesError)
+      } else {
+        console.log('Successfully fetched', invoices?.length || 0, 'invoices')
         
         if (invoices && invoices.length > 0) {
-          // Calculate rent collected from paid invoices
+          // Calculate rent collected from paid invoices (amount_paid includes rent + late fees + other)
           rentCollected = invoices
             .filter(invoice => Number(invoice.amount_paid) > 0)
             .reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0)
           
-          // Calculate expected rent from all invoices
+          // Calculate expected rent from all invoices (amount_rent + amount_late + amount_other)
           expectedRent = invoices
-            .reduce((sum, invoice) => sum + Number(invoice.amount_rent), 0)
+            .reduce((sum, invoice) => {
+              const rent = Number(invoice.amount_rent) || 0
+              const late = Number(invoice.amount_late) || 0
+              const other = Number(invoice.amount_other) || 0
+              return sum + rent + late + other
+            }, 0)
         }
-      } else {
-        console.error('Failed to fetch invoices from API:', invoicesResponse.status, invoicesResponse.statusText)
       }
     } catch (error) {
-      console.error('Error fetching invoices from API:', error)
+      console.error('Error fetching invoices:', error)
     }
     
     console.log('Rent collected:', rentCollected)
     console.log('Expected rent:', expectedRent)
     
-    // For now, set repairs and other expenses to 0 (would need expense tracking table)
-    const repairs = 0
-    const otherExpenses = 0
-    const miscIncome = 0 // Would need to track non-rent income separately
+    // Get one-time expenses for the month to calculate repairs, other expenses, and misc income
+    const { data: oneTimeExpenses, error: oneTimeError } = await supabaseServer
+      .from('RENT_expenses')
+      .select('category, amount_owed, last_paid_date, mail_info')
+      .eq('interest_rate', -9.9999) // One-time expenses are marked with -9.9999
+      .gte('last_paid_date', startOfMonth)
+      .lte('last_paid_date', endOfMonth)
+    
+    if (oneTimeError) {
+      console.error('Error fetching one-time expenses:', oneTimeError)
+    }
+    
+    console.log('One-time expenses found:', oneTimeExpenses?.length || 0)
+    
+    // Calculate repairs (one-time expenses with category containing "repair" or "maintenance")
+    const repairs = oneTimeExpenses
+      ?.filter(expense => {
+        const category = (expense.category || '').toLowerCase()
+        const description = (expense.mail_info || '').toLowerCase()
+        return category.includes('repair') || 
+               category.includes('maintenance') || 
+               description.includes('repair') || 
+               description.includes('maintenance')
+      })
+      .reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
+    
+    // Calculate other expenses (one-time expenses that aren't repairs)
+    const otherExpenses = oneTimeExpenses
+      ?.filter(expense => {
+        const category = (expense.category || '').toLowerCase()
+        const description = (expense.mail_info || '').toLowerCase()
+        return !(category.includes('repair') || 
+                 category.includes('maintenance') || 
+                 description.includes('repair') || 
+                 description.includes('maintenance'))
+      })
+      .reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
+    
+    // Misc Income: For now, we'll need to identify income vs expenses
+    // One-time expenses with positive amounts could be income if they're not expenses
+    // For now, set to 0 - this would need a flag or category to distinguish income from expenses
+    const miscIncome = 0
     
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const totalDebt = totalFixedExpenses + repairs + otherExpenses
     
     const totalIncome = rentCollected + miscIncome
     
-    const collectionRate = expectedRent > 0 ? (rentCollected / expectedRent) * 100 : 0
+    // Collection rate as percentage (0-100)
+    const collectionRatePercent = expectedRent > 0 ? (rentCollected / expectedRent) * 100 : 0
+    // Collection rate as decimal (0-1) for gauge
+    const collectionRate = expectedRent > 0 ? (rentCollected / expectedRent) : 0
     
     const metrics = {
       fixedExpenses: {
@@ -127,7 +174,8 @@ export async function GET(request: Request) {
       rentCollection: {
         collected: Math.round(rentCollected * 100) / 100,
         expected: Math.round(expectedRent * 100) / 100,
-        collectionRate: Math.round(collectionRate * 100) / 100
+        collectionRate: Math.round(collectionRatePercent * 100) / 100, // Percentage for display
+        collectionRateDecimal: collectionRate // Decimal 0-1 for gauge
       }
     }
     

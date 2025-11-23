@@ -207,12 +207,23 @@ export default function ExpensesPage() {
       const method = editingOneTimeExpense ? 'PUT' : 'POST'
       
       // Ensure interest_rate is set to -999 for one-time expenses
-      const oneTimeData = {
-        ...expenseData,
+      // Filter out undefined and empty string values
+      const oneTimeData: any = {
         interest_rate: -999,
         balance: 0, // Set balance to 0 for one-time expenses
-        address: expenseData.address || 'N/A',
-        category: expenseData.category || 'One-Time Expense'
+        address: 'N/A',
+        category: 'One-Time Expense',
+        amount_owed: expenseData.amount_owed || 0,
+        mail_info: expenseData.mail_info || '',
+        last_paid_date: expenseData.last_paid_date,
+        expense_date: expenseData.expense_date || expenseData.last_paid_date || new Date().toISOString().split('T')[0],
+        amount: expenseData.amount || expenseData.amount_owed || 0,
+        memo: expenseData.mail_info || ''
+      }
+      
+      // Only include property_id if it's provided
+      if (expenseData.property_id) {
+        oneTimeData.property_id = expenseData.property_id
       }
       
       const response = await fetch(url, {
@@ -226,7 +237,9 @@ export default function ExpensesPage() {
       if (!response.ok) {
         const errorData = await response.json()
         console.error('API error:', errorData)
-        throw new Error(errorData.error || 'Failed to save one-time expense')
+        const errorMessage = errorData.error || 'Failed to save one-time expense'
+        console.error('Error details:', errorData.details)
+        throw new Error(errorMessage)
       }
 
       await fetchExpenses()
@@ -837,8 +850,9 @@ export default function ExpensesPage() {
             <form onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
-              const expenseData = {
-                property_id: formData.get('property_id') as string || undefined,
+              const propertyId = formData.get('property_id') as string
+              const expenseData: Partial<Expense> = {
+                property_id: propertyId && propertyId !== '' ? propertyId : undefined,
                 category: 'One-Time Expense',
                 amount: parseFloat(formData.get('amount_owed') as string) || 0,
                 expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],

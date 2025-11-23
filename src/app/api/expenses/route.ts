@@ -43,13 +43,18 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Error creating expense:', error)
-      return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 })
+      return NextResponse.json({ 
+        error: error.message || 'Failed to create expense',
+        details: error 
+      }, { status: 500 })
     }
 
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error in create expense API:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'Internal server error' 
+    }, { status: 500 })
   }
 }
 
@@ -72,13 +77,18 @@ export async function PUT(request: NextRequest) {
 
     if (error) {
       console.error('Error updating expense:', error)
-      return NextResponse.json({ error: 'Failed to update expense' }, { status: 500 })
+      return NextResponse.json({ 
+        error: error.message || 'Failed to update expense',
+        details: error 
+      }, { status: 500 })
     }
 
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error in update expense API:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'Internal server error' 
+    }, { status: 500 })
   }
 }
 

@@ -221,9 +221,24 @@ export async function GET(request: Request) {
         }
         
         // Also fetch payments for the same lease within the invoice period
-        // If period_start/period_end are not available, use due_date as fallback
+        // Use the invoice's due_date month as the primary filter
         let periodPayments: any[] = []
         if (invoice.lease_id) {
+          // Always use due_date to determine the month, regardless of period_start/period_end
+          const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date()
+          const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1) // First day of month
+          const endDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0) // Last day of month
+          
+          const startDateStr = startDate.toISOString().split('T')[0]
+          const endDateStr = endDate.toISOString().split('T')[0]
+          
+          console.log('Fetching period payments for lease:', {
+            lease_id: invoice.lease_id,
+            due_date: invoice.due_date,
+            month_start: startDateStr,
+            month_end: endDateStr
+          })
+          
           let periodQuery = supabaseServer
             .from('RENT_payments')
             .select(`
@@ -247,30 +262,21 @@ export async function GET(request: Request) {
               )
             `)
             .eq('lease_id', invoice.lease_id)
-          
-          // Use period dates if available, otherwise use due_date ± 15 days
-          if (invoice.period_start && invoice.period_end) {
-            periodQuery = periodQuery
-              .gte('payment_date', invoice.period_start)
-              .lte('payment_date', invoice.period_end)
-          } else if (invoice.due_date) {
-            // Fallback: get payments within 30 days before and after due_date (full month range)
-            const dueDate = new Date(invoice.due_date)
-            const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1) // First day of month
-            const endDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0) // Last day of month
-            
-            periodQuery = periodQuery
-              .gte('payment_date', startDate.toISOString().split('T')[0])
-              .lte('payment_date', endDate.toISOString().split('T')[0])
-          }
-          
-          periodQuery = periodQuery.order('payment_date', { ascending: false })
+            .gte('payment_date', startDateStr)
+            .lte('payment_date', endDateStr)
+            .order('payment_date', { ascending: false })
           
           const { data: periodPaymentsData, error: periodError } = await periodQuery
           
           console.log('Period payments query result:', { 
             count: periodPaymentsData?.length || 0,
-            payments: periodPaymentsData?.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date, invoice_id: p.invoice_id })),
+            payments: periodPaymentsData?.map(p => ({ 
+              id: p.id, 
+              amount: p.amount, 
+              date: p.payment_date, 
+              invoice_id: p.invoice_id,
+              lease_id: p.lease_id
+            })),
             error: periodError 
           })
           

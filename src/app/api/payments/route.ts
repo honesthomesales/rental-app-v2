@@ -220,11 +220,11 @@ export async function GET(request: Request) {
           console.error('Error fetching linked payments (will continue with period payments):', linkedError)
         }
         
-        // Also fetch payments for the same lease within the invoice period
-        // Use the invoice's due_date month as the primary filter
+        // Also fetch ALL payments for the same lease within the invoice month
+        // This ensures we get payments even if they're not linked via invoice_id
         let periodPayments: any[] = []
         if (invoice.lease_id) {
-          // Always use due_date to determine the month, regardless of period_start/period_end
+          // Always use due_date to determine the month
           const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date()
           const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1) // First day of month
           const endDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0) // Last day of month
@@ -232,35 +232,17 @@ export async function GET(request: Request) {
           const startDateStr = startDate.toISOString().split('T')[0]
           const endDateStr = endDate.toISOString().split('T')[0]
           
-          console.log('Fetching period payments for lease:', {
+          console.log('Fetching ALL payments for lease in month:', {
             lease_id: invoice.lease_id,
             due_date: invoice.due_date,
             month_start: startDateStr,
             month_end: endDateStr
           })
           
+          // First, get all payments without joins to avoid filtering issues
           let periodQuery = supabaseServer
             .from('RENT_payments')
-            .select(`
-              *,
-              RENT_tenants(
-                id,
-                full_name,
-                first_name,
-                last_name,
-                email
-              ),
-              RENT_properties(
-                id,
-                name,
-                address
-              ),
-              RENT_leases(
-                id,
-                rent,
-                status
-              )
-            `)
+            .select('*')
             .eq('lease_id', invoice.lease_id)
             .gte('payment_date', startDateStr)
             .lte('payment_date', endDateStr)
@@ -268,24 +250,58 @@ export async function GET(request: Request) {
           
           const { data: periodPaymentsData, error: periodError } = await periodQuery
           
-          console.log('Period payments query result:', { 
+          console.log('Period payments query result (raw):', { 
             count: periodPaymentsData?.length || 0,
             payments: periodPaymentsData?.map(p => ({ 
               id: p.id, 
               amount: p.amount, 
               date: p.payment_date, 
               invoice_id: p.invoice_id,
-              lease_id: p.lease_id
+              lease_id: p.lease_id,
+              property_id: p.property_id
             })),
             error: periodError 
           })
           
           if (periodError) {
             console.error('Error fetching period payments:', periodError)
-          } else {
-            // Filter out payments that are already in linkedPayments
-            const linkedPaymentIds = new Set(safeLinkedPayments.map(p => p.id))
-            periodPayments = (periodPaymentsData || []).filter(p => !linkedPaymentIds.has(p.id))
+          } else if (periodPaymentsData && periodPaymentsData.length > 0) {
+            // Now fetch the related data for these payments
+            const paymentIds = periodPaymentsData.map(p => p.id)
+            const { data: enrichedPayments, error: enrichError } = await supabaseServer
+              .from('RENT_payments')
+              .select(`
+                *,
+                RENT_tenants(
+                  id,
+                  full_name,
+                  first_name,
+                  last_name,
+                  email
+                ),
+                RENT_properties(
+                  id,
+                  name,
+                  address
+                ),
+                RENT_leases(
+                  id,
+                  rent,
+                  status
+                )
+              `)
+              .in('id', paymentIds)
+            
+            if (enrichError) {
+              console.error('Error enriching payments:', enrichError)
+              // Use raw payments if enrichment fails
+              periodPayments = periodPaymentsData
+            } else {
+              // Filter out payments that are already in linkedPayments
+              const linkedPaymentIds = new Set(safeLinkedPayments.map(p => p.id))
+              periodPayments = (enrichedPayments || []).filter(p => !linkedPaymentIds.has(p.id))
+            }
+            
             console.log(`Found ${periodPayments.length} period payments (after filtering duplicates) for invoice ${invoiceId}`)
           }
         }

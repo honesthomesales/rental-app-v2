@@ -257,10 +257,20 @@ return'<div class="s">'+l+'</div>';
 
     try {
       // Fetch all payments for this invoice
-      const response = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+      const url = `/api/payments?invoiceId=${invoice.id}`
+      console.log('Fetching payments from:', url)
+      const response = await fetch(url)
       const data = await response.json()
       
-      console.log('Payments for invoice:', data)
+      console.log('Payments for invoice:', {
+        invoiceId: invoice.id,
+        invoiceNo: invoice.invoice_no,
+        dueDate: invoice.due_date,
+        periodStart: invoice.period_start,
+        periodEnd: invoice.period_end,
+        paymentsCount: Array.isArray(data) ? data.length : 0,
+        payments: data
+      })
       setInvoicePayments(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Error fetching payments:', error)
@@ -1366,7 +1376,7 @@ return'<div class="s">'+l+'</div>';
                                 Edit
                               </button>
                               <button
-                                onClick={() => handleDeletePayment(payment.id, payment.invoice_id)}
+                                onClick={() => handleDeletePayment(payment.id, payment.invoice_id || editingInvoice?.id)}
                                 className="px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors"
                               >
                                 Delete

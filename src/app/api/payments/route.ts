@@ -202,9 +202,10 @@ export async function GET(request: Request) {
         }
         
         // Also fetch payments for the same lease within the invoice period
+        // If period_start/period_end are not available, use due_date as fallback
         let periodPayments: any[] = []
-        if (invoice.lease_id && invoice.period_start && invoice.period_end) {
-          const { data: periodPaymentsData, error: periodError } = await supabaseServer
+        if (invoice.lease_id) {
+          let periodQuery = supabaseServer
             .from('RENT_payments')
             .select(`
               *,
@@ -227,15 +228,35 @@ export async function GET(request: Request) {
               )
             `)
             .eq('lease_id', invoice.lease_id)
-            .gte('payment_date', invoice.period_start)
-            .lte('payment_date', invoice.period_end)
             .is('invoice_id', null) // Only get payments not already linked
-            .order('payment_date', { ascending: false })
+          
+          // Use period dates if available, otherwise use due_date ± 15 days
+          if (invoice.period_start && invoice.period_end) {
+            periodQuery = periodQuery
+              .gte('payment_date', invoice.period_start)
+              .lte('payment_date', invoice.period_end)
+          } else if (invoice.due_date) {
+            // Fallback: get payments within 15 days before and after due_date
+            const dueDate = new Date(invoice.due_date)
+            const startDate = new Date(dueDate)
+            startDate.setDate(startDate.getDate() - 15)
+            const endDate = new Date(dueDate)
+            endDate.setDate(endDate.getDate() + 15)
+            
+            periodQuery = periodQuery
+              .gte('payment_date', startDate.toISOString().split('T')[0])
+              .lte('payment_date', endDate.toISOString().split('T')[0])
+          }
+          
+          periodQuery = periodQuery.order('payment_date', { ascending: false })
+          
+          const { data: periodPaymentsData, error: periodError } = await periodQuery
           
           if (periodError) {
             console.error('Error fetching period payments:', periodError)
           } else {
             periodPayments = periodPaymentsData || []
+            console.log(`Found ${periodPayments.length} period payments for invoice ${invoiceId}`)
           }
         }
         
@@ -245,6 +266,8 @@ export async function GET(request: Request) {
           new Map(allPayments.map(p => [p.id, p])).values()
         )
         payments = uniquePayments
+        
+        console.log(`Invoice ${invoiceId}: Found ${linkedPayments?.length || 0} linked payments, ${periodPayments.length} period payments, ${uniquePayments.length} total unique payments`)
       }
     } else {
       // Build the query for non-invoice queries

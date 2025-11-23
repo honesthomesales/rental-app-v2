@@ -262,6 +262,11 @@ export async function GET(request: Request) {
           .eq('status', 'active')
         
         // Build property details
+        console.log('Building property details. Total properties:', allProperties?.length || 0)
+        console.log('Payments by property count:', paymentsByProperty?.length || 0)
+        console.log('Invoices with leases count:', invoicesWithLeases?.length || 0)
+        console.log('Misc income by property count:', miscIncomeByProperty?.length || 0)
+        
         allProperties.forEach((property: any) => {
           const propertyPayments = paymentsByProperty?.filter((p: any) => p.property_id === property.id) || []
           // Get invoices for this property (check both direct property_id and through lease)
@@ -319,6 +324,8 @@ export async function GET(request: Request) {
             })
           }
         })
+        
+        console.log('Property details built. Count:', propertyDetails.length)
       }
     } catch (error) {
       console.error('Error fetching property details:', error)
@@ -362,7 +369,8 @@ export async function GET(request: Request) {
       }
     }
     
-    console.log('Calculated metrics:', metrics)
+    console.log('Calculated metrics:', JSON.stringify(metrics, null, 2))
+    console.log('Property details in response:', metrics.propertyDetails?.length || 0)
     
     return NextResponse.json(metrics)
   } catch (error) {

@@ -86,8 +86,10 @@ export default function ProfitPage() {
       if (response.ok) {
         const data = await response.json()
         console.log('Monthly metrics received:', data)
-        console.log('Rent collected from API:', data?.oneTimeExpenseIncome?.income?.rentCollected)
+        console.log('Rent collected from API:', data?.rentCollection?.collected)
         console.log('Expected rent from API:', data?.rentCollection?.expected)
+        console.log('Property details from API:', data?.propertyDetails)
+        console.log('Property details count:', data?.propertyDetails?.length || 0)
         setMonthlyMetrics(data)
       } else {
         console.error('Failed to fetch monthly metrics:', response.status)
@@ -398,35 +400,37 @@ export default function ProfitPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {monthlyMetrics?.propertyDetails?.map((property: any, index: number) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {property.property_name || 'Unknown Property'}
+              {monthlyMetrics?.propertyDetails && monthlyMetrics.propertyDetails.length > 0 ? (
+                monthlyMetrics.propertyDetails.map((property: any, index: number) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {property.property_name || 'Unknown Property'}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {property.property_address || ''}
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        {property.property_address || ''}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(property.expected_rent || 0)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(property.rent_collected || 0)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(property.misc_income || 0)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
-                    {formatCurrency((property.rent_collected || 0) + (property.misc_income || 0))}
-                  </td>
-                </tr>
-              )) || (
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(property.expected_rent || 0)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(property.rent_collected || 0)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(property.misc_income || 0)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                      {formatCurrency((property.rent_collected || 0) + (property.misc_income || 0))}
+                    </td>
+                  </tr>
+                ))
+              ) : (
                 <tr>
                   <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                    No property data available for {formatMonth(currentDate)}
+                    {monthlyMetrics ? `No property data available for ${formatMonth(currentDate)}` : 'Loading...'}
                   </td>
                 </tr>
               )}

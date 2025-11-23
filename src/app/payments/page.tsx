@@ -32,6 +32,7 @@ interface Invoice {
   due_date: string
   period_start: string
   period_end: string
+  lease_id?: string
   amount_rent: number
   amount_late: number
   amount_other: number

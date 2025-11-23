@@ -268,10 +268,21 @@ return'<div class="s">'+l+'</div>';
         dueDate: invoice.due_date,
         periodStart: invoice.period_start,
         periodEnd: invoice.period_end,
+        leaseId: invoice.lease_id,
         paymentsCount: Array.isArray(data) ? data.length : 0,
-        payments: data
+        payments: data,
+        paymentDetails: Array.isArray(data) ? data.map(p => ({
+          id: p.id,
+          amount: p.amount,
+          date: p.payment_date,
+          invoice_id: p.invoice_id,
+          lease_id: p.lease_id
+        })) : []
       })
-      setInvoicePayments(Array.isArray(data) ? data : [])
+      
+      const paymentsArray = Array.isArray(data) ? data : []
+      console.log('Setting invoicePayments to:', paymentsArray.length, 'payments')
+      setInvoicePayments(paymentsArray)
     } catch (error) {
       console.error('Error fetching payments:', error)
       setInvoicePayments([])

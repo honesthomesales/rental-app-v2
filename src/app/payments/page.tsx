@@ -816,13 +816,27 @@ return'<div class="s">'+l+'</div>';
 
   const handleSaveMiscIncome = async (incomeData: any) => {
     try {
-      const expenseData = {
-        ...incomeData,
-        interest_rate: 9.9999, // Use max positive value to identify misc income (one-time expenses use -9.9999)
-        balance: 0,
+      // Ensure interest_rate is exactly 9.9999 (not rounded)
+      const expenseData: any = {
+        category: 'Misc Income',
+        amount_owed: incomeData.amount_owed || 0,
+        last_paid_date: incomeData.last_paid_date,
+        mail_info: incomeData.mail_info || '',
+        expense_date: incomeData.expense_date || incomeData.last_paid_date || new Date().toISOString().split('T')[0],
+        memo: incomeData.mail_info || '',
         address: 'N/A',
-        category: 'Misc Income'
+        balance: 0,
+        interest_rate: 9.9999 // Use max positive value to identify misc income (one-time expenses use -9.9999)
       }
+      
+      // Only include property_id if it's provided
+      if (incomeData.property_id) {
+        expenseData.property_id = incomeData.property_id
+      }
+      
+      // Don't include amount field - it might have constraints, use amount_owed instead
+      
+      console.log('Sending misc income data:', JSON.stringify(expenseData, null, 2))
       
       const response = await fetch('/api/expenses', {
         method: 'POST',
@@ -1672,7 +1686,6 @@ return'<div class="s">'+l+'</div>';
               const propertyId = formData.get('property_id') as string
               const incomeData = {
                 category: 'Misc Income',
-                amount: parseFloat(formData.get('amount_owed') as string) || 0,
                 expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],
                 memo: formData.get('mail_info') as string || '',
                 amount_owed: parseFloat(formData.get('amount_owed') as string) || 0,

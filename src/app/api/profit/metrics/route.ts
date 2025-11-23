@@ -196,7 +196,7 @@ export async function GET(request: Request) {
     const { data: miscIncomeExpenses, error: miscIncomeError } = await supabaseServer
       .from('RENT_expenses')
       .select('amount_owed, last_paid_date')
-      .eq('interest_rate', -888) // Misc income is marked with -888
+      .eq('interest_rate', 9.9999) // Misc income is marked with 9.9999 (one-time expenses use -9.9999)
       .gte('last_paid_date', startOfMonth)
       .lte('last_paid_date', endOfMonth)
     

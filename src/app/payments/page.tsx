@@ -818,7 +818,7 @@ return'<div class="s">'+l+'</div>';
     try {
       const expenseData = {
         ...incomeData,
-        interest_rate: -888, // Use -888 to identify misc income
+        interest_rate: 9.9999, // Use max positive value to identify misc income (one-time expenses use -9.9999)
         balance: 0,
         address: 'N/A',
         category: 'Misc Income'
@@ -1680,7 +1680,7 @@ return'<div class="s">'+l+'</div>';
                 mail_info: formData.get('mail_info') as string || undefined,
                 address: 'N/A',
                 balance: 0,
-                interest_rate: -888
+                interest_rate: 9.9999 // Use max positive value to identify misc income (one-time expenses use -9.9999)
               }
               
               // Only include property_id if a valid property is selected

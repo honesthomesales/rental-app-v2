@@ -252,26 +252,45 @@ return'<div class="s">'+l+'</div>';
   }
 
   const handleEditPayments = async (invoice: Invoice) => {
+    console.log('handleEditPayments called with invoice:', {
+      id: invoice.id,
+      invoice_no: invoice.invoice_no,
+      due_date: invoice.due_date,
+      lease_id: invoice.lease_id,
+      amount_paid: invoice.amount_paid
+    })
+    
     setEditingInvoice(invoice)
     setShowEditPaymentsModal(true)
     setLoadingPayments(true)
+    setInvoicePayments([]) // Clear previous payments
 
     try {
       // Fetch all payments for this invoice
       const url = `/api/payments?invoiceId=${invoice.id}`
       console.log('Fetching payments from:', url)
+      
       const response = await fetch(url)
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('API error response:', response.status, errorData)
+        throw new Error(`API error: ${response.status} - ${errorData.error || 'Unknown error'}`)
+      }
+      
       const data = await response.json()
       
-      console.log('Payments for invoice:', {
+      console.log('Payments API response:', {
         invoiceId: invoice.id,
         invoiceNo: invoice.invoice_no,
         dueDate: invoice.due_date,
         periodStart: invoice.period_start,
         periodEnd: invoice.period_end,
         leaseId: invoice.lease_id,
+        responseType: typeof data,
+        isArray: Array.isArray(data),
         paymentsCount: Array.isArray(data) ? data.length : 0,
-        payments: data,
+        rawData: data,
         paymentDetails: Array.isArray(data) ? data.map(p => ({
           id: p.id,
           amount: p.amount,
@@ -283,9 +302,15 @@ return'<div class="s">'+l+'</div>';
       
       const paymentsArray = Array.isArray(data) ? data : []
       console.log('Setting invoicePayments to:', paymentsArray.length, 'payments')
+      
+      if (paymentsArray.length === 0) {
+        console.warn('No payments found for invoice:', invoice.id, 'This might indicate a query issue.')
+      }
+      
       setInvoicePayments(paymentsArray)
     } catch (error) {
       console.error('Error fetching payments:', error)
+      alert(`Error loading payments: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setInvoicePayments([])
     } finally {
       setLoadingPayments(false)
@@ -1153,36 +1178,37 @@ return'<div class="s">'+l+'</div>';
                               ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              <div className="flex justify-center space-x-1">
+                              <div className="flex justify-center items-center gap-1 flex-wrap">
+                                <button
+                                  onClick={() => handleEditPayments(invoice)}
+                                  className="px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
+                                  title="View and manage all payments for this invoice"
+                                  type="button"
+                                >
+                                  Payments
+                                </button>
                                 {balance > 0 && (
                                   <button
                                     onClick={() => handleAddPayment(invoice)}
                                     className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
+                                    type="button"
                                   >
                                     Add Payment
                                   </button>
                                 )}
                                 {hasPayments && (
-                                  <>
-                                    <button
-                                      onClick={() => handleEditPayments(invoice)}
-                                      className="px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
-                                      title="View and manage all payments for this invoice"
-                                    >
-                                      Payments
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setSelectedInvoice(invoice)
-                                        setEditInvoiceAmountPaid(invoice.amount_paid.toString())
-                                        setEditInvoiceLateFee(invoice.amount_late.toString())
-                                        setShowEditInvoiceModal(true)
-                                      }}
-                                      className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
-                                    >
-                                      Edit
-                                    </button>
-                                  </>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInvoice(invoice)
+                                      setEditInvoiceAmountPaid(invoice.amount_paid.toString())
+                                      setEditInvoiceLateFee(invoice.amount_late.toString())
+                                      setShowEditInvoiceModal(true)
+                                    }}
+                                    className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                                    type="button"
+                                  >
+                                    Edit
+                                  </button>
                                 )}
                                 {balance > 0 && (
                                   <button

@@ -153,67 +153,160 @@ export async function GET(request: Request) {
       limit
     })
     
-    // Build the query
-    let query = supabaseServer
-      .from('RENT_payments')
-      .select(`
-        *,
-        RENT_tenants!inner(
-          id,
-          full_name,
-          first_name,
-          last_name,
-          email
-        ),
-        RENT_properties!inner(
-          id,
-          name,
-          address
-        ),
-        RENT_leases!inner(
-          id,
-          rent,
-          status
-        )
-      `)
-    
-    // Apply filters
-    if (tenantId) {
-      query = query.eq('tenant_id', tenantId)
-    }
-    
-    if (leaseId) {
-      query = query.eq('lease_id', leaseId)
-    }
-    
-    if (propertyId) {
-      query = query.eq('property_id', propertyId)
-    }
+    // Special handling for invoiceId: fetch invoice details first, then get all related payments
+    let payments: any[] = []
+    let error: any = null
     
     if (invoiceId) {
-      query = query.eq('invoice_id', invoiceId)
-    }
-    
-    if (from) {
-      query = query.gte('payment_date', from)
-    }
-    
-    if (to) {
-      query = query.lte('payment_date', to)
-    }
-    
-    // Order by payment date descending (newest first)
-    query = query.order('payment_date', { ascending: false })
-    
-    // Apply limit if specified
-    if (limit) {
-      const limitNum = parseInt(limit, 10)
-      if (!isNaN(limitNum) && limitNum > 0) {
-        query = query.limit(limitNum)
+      // First, get the invoice to find its lease_id and period dates
+      const { data: invoice, error: invoiceError } = await supabaseServer
+        .from('RENT_invoices')
+        .select('id, lease_id, period_start, period_end, due_date')
+        .eq('id', invoiceId)
+        .single()
+      
+      if (invoiceError) {
+        console.error('Error fetching invoice:', invoiceError)
+        error = invoiceError
+      } else if (invoice) {
+        // Fetch payments in two ways:
+        // 1. Payments directly linked to this invoice
+        // 2. Payments for the same lease within the invoice period (even if not linked)
+        const { data: linkedPayments, error: linkedError } = await supabaseServer
+          .from('RENT_payments')
+          .select(`
+            *,
+            RENT_tenants(
+              id,
+              full_name,
+              first_name,
+              last_name,
+              email
+            ),
+            RENT_properties(
+              id,
+              name,
+              address
+            ),
+            RENT_leases(
+              id,
+              rent,
+              status
+            )
+          `)
+          .eq('invoice_id', invoiceId)
+          .order('payment_date', { ascending: false })
+        
+        if (linkedError) {
+          console.error('Error fetching linked payments:', linkedError)
+        }
+        
+        // Also fetch payments for the same lease within the invoice period
+        let periodPayments: any[] = []
+        if (invoice.lease_id && invoice.period_start && invoice.period_end) {
+          const { data: periodPaymentsData, error: periodError } = await supabaseServer
+            .from('RENT_payments')
+            .select(`
+              *,
+              RENT_tenants(
+                id,
+                full_name,
+                first_name,
+                last_name,
+                email
+              ),
+              RENT_properties(
+                id,
+                name,
+                address
+              ),
+              RENT_leases(
+                id,
+                rent,
+                status
+              )
+            `)
+            .eq('lease_id', invoice.lease_id)
+            .gte('payment_date', invoice.period_start)
+            .lte('payment_date', invoice.period_end)
+            .is('invoice_id', null) // Only get payments not already linked
+            .order('payment_date', { ascending: false })
+          
+          if (periodError) {
+            console.error('Error fetching period payments:', periodError)
+          } else {
+            periodPayments = periodPaymentsData || []
+          }
+        }
+        
+        // Combine and deduplicate by payment id
+        const allPayments = [...(linkedPayments || []), ...periodPayments]
+        const uniquePayments = Array.from(
+          new Map(allPayments.map(p => [p.id, p])).values()
+        )
+        payments = uniquePayments
       }
+    } else {
+      // Build the query for non-invoice queries
+      let query = supabaseServer
+        .from('RENT_payments')
+        .select(`
+          *,
+          RENT_tenants(
+            id,
+            full_name,
+            first_name,
+            last_name,
+            email
+          ),
+          RENT_properties(
+            id,
+            name,
+            address
+          ),
+          RENT_leases(
+            id,
+            rent,
+            status
+          )
+        `)
+      
+      // Apply filters
+      if (tenantId) {
+        query = query.eq('tenant_id', tenantId)
+      }
+      
+      if (leaseId) {
+        query = query.eq('lease_id', leaseId)
+      }
+      
+      if (propertyId) {
+        query = query.eq('property_id', propertyId)
+      }
+      
+      if (from) {
+        query = query.gte('payment_date', from)
+      }
+      
+      if (to) {
+        query = query.lte('payment_date', to)
+      }
+      
+      // Order by payment date descending (newest first)
+      query = query.order('payment_date', { ascending: false })
+      
+      // Apply limit if specified
+      if (limit) {
+        const limitNum = parseInt(limit, 10)
+        if (!isNaN(limitNum) && limitNum > 0) {
+          query = query.limit(limitNum)
+        }
+      }
+      
+      const result = await query
+      payments = result.data || []
+      error = result.error
     }
-    
-    const { data: payments, error } = await query
     
     if (error) {
       console.error('Error fetching payments:', error)
@@ -221,7 +314,7 @@ export async function GET(request: Request) {
     }
 
     // Transform the data to include joined information
-    const transformedPayments = payments?.map(payment => ({
+    const transformedPayments = (payments || []).map(payment => ({
       ...payment,
       tenant_name: payment.RENT_tenants?.full_name || 
                   `${payment.RENT_tenants?.first_name || ''} ${payment.RENT_tenants?.last_name || ''}`.trim(),
@@ -245,6 +338,48 @@ export async function GET(request: Request) {
         error: 'Failed to fetch payments', 
         details: error instanceof Error ? error.message : 'Unknown error' 
       },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json()
+    const paymentId = body.id
+    
+    if (!paymentId) {
+      return NextResponse.json(
+        { error: 'Payment ID is required' },
+        { status: 400 }
+      )
+    }
+
+    console.log('Deleting payment:', paymentId)
+
+    // Delete payment from database
+    const { error: deleteError } = await supabaseServer
+      .from('RENT_payments')
+      .delete()
+      .eq('id', paymentId)
+
+    if (deleteError) {
+      console.error('Database delete error:', deleteError)
+      return NextResponse.json(
+        { error: 'Failed to delete payment', details: deleteError.message, hint: deleteError.hint, code: deleteError.code },
+        { status: 500 }
+      )
+    }
+
+    console.log('Payment deleted successfully')
+    return NextResponse.json({ 
+      success: true,
+      message: 'Payment deleted successfully'
+    })
+  } catch (error) {
+    console.error('Error in payments DELETE API:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete payment', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     )
   }

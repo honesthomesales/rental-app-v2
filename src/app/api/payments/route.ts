@@ -207,14 +207,17 @@ export async function GET(request: Request) {
           .eq('invoice_id', invoiceId)
           .order('payment_date', { ascending: false })
         
+        // Handle linked payments - use empty array if error
+        const safeLinkedPayments = linkedError ? [] : (linkedPayments || [])
+        
         console.log('Linked payments result:', { 
-          count: linkedPayments?.length || 0, 
-          payments: linkedPayments?.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date })),
+          count: safeLinkedPayments.length, 
+          payments: safeLinkedPayments.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date })),
           error: linkedError 
         })
         
         if (linkedError) {
-          console.error('Error fetching linked payments:', linkedError)
+          console.error('Error fetching linked payments (will continue with period payments):', linkedError)
         }
         
         // Also fetch payments for the same lease within the invoice period
@@ -275,24 +278,25 @@ export async function GET(request: Request) {
             console.error('Error fetching period payments:', periodError)
           } else {
             // Filter out payments that are already in linkedPayments
-            const linkedPaymentIds = new Set((linkedPayments || []).map(p => p.id))
+            const linkedPaymentIds = new Set(safeLinkedPayments.map(p => p.id))
             periodPayments = (periodPaymentsData || []).filter(p => !linkedPaymentIds.has(p.id))
             console.log(`Found ${periodPayments.length} period payments (after filtering duplicates) for invoice ${invoiceId}`)
           }
         }
         
         // Combine and deduplicate by payment id
-        const allPayments = [...(linkedPayments || []), ...periodPayments]
+        const allPayments = [...safeLinkedPayments, ...periodPayments]
         const uniquePayments = Array.from(
           new Map(allPayments.map(p => [p.id, p])).values()
         )
         payments = uniquePayments
         
         console.log('Final combined payments:', {
-          linkedCount: linkedPayments?.length || 0,
+          linkedCount: safeLinkedPayments.length,
           periodCount: periodPayments.length,
           totalUnique: uniquePayments.length,
-          paymentIds: uniquePayments.map(p => p.id)
+          paymentIds: uniquePayments.map(p => p.id),
+          paymentAmounts: uniquePayments.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date }))
         })
         
         console.log(`Invoice ${invoiceId}: Found ${linkedPayments?.length || 0} linked payments, ${periodPayments.length} period payments, ${uniquePayments.length} total unique payments`)

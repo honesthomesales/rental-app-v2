@@ -34,6 +34,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    console.log('Received expense data:', JSON.stringify(body, null, 2))
     
     const { data, error } = await supabaseServer
       .from('RENT_expenses')
@@ -42,18 +43,29 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('Error creating expense:', error)
+      console.error('Supabase error creating expense:', JSON.stringify(error, null, 2))
+      console.error('Error code:', error.code)
+      console.error('Error message:', error.message)
+      console.error('Error details:', error.details)
+      console.error('Error hint:', error.hint)
       return NextResponse.json({ 
         error: error.message || 'Failed to create expense',
-        details: error 
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
       }, { status: 500 })
     }
 
+    console.log('Successfully created expense:', data)
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error in create expense API:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Internal server error' 
+      error: errorMessage,
+      message: errorMessage
     }, { status: 500 })
   }
 }

@@ -81,8 +81,9 @@ export default function ExpensesPage() {
 
   const filterAndSortExpenses = () => {
     // Separate regular expenses from one-time expenses
-    const regularExpenses = expenses.filter(expense => expense.interest_rate !== -999)
-    const oneTime = expenses.filter(expense => expense.interest_rate === -999)
+    // One-time expenses are identified by interest_rate === -9.9999 (max negative value for DECIMAL(5,4))
+    const regularExpenses = expenses.filter(expense => expense.interest_rate !== -9.9999)
+    const oneTime = expenses.filter(expense => expense.interest_rate === -9.9999)
     
     setOneTimeExpenses(oneTime)
 
@@ -206,10 +207,10 @@ export default function ExpensesPage() {
       const url = editingOneTimeExpense ? '/api/expenses' : '/api/expenses'
       const method = editingOneTimeExpense ? 'PUT' : 'POST'
       
-      // Ensure interest_rate is set to -999 for one-time expenses
+      // Ensure interest_rate is set to -9.9999 for one-time expenses (max negative value for DECIMAL(5,4))
       // Filter out undefined and empty string values
       const oneTimeData: any = {
-        interest_rate: -999,
+        interest_rate: -9.9999, // Use max negative value to identify one-time expenses
         balance: 0, // Set balance to 0 for one-time expenses
         address: 'N/A',
         category: 'One-Time Expense',
@@ -226,6 +227,8 @@ export default function ExpensesPage() {
         oneTimeData.property_id = expenseData.property_id
       }
       
+      console.log('Sending one-time expense data:', JSON.stringify(oneTimeData, null, 2))
+      
       const response = await fetch(url, {
         method,
         headers: {
@@ -235,10 +238,17 @@ export default function ExpensesPage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('API error:', errorData)
-        const errorMessage = errorData.error || 'Failed to save one-time expense'
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch (e) {
+          errorData = { error: `HTTP ${response.status}: ${response.statusText}` }
+        }
+        console.error('API error response:', errorData)
         console.error('Error details:', errorData.details)
+        console.error('Full error object:', JSON.stringify(errorData, null, 2))
+        const errorMessage = errorData.error || errorData.message || 'Failed to save one-time expense'
+        alert(`Error: ${errorMessage}\n\nCheck console for details.`)
         throw new Error(errorMessage)
       }
 
@@ -862,7 +872,7 @@ export default function ExpensesPage() {
                 mail_info: formData.get('mail_info') as string || undefined,
                 address: 'N/A',
                 balance: 0,
-                interest_rate: -999
+                interest_rate: -9.9999
               }
               handleSaveOneTimeExpense(expenseData)
             }}>

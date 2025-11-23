@@ -227,13 +227,41 @@ return'<div class="s">'+l+'</div>';
       console.log('Fetching invoices from:', url)
       
       const response = await fetch(url)
-      const data = await response.json()
+      const invoicesData = await response.json()
       
-      console.log('Invoices response:', data)
+      console.log('Invoices response:', invoicesData)
       
-      // Use invoices from database directly - don't recalculate late fees
-      // Late fees should be managed in the database and via the "Waive Fee" button
-      setInvoices(Array.isArray(data) ? data : [])
+      const invoices = Array.isArray(invoicesData) ? invoicesData : []
+      
+      // For each invoice, fetch actual payments and update amount_paid to show real totals
+      const invoicesWithActualPayments = await Promise.all(
+        invoices.map(async (invoice: Invoice) => {
+          try {
+            const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+            if (paymentsResponse.ok) {
+              const paymentsData = await paymentsResponse.json()
+              if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                const actualPaid = paymentsData.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                const amountTotal = parseFloat(invoice.amount_total as any)
+                const actualBalance = amountTotal - actualPaid
+                
+                // Update invoice with actual payment totals for display
+                return {
+                  ...invoice,
+                  amount_paid: actualPaid,
+                  balance_due: actualBalance,
+                  status: actualBalance <= 0 ? 'PAID' : (actualPaid > 0 ? 'PARTIAL' : 'OPEN')
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+          }
+          return invoice
+        })
+      )
+      
+      setInvoices(invoicesWithActualPayments)
     } catch (error) {
       console.error('Error fetching invoices:', error)
       setInvoices([])

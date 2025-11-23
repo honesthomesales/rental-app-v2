@@ -362,7 +362,7 @@ export default function ProfitPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.1</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
       </div>
 
 

@@ -43,6 +43,12 @@ export async function POST(request: NextRequest) {
       delete insertData.property_id
     }
     
+    // Remove amount field if it exists - use amount_owed instead to avoid constraint issues
+    // The amount field might have DECIMAL(5,4) constraint which would cause overflow
+    if (insertData.interest_rate === 9.9999 || insertData.interest_rate === -9.9999) {
+      delete insertData.amount
+    }
+    
     console.log('Insert data after filtering:', JSON.stringify(insertData, null, 2))
     
     const { data, error } = await supabaseServer

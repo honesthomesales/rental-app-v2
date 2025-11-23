@@ -1162,17 +1162,26 @@ return'<div class="s">'+l+'</div>';
                                   </button>
                                 )}
                                 {hasPayments && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInvoice(invoice)
-                                      setEditInvoiceAmountPaid(invoice.amount_paid.toString())
-                                      setEditInvoiceLateFee(invoice.amount_late.toString())
-                                      setShowEditInvoiceModal(true)
-                                    }}
-                                    className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
-                                  >
-                                    Edit
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => handleEditPayments(invoice)}
+                                      className="px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
+                                      title="View and manage all payments for this invoice"
+                                    >
+                                      Payments
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInvoice(invoice)
+                                        setEditInvoiceAmountPaid(invoice.amount_paid.toString())
+                                        setEditInvoiceLateFee(invoice.amount_late.toString())
+                                        setShowEditInvoiceModal(true)
+                                      }}
+                                      className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                                    >
+                                      Edit
+                                    </button>
+                                  </>
                                 )}
                                 {balance > 0 && (
                                   <button

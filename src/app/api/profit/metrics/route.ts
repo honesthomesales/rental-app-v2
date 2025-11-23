@@ -353,7 +353,7 @@ export async function GET(request: Request) {
         expected_rent: Math.round(p.expected_rent * 100) / 100,
         rent_collected: Math.round(p.rent_collected * 100) / 100,
         misc_income: Math.round(p.misc_income * 100) / 100
-      }))
+      })),
       rentCollection: {
         collected: Math.round(rentCollected * 100) / 100,
         expected: Math.round(expectedRent * 100) / 100,

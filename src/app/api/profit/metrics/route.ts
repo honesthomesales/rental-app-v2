@@ -192,10 +192,22 @@ export async function GET(request: Request) {
       })
       .reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
     
-    // Misc Income: For now, we'll need to identify income vs expenses
-    // One-time expenses with positive amounts could be income if they're not expenses
-    // For now, set to 0 - this would need a flag or category to distinguish income from expenses
-    const miscIncome = 0
+    // Get misc income from expenses with interest_rate = -888
+    const { data: miscIncomeExpenses, error: miscIncomeError } = await supabaseServer
+      .from('RENT_expenses')
+      .select('amount_owed, last_paid_date')
+      .eq('interest_rate', -888) // Misc income is marked with -888
+      .gte('last_paid_date', startOfMonth)
+      .lte('last_paid_date', endOfMonth)
+    
+    if (miscIncomeError) {
+      console.error('Error fetching misc income:', miscIncomeError)
+    }
+    
+    console.log('Misc income expenses found:', miscIncomeExpenses?.length || 0)
+    
+    const miscIncome = miscIncomeExpenses
+      ?.reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
     
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const totalDebt = totalFixedExpenses + repairs + otherExpenses

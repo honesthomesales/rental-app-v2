@@ -82,9 +82,12 @@ export default function PaymentsPage() {
   const [showNoticeModal, setShowNoticeModal] = useState(false)
   const [noticeContent, setNoticeContent] = useState('')
   const [noticeTitle, setNoticeTitle] = useState('')
+  const [showMiscIncomeModal, setShowMiscIncomeModal] = useState(false)
+  const [properties, setProperties] = useState<Property[]>([])
 
   useEffect(() => {
     fetchLeases()
+    fetchProperties()
   }, [])
 
   const handlePrintNotice = () => {
@@ -122,6 +125,18 @@ return'<div class="s">'+l+'</div>';
 }).join('')}<script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`;
     printWin.document.write(html);
     printWin.document.close();
+  }
+
+  const fetchProperties = async () => {
+    try {
+      const response = await fetch('/api/properties')
+      if (response.ok) {
+        const data = await response.json()
+        setProperties(data)
+      }
+    } catch (error) {
+      console.error('Error fetching properties:', error)
+    }
   }
 
   const fetchLeases = async () => {
@@ -799,13 +814,59 @@ return'<div class="s">'+l+'</div>';
     })
   }
 
+  const handleSaveMiscIncome = async (incomeData: any) => {
+    try {
+      const expenseData = {
+        ...incomeData,
+        interest_rate: -888, // Use -888 to identify misc income
+        balance: 0,
+        address: 'N/A',
+        category: 'Misc Income'
+      }
+      
+      const response = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(expenseData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('API error:', errorData)
+        alert(`Error: ${errorData.error || 'Failed to save misc income'}\n\nCheck console for details.`)
+        return
+      }
+
+      setShowMiscIncomeModal(false)
+      alert('Misc income added successfully!')
+    } catch (error) {
+      console.error('Error saving misc income:', error)
+      alert('Failed to save misc income. Please try again.')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
-          <p className="text-gray-600">Track and manage rental payments</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
+              <p className="text-gray-600">Track and manage rental payments</p>
+            </div>
+            <button
+              onClick={() => setShowMiscIncomeModal(true)}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add Misc Income</span>
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -1594,6 +1655,106 @@ return'<div class="s">'+l+'</div>';
                 📄 Print Notice
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Misc Income Modal */}
+      {showMiscIncomeModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Add Misc Income
+            </h2>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              const propertyId = formData.get('property_id') as string
+              const incomeData = {
+                category: 'Misc Income',
+                amount: parseFloat(formData.get('amount_owed') as string) || 0,
+                expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],
+                memo: formData.get('mail_info') as string || '',
+                amount_owed: parseFloat(formData.get('amount_owed') as string) || 0,
+                last_paid_date: formData.get('last_paid_date') as string || undefined,
+                mail_info: formData.get('mail_info') as string || undefined,
+                address: 'N/A',
+                balance: 0,
+                interest_rate: -888
+              }
+              
+              // Only include property_id if a valid property is selected
+              if (propertyId && propertyId !== '' && propertyId !== 'None') {
+                incomeData.property_id = propertyId
+              }
+              
+              handleSaveMiscIncome(incomeData)
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Description *</label>
+                  <textarea
+                    name="mail_info"
+                    rows={3}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="Enter income description"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Amount *</label>
+                    <input
+                      type="number"
+                      name="amount_owed"
+                      step="0.01"
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Date Received *</label>
+                    <input
+                      type="date"
+                      name="last_paid_date"
+                      defaultValue={new Date().toISOString().split('T')[0]}
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Property (Optional)</label>
+                  <select
+                    name="property_id"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value="">None</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name} - {property.address}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowMiscIncomeModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  Add Misc Income
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

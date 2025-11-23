@@ -18,6 +18,7 @@ export async function GET() {
     const { data: occupiedLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select('property_id, lease_start_date, lease_end_date')
+      .eq('status', 'active')
       .lte('lease_start_date', currentDate)
       .or(`lease_end_date.is.null,lease_end_date.gte.${currentDate}`)
 
@@ -33,10 +34,11 @@ export async function GET() {
     let monthlyIncome = 0
 
     if (occupiedLeases && occupiedLeases.length > 0) {
-      // Get lease details for occupied properties (already filtered by date range)
+      // Get lease details for occupied properties (already filtered by date range and status)
       const { data: activeLeases, error: activeLeasesError } = await supabaseServer
         .from('RENT_leases')
         .select('rent, rent_cadence, lease_start_date, lease_end_date')
+        .eq('status', 'active')
         .lte('lease_start_date', currentDate)
         .or(`lease_end_date.is.null,lease_end_date.gte.${currentDate}`)
 

@@ -326,6 +326,41 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Property Type Breakdown */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Type Breakdown</h2>
+        
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center">
+            <div className="bg-gray-100 rounded-lg p-4 mb-2">
+              <p className="text-2xl font-bold text-gray-900">{metrics?.totalProperties || 0}</p>
+            </div>
+            <p className="text-sm text-gray-600">Total</p>
+          </div>
+          
+          <div className="text-center">
+            <div className="bg-green-100 rounded-lg p-4 mb-2">
+              <p className="text-2xl font-bold text-green-800">{metrics?.propertyTypeBreakdown?.house || 0}</p>
+            </div>
+            <p className="text-sm text-gray-600">House</p>
+          </div>
+          
+          <div className="text-center">
+            <div className="bg-purple-100 rounded-lg p-4 mb-2">
+              <p className="text-2xl font-bold text-purple-800">{metrics?.propertyTypeBreakdown?.doublewide || 0}</p>
+            </div>
+            <p className="text-sm text-gray-600">Doublewide</p>
+          </div>
+          
+          <div className="text-center">
+            <div className="bg-orange-100 rounded-lg p-4 mb-2">
+              <p className="text-2xl font-bold text-orange-800">{metrics?.propertyTypeBreakdown?.singlewide || 0}</p>
+            </div>
+            <p className="text-sm text-gray-600">Singlewide</p>
+          </div>
+        </div>
+      </div>
+
       {/* Potential Income Properties */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex justify-between items-center mb-4">

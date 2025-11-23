@@ -36,9 +36,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     console.log('Received expense data:', JSON.stringify(body, null, 2))
     
+    // Filter out null, undefined, or empty string values for property_id
+    // If property_id is not provided or is empty, omit it from the insert
+    const insertData: any = { ...body }
+    if (!insertData.property_id || insertData.property_id === '' || insertData.property_id === null) {
+      delete insertData.property_id
+    }
+    
+    console.log('Insert data after filtering:', JSON.stringify(insertData, null, 2))
+    
     const { data, error } = await supabaseServer
       .from('RENT_expenses')
-      .insert([body])
+      .insert([insertData])
       .select()
       .single()
 
@@ -75,9 +84,15 @@ export async function PUT(request: NextRequest) {
     const body = await request.json()
     const { id, ...updateData } = body
     
-    // Filter out undefined values
+    // Filter out undefined values and null/empty property_id
     const filteredData = Object.fromEntries(
-      Object.entries(updateData).filter(([_, value]) => value !== undefined)
+      Object.entries(updateData).filter(([key, value]) => {
+        // Skip undefined values
+        if (value === undefined) return false
+        // For property_id, skip if it's null or empty string
+        if (key === 'property_id' && (!value || value === '' || value === null)) return false
+        return true
+      })
     )
     
     const { data, error } = await supabaseServer

@@ -222,10 +222,12 @@ export default function ExpensesPage() {
         memo: expenseData.mail_info || ''
       }
       
-      // Only include property_id if it's provided
-      if (expenseData.property_id) {
+      // Only include property_id if it's provided and not empty
+      // Don't include it at all if it's null, undefined, or empty string
+      if (expenseData.property_id && expenseData.property_id !== '' && expenseData.property_id !== null) {
         oneTimeData.property_id = expenseData.property_id
       }
+      // Explicitly don't include property_id if it's not provided
       
       console.log('Sending one-time expense data:', JSON.stringify(oneTimeData, null, 2))
       
@@ -861,8 +863,8 @@ export default function ExpensesPage() {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
               const propertyId = formData.get('property_id') as string
+              // Only include property_id if a valid value is selected (not empty or "None")
               const expenseData: Partial<Expense> = {
-                property_id: propertyId && propertyId !== '' ? propertyId : undefined,
                 category: 'One-Time Expense',
                 amount: parseFloat(formData.get('amount_owed') as string) || 0,
                 expense_date: formData.get('last_paid_date') as string || new Date().toISOString().split('T')[0],
@@ -874,6 +876,12 @@ export default function ExpensesPage() {
                 balance: 0,
                 interest_rate: -9.9999
               }
+              
+              // Only include property_id if a valid property is selected
+              if (propertyId && propertyId !== '' && propertyId !== 'None') {
+                expenseData.property_id = propertyId
+              }
+              
               handleSaveOneTimeExpense(expenseData)
             }}>
               <div className="space-y-4">

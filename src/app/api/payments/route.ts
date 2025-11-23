@@ -165,10 +165,20 @@ export async function GET(request: Request) {
         .eq('id', invoiceId)
         .single()
       
+      console.log('Fetching invoice for invoiceId:', invoiceId)
+      
       if (invoiceError) {
         console.error('Error fetching invoice:', invoiceError)
         error = invoiceError
       } else if (invoice) {
+        console.log('Invoice found:', { 
+          id: invoice.id, 
+          lease_id: invoice.lease_id, 
+          period_start: invoice.period_start, 
+          period_end: invoice.period_end,
+          due_date: invoice.due_date 
+        })
+        
         // Fetch payments in two ways:
         // 1. Payments directly linked to this invoice
         // 2. Payments for the same lease within the invoice period (even if not linked)
@@ -196,6 +206,12 @@ export async function GET(request: Request) {
           `)
           .eq('invoice_id', invoiceId)
           .order('payment_date', { ascending: false })
+        
+        console.log('Linked payments result:', { 
+          count: linkedPayments?.length || 0, 
+          payments: linkedPayments?.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date })),
+          error: linkedError 
+        })
         
         if (linkedError) {
           console.error('Error fetching linked payments:', linkedError)
@@ -228,7 +244,6 @@ export async function GET(request: Request) {
               )
             `)
             .eq('lease_id', invoice.lease_id)
-            .is('invoice_id', null) // Only get payments not already linked
           
           // Use period dates if available, otherwise use due_date ± 15 days
           if (invoice.period_start && invoice.period_end) {
@@ -236,12 +251,10 @@ export async function GET(request: Request) {
               .gte('payment_date', invoice.period_start)
               .lte('payment_date', invoice.period_end)
           } else if (invoice.due_date) {
-            // Fallback: get payments within 15 days before and after due_date
+            // Fallback: get payments within 30 days before and after due_date (full month range)
             const dueDate = new Date(invoice.due_date)
-            const startDate = new Date(dueDate)
-            startDate.setDate(startDate.getDate() - 15)
-            const endDate = new Date(dueDate)
-            endDate.setDate(endDate.getDate() + 15)
+            const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1) // First day of month
+            const endDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0) // Last day of month
             
             periodQuery = periodQuery
               .gte('payment_date', startDate.toISOString().split('T')[0])
@@ -252,11 +265,19 @@ export async function GET(request: Request) {
           
           const { data: periodPaymentsData, error: periodError } = await periodQuery
           
+          console.log('Period payments query result:', { 
+            count: periodPaymentsData?.length || 0,
+            payments: periodPaymentsData?.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date, invoice_id: p.invoice_id })),
+            error: periodError 
+          })
+          
           if (periodError) {
             console.error('Error fetching period payments:', periodError)
           } else {
-            periodPayments = periodPaymentsData || []
-            console.log(`Found ${periodPayments.length} period payments for invoice ${invoiceId}`)
+            // Filter out payments that are already in linkedPayments
+            const linkedPaymentIds = new Set((linkedPayments || []).map(p => p.id))
+            periodPayments = (periodPaymentsData || []).filter(p => !linkedPaymentIds.has(p.id))
+            console.log(`Found ${periodPayments.length} period payments (after filtering duplicates) for invoice ${invoiceId}`)
           }
         }
         
@@ -266,6 +287,13 @@ export async function GET(request: Request) {
           new Map(allPayments.map(p => [p.id, p])).values()
         )
         payments = uniquePayments
+        
+        console.log('Final combined payments:', {
+          linkedCount: linkedPayments?.length || 0,
+          periodCount: periodPayments.length,
+          totalUnique: uniquePayments.length,
+          paymentIds: uniquePayments.map(p => p.id)
+        })
         
         console.log(`Invoice ${invoiceId}: Found ${linkedPayments?.length || 0} linked payments, ${periodPayments.length} period payments, ${uniquePayments.length} total unique payments`)
       }

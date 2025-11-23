@@ -60,6 +60,7 @@ export default function PaymentsPage() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loadingInvoices, setLoadingInvoices] = useState(false)
+  const [invoicePaymentTotals, setInvoicePaymentTotals] = useState<Map<string, number>>(new Map())
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState('')
@@ -233,8 +234,10 @@ return'<div class="s">'+l+'</div>';
       
       const invoices = Array.isArray(invoicesData) ? invoicesData : []
       
-      // For each invoice, fetch actual payments and update amount_paid to show real totals
-      const invoicesWithActualPayments = await Promise.all(
+      // Fetch actual payment totals for all invoices in parallel
+      const paymentTotalsMap = new Map<string, number>()
+      
+      await Promise.all(
         invoices.map(async (invoice: Invoice) => {
           try {
             const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
@@ -242,26 +245,27 @@ return'<div class="s">'+l+'</div>';
               const paymentsData = await paymentsResponse.json()
               if (Array.isArray(paymentsData) && paymentsData.length > 0) {
                 const actualPaid = paymentsData.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
-                const amountTotal = parseFloat(invoice.amount_total as any)
-                const actualBalance = amountTotal - actualPaid
-                
-                // Update invoice with actual payment totals for display
-                return {
-                  ...invoice,
-                  amount_paid: actualPaid,
-                  balance_due: actualBalance,
-                  status: actualBalance <= 0 ? 'PAID' : (actualPaid > 0 ? 'PARTIAL' : 'OPEN')
-                }
+                paymentTotalsMap.set(invoice.id, actualPaid)
+                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
+              } else {
+                // No payments found, use invoice amount_paid
+                paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
               }
+            } else {
+              // API error, fall back to invoice amount_paid
+              paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
             }
           } catch (error) {
             console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+            // On error, fall back to invoice amount_paid
+            paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
           }
-          return invoice
         })
       )
       
-      setInvoices(invoicesWithActualPayments)
+      console.log('Payment totals map:', Array.from(paymentTotalsMap.entries()))
+      setInvoicePaymentTotals(paymentTotalsMap)
+      setInvoices(invoices)
     } catch (error) {
       console.error('Error fetching invoices:', error)
       setInvoices([])
@@ -1175,8 +1179,11 @@ return'<div class="s">'+l+'</div>';
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {invoices.map((invoice) => {
-                        const balance = parseFloat(invoice.balance_due as any)
-                        const paid = parseFloat(invoice.amount_paid as any)
+                        // Use actual payment total from payments API, not invoice.amount_paid
+                        const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
+                        const amountTotal = parseFloat(invoice.amount_total as any)
+                        const balance = amountTotal - actualPaid
+                        const paid = actualPaid
                         const hasPayments = paid > 0
                         
                         return (

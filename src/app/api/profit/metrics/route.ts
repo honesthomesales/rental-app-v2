@@ -60,12 +60,32 @@ export async function GET(request: Request) {
     console.log('Expenses found:', expenses?.length || 0)
     console.log('Total payments from expenses:', totalPayments)
     
-    // Get invoices for rent calculation directly from Supabase
-    // First try to get all fields to see what's available
+    // Get rent collected from payments (more reliable than invoices)
     let rentCollected = 0
     let expectedRent = 0
     
     try {
+      // Get payments for the month
+      const { data: payments, error: paymentsError } = await supabaseServer
+        .from('RENT_payments')
+        .select('amount, payment_date, payment_type')
+        .gte('payment_date', startOfMonth)
+        .lte('payment_date', endOfMonth)
+      
+      if (paymentsError) {
+        console.error('Error fetching payments:', paymentsError)
+      } else {
+        console.log('Successfully fetched', payments?.length || 0, 'payments')
+        
+        if (payments && payments.length > 0) {
+          // Sum all payments as rent collected
+          rentCollected = payments.reduce((sum, payment: any) => {
+            return sum + (Number(payment.amount) || 0)
+          }, 0)
+        }
+      }
+      
+      // Get expected rent from invoices (due in this month)
       const { data: invoices, error: invoicesError } = await supabaseServer
         .from('RENT_invoices')
         .select('*')
@@ -82,14 +102,9 @@ export async function GET(request: Request) {
           // Log first invoice to see structure
           console.log('Sample invoice structure:', JSON.stringify(invoices[0], null, 2))
           
-          // Try different field name combinations
-          // The table might use: amount, amount_paid, amount_total, or amount_rent, amount_late, amount_other
+          // Try different field name combinations for expected rent
           invoices.forEach((invoice: any) => {
-            // For rent collected, use amount_paid if available, otherwise 0
-            const paid = Number(invoice.amount_paid) || 0
-            rentCollected += paid
-            
-            // For expected rent, try amount_total first, then amount, then sum of amount_rent + amount_late + amount_other
+            // Try amount_total first, then amount, then sum of amount_rent + amount_late + amount_other
             const expected = Number(invoice.amount_total) || 
                             Number(invoice.amount) || 
                             ((Number(invoice.amount_rent) || 0) + 
@@ -99,10 +114,40 @@ export async function GET(request: Request) {
           })
         } else {
           console.log('No invoices found for date range:', startOfMonth, 'to', endOfMonth)
+          // If no invoices, try to get expected rent from leases
+          const { data: leases, error: leasesError } = await supabaseServer
+            .from('RENT_leases')
+            .select('rent, rent_cadence, lease_start_date, lease_end_date')
+            .eq('status', 'active')
+          
+          if (!leasesError && leases) {
+            // Calculate expected rent based on active leases and their cadence
+            leases.forEach((lease: any) => {
+              const leaseStart = new Date(lease.lease_start_date)
+              const leaseEnd = lease.lease_end_date ? new Date(lease.lease_end_date) : new Date(endOfMonth)
+              const monthStart = new Date(startOfMonth)
+              const monthEnd = new Date(endOfMonth)
+              
+              // Only count if lease is active during this month
+              if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
+                const rent = Number(lease.rent) || 0
+                const cadence = lease.rent_cadence?.toLowerCase()
+                
+                // Approximate expected rent based on cadence
+                if (cadence === 'monthly') {
+                  expectedRent += rent
+                } else if (cadence === 'biweekly') {
+                  expectedRent += rent * 2 // Approximately 2 payments per month
+                } else if (cadence === 'weekly') {
+                  expectedRent += rent * 4 // Approximately 4 payments per month
+                }
+              }
+            })
+          }
         }
       }
     } catch (error) {
-      console.error('Error fetching invoices:', error)
+      console.error('Error fetching rent data:', error)
       console.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
     }
     

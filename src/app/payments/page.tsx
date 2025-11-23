@@ -1379,16 +1379,18 @@ return'<div class="s">'+l+'</div>';
                             {payment.notes || '-'}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <div className="flex justify-center space-x-2">
+                            <div className="flex justify-center items-center gap-2">
                               <button
                                 onClick={() => handleEditSinglePayment(payment)}
-                                className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                                type="button"
                               >
                                 Edit
                               </button>
                               <button
                                 onClick={() => handleDeletePayment(payment.id, payment.invoice_id || editingInvoice?.id)}
-                                className="px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors"
+                                className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors"
+                                type="button"
                               >
                                 Delete
                               </button>

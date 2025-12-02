@@ -34,44 +34,50 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      console.log('Fetching dashboard metrics...')
-      const response = await fetch('/api/dashboard/metrics')
-      console.log('Dashboard API response status:', response.status)
-      const data = await response.json()
+      console.log('Fetching dashboard data in parallel...')
+      
+      // OPTIMIZED: Fetch all data in parallel instead of sequentially
+      const [metricsResponse, propertiesResponse, leasesResponse] = await Promise.all([
+        fetch('/api/dashboard/metrics'),
+        fetch('/api/properties'),
+        fetch('/api/leases')
+      ])
+
+      // Process metrics
+      if (!metricsResponse.ok) {
+        throw new Error(`Dashboard metrics failed: ${metricsResponse.status}`)
+      }
+      const data = await metricsResponse.json()
       console.log('Dashboard data received:', data)
       setMetrics(data)
-      
-      // Also fetch properties for insurance and tax sections
-      const propertiesResponse = await fetch('/api/properties')
+
+      // Process properties
       if (propertiesResponse.ok) {
         const propertiesData = await propertiesResponse.json()
         console.log('Properties data for dashboard:', propertiesData?.length || 0)
         setProperties(propertiesData || [])
         
         // Calculate potential income properties (unoccupied with rent_value)
-        if (data && propertiesData) {
+        if (data && propertiesData && leasesResponse.ok) {
+          const leasesData = await leasesResponse.json()
+          
           // Get occupied property IDs from active leases
           const occupiedPropertyIds = new Set<string>()
           const today = new Date().toISOString().split('T')[0]
+          const todayDate = new Date(today)
           
-          // Fetch all leases and filter for active ones
-          const leasesResponse = await fetch('/api/leases')
-          if (leasesResponse.ok) {
-            const leasesData = await leasesResponse.json()
-            leasesData.forEach((lease: any) => {
-              // Check if lease is active (status = 'active' and within date range)
-              if (lease.status === 'active' && lease.property_id) {
-                const startDate = new Date(lease.lease_start_date)
-                const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
-                const todayDate = new Date(today)
-                
-                // Lease is active if today is between start and end (or no end date)
-                if (todayDate >= startDate && (!endDate || todayDate <= endDate)) {
-                  occupiedPropertyIds.add(lease.property_id)
-                }
+          leasesData.forEach((lease: any) => {
+            // Check if lease is active (status = 'active' and within date range)
+            if (lease.status === 'active' && lease.property_id) {
+              const startDate = new Date(lease.lease_start_date)
+              const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
+              
+              // Lease is active if today is between start and end (or no end date)
+              if (todayDate >= startDate && (!endDate || todayDate <= endDate)) {
+                occupiedPropertyIds.add(lease.property_id)
               }
-            })
-          }
+            }
+          })
           
           // Filter unoccupied properties with rent_value
           const potentialProps = propertiesData.filter((property: any) => 
@@ -83,6 +89,9 @@ export default function Dashboard() {
           // Sort by potential income (rent_value) descending
           potentialProps.sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
           setPotentialIncomeProperties(potentialProps)
+        } else if (data && propertiesData) {
+          // If leases fetch failed, still set properties but no potential income calculation
+          setPotentialIncomeProperties([])
         }
       }
     } catch (error) {

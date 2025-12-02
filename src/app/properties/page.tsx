@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { Property } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
@@ -16,7 +16,6 @@ type PropertyWithLease = Property & {
 export default function PropertiesPage() {
   
   const [properties, setProperties] = useState<PropertyWithLease[]>([])
-  const [filteredProperties, setFilteredProperties] = useState<PropertyWithLease[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingProperty, setEditingProperty] = useState<PropertyWithLease | null>(null)
@@ -28,8 +27,47 @@ export default function PropertiesPage() {
     fetchProperties()
   }, [])
 
-  useEffect(() => {
-    filterAndSortProperties()
+  // OPTIMIZED: Use useMemo for expensive filtering and sorting calculations
+  const filteredProperties = useMemo(() => {
+    let filtered = properties.filter(property => {
+      const searchLower = searchTerm.toLowerCase()
+      return (
+        property.name.toLowerCase().includes(searchLower) ||
+        property.address.toLowerCase().includes(searchLower) ||
+        property.city.toLowerCase().includes(searchLower) ||
+        property.state.toLowerCase().includes(searchLower) ||
+        property.property_type.toLowerCase().includes(searchLower)
+      )
+    })
+
+    filtered.sort((a, b) => {
+      let aValue: any = a[sortField]
+      let bValue: any = b[sortField]
+
+      // Handle different data types
+      if (typeof aValue === 'string') {
+        aValue = aValue.toLowerCase()
+        bValue = bValue.toLowerCase()
+      } else if (typeof aValue === 'boolean') {
+        // For boolean values, convert to numbers (false = 0, true = 1)
+        aValue = aValue ? 1 : 0
+        bValue = bValue ? 1 : 0
+      } else if (typeof aValue === 'number') {
+        // Numbers are already comparable
+        aValue = aValue || 0
+        bValue = bValue || 0
+      } else {
+        // Handle undefined/null values
+        aValue = aValue || ''
+        bValue = bValue || ''
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return filtered
   }, [properties, searchTerm, sortField, sortDirection])
 
   const fetchProperties = async () => {
@@ -93,47 +131,6 @@ export default function PropertiesPage() {
     }
   }
 
-  const filterAndSortProperties = () => {
-    let filtered = properties.filter(property => {
-      const searchLower = searchTerm.toLowerCase()
-      return (
-        property.name.toLowerCase().includes(searchLower) ||
-        property.address.toLowerCase().includes(searchLower) ||
-        property.city.toLowerCase().includes(searchLower) ||
-        property.state.toLowerCase().includes(searchLower) ||
-        property.property_type.toLowerCase().includes(searchLower)
-      )
-    })
-
-    filtered.sort((a, b) => {
-      let aValue: any = a[sortField]
-      let bValue: any = b[sortField]
-
-      // Handle different data types
-      if (typeof aValue === 'string') {
-        aValue = aValue.toLowerCase()
-        bValue = bValue.toLowerCase()
-      } else if (typeof aValue === 'boolean') {
-        // For boolean values, convert to numbers (false = 0, true = 1)
-        aValue = aValue ? 1 : 0
-        bValue = bValue ? 1 : 0
-      } else if (typeof aValue === 'number') {
-        // Numbers are already comparable
-        aValue = aValue || 0
-        bValue = bValue || 0
-      } else {
-        // Handle undefined/null values
-        aValue = aValue || ''
-        bValue = bValue || ''
-      }
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-
-    setFilteredProperties(filtered)
-  }
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

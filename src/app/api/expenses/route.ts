@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { Expense } from '@/types/database'
 
+// Cache expenses for 60 seconds - they don't change frequently
+export const revalidate = 60
+
 export async function GET() {
   try {
     const { data: expenses, error } = await supabaseServer

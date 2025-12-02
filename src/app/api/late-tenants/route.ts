@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 
+// Cache this route for 30 seconds to improve performance
+export const revalidate = 30
+
 /**
  * Late Tenants API
  * 
  * Identifies leases with overdue invoices using the new invoice system.
  * Consistent with the payment grid data and invoice-based approach.
+ * OPTIMIZED: Uses batch queries instead of N+1 pattern.
  */
 export async function GET(request: Request) {
   try {
@@ -32,37 +36,93 @@ export async function GET(request: Request) {
 
     console.log('Found active leases:', leases?.length || 0)
 
+    if (!leases || leases.length === 0) {
+      return NextResponse.json({
+        summary: {
+          lateLeases: 0,
+          totalLateOwed: 0,
+          totalAllOwed: 0,
+          thirtyPlusLate: 0,
+          avgDaysLate: 0
+        },
+        rows: []
+      })
+    }
+
+    // OPTIMIZED: Batch fetch all invoices for all active leases in a single query
+    const leaseIds = leases.map(lease => lease.id)
+    const leaseStartDates = new Map(leases.map(lease => [lease.id, lease.lease_start_date]))
+    
+    const { data: allInvoices, error: invoicesError } = await supabaseServer
+      .from('RENT_invoices')
+      .select('*')
+      .in('lease_id', leaseIds)
+      .lte('due_date', today)
+      .order('due_date', { ascending: false })
+
+    if (invoicesError) {
+      console.error('Error fetching invoices:', invoicesError)
+      throw new Error(`Error fetching invoices: ${invoicesError.message}`)
+    }
+
+    // OPTIMIZED: Batch fetch all payments for all active leases in a single query
+    const { data: allPayments, error: paymentsError } = await supabaseServer
+      .from('RENT_payments')
+      .select('*')
+      .in('lease_id', leaseIds)
+      .order('payment_date', { ascending: true })
+
+    if (paymentsError) {
+      console.error('Error fetching payments:', paymentsError)
+      // Don't throw - payments are optional for display
+    }
+
+    // Group invoices and payments by lease_id for efficient lookup
+    const invoicesByLease = new Map<string, any[]>()
+    const paymentsByLease = new Map<string, any[]>()
+    
+    allInvoices?.forEach(invoice => {
+      const leaseId = invoice.lease_id
+      if (!invoicesByLease.has(leaseId)) {
+        invoicesByLease.set(leaseId, [])
+      }
+      invoicesByLease.get(leaseId)!.push(invoice)
+    })
+
+    allPayments?.forEach(payment => {
+      const leaseId = payment.lease_id
+      if (!paymentsByLease.has(leaseId)) {
+        paymentsByLease.set(leaseId, [])
+      }
+      paymentsByLease.get(leaseId)!.push(payment)
+    })
+
     // Process each lease to identify late tenants using the same logic as payments page
     const lateTenantsRows: any[] = []
     let totalAllOwed = 0 // Track all unpaid invoices (like dashboard)
 
-    for (const lease of leases || []) {
-      // Fetch invoices for this lease from lease start to current date
-      const { data: invoices, error: invoicesError } = await supabaseServer
-        .from('RENT_invoices')
-        .select('*')
-        .eq('lease_id', lease.id)
-        .gte('due_date', lease.lease_start_date)
-        .lte('due_date', today)
-        .order('due_date', { ascending: false })
-
-      if (invoicesError) {
-        console.error(`Error fetching invoices for lease ${lease.id}:`, invoicesError)
-        continue
-      }
+    for (const lease of leases) {
+      // Get invoices for this lease (already filtered by date range)
+      const invoices = invoicesByLease.get(lease.id) || []
+      
+      // Filter invoices within lease start date range
+      const leaseStartDate = leaseStartDates.get(lease.id)
+      const validInvoices = invoices.filter(invoice => 
+        !leaseStartDate || invoice.due_date >= leaseStartDate
+      )
 
       // Find all unpaid invoices (like dashboard) - status = 'OPEN' AND balance_due > 0
-      const allUnpaidInvoices = invoices?.filter(invoice => 
+      const allUnpaidInvoices = validInvoices.filter(invoice => 
         invoice.status === 'OPEN' && parseFloat(invoice.balance_due || 0) > 0
-      ) || []
+      )
 
       // Find late invoices (due before today and not fully paid) - same logic as payments page
-      const lateInvoices = invoices?.filter(invoice => {
+      const lateInvoices = validInvoices.filter(invoice => {
         const dueDate = new Date(invoice.due_date)
         const isPastDue = dueDate < todayDate
         const hasBalance = parseFloat(invoice.balance_due || 0) > 0
         return isPastDue && hasBalance
-      }) || []
+      })
 
       // Add to total all owed (like dashboard)
       totalAllOwed += allUnpaidInvoices.reduce((sum, invoice) => 
@@ -91,12 +151,8 @@ export async function GET(request: Request) {
       )
       const totalLatePeriods = lateInvoices.length
 
-      // Fetch payments for this lease for display purposes
-      const { data: payments } = await supabaseServer
-        .from('RENT_payments')
-        .select('*')
-        .eq('lease_id', lease.id)
-        .order('payment_date', { ascending: true })
+      // Get payments for this lease (already fetched in batch)
+      const payments = paymentsByLease.get(lease.id) || []
 
       // Create late tenant row
       const lateTenantRow = {
@@ -131,8 +187,8 @@ export async function GET(request: Request) {
         })),
         lastPaymentDate: payments && payments.length > 0 ? 
           payments[payments.length - 1].payment_date : null,
-        totalPayments: payments?.length || 0,
-        totalPaid: payments?.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0) || 0
+        totalPayments: payments.length,
+        totalPaid: payments.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0)
       }
       
       lateTenantsRows.push(lateTenantRow)

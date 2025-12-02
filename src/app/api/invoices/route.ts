@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 
+// Cache invoices for 30 seconds - balance can change frequently
+export const revalidate = 30
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)

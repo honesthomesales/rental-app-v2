@@ -70,9 +70,9 @@ export async function PUT(request: Request) {
 
     // Build update object
     const updateData: any = {}
-    if (body.payment_date) updateData.payment_date = body.payment_date
+    if (body.payment_date !== undefined) updateData.payment_date = body.payment_date
     if (body.amount !== undefined) updateData.amount = body.amount
-    if (body.payment_type) updateData.payment_type = body.payment_type
+    if (body.payment_type !== undefined) updateData.payment_type = body.payment_type
     if (body.notes !== undefined) updateData.notes = body.notes
 
     // Update payment - no select to avoid trigger issues

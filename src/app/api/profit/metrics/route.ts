@@ -348,7 +348,8 @@ export async function GET(request: Request) {
             }
           })
         
-        console.log('Property details built. Count:', propertyDetails.length)
+          console.log('Property details built. Count:', propertyDetails.length)
+        }
       }
     } catch (error) {
       console.error('Error fetching property details:', error)

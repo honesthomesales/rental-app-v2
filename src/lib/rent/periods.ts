@@ -461,9 +461,6 @@ function generatePeriodsForLeaseLegacy(lease: Lease, fridays: string[]): RentalP
   });
 }
 
-// Legacy export for backward compatibility
-export { generatePeriodsForLease as generatePeriodsForLease };
-
 // Re-export types for backward compatibility
 export type { RentalPeriod as RentalPeriod };
 export type { Lease as Lease };

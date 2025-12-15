@@ -220,9 +220,11 @@ export async function GET(request: Request) {
           console.error('Error fetching linked payments (will continue with period payments):', linkedError)
         }
         
-        // Also fetch ALL payments for the same lease within the invoice month
-        // Also try property_id as fallback in case payments aren't linked to lease
+        // Also fetch payments for the same lease within the invoice period
+        // Fallback to all lease payments if period search finds nothing
         let periodPayments: any[] = []
+        let allLeasePayments: any[] = []
+        
         if (invoice.lease_id) {
           // Get the property_id from the lease
           const { data: leaseData, error: leaseError } = await supabaseServer
@@ -233,24 +235,41 @@ export async function GET(request: Request) {
           
           const propertyId = leaseData?.property_id
           
-          // Always use due_date to determine the month
-          const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date()
-          const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1) // First day of month
-          const endDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0) // Last day of month
+          // OPTION 3: Hybrid approach - Use period_start and period_end for date range
+          // If period dates exist, use them; otherwise fall back to month of due_date
+          let startDateStr: string
+          let endDateStr: string
           
-          const startDateStr = startDate.toISOString().split('T')[0]
-          const endDateStr = endDate.toISOString().split('T')[0]
+          if (invoice.period_start && invoice.period_end) {
+            // Use invoice period dates
+            startDateStr = invoice.period_start
+            endDateStr = invoice.period_end
+            console.log('Using invoice period dates:', {
+              period_start: startDateStr,
+              period_end: endDateStr
+            })
+          } else {
+            // Fallback to month of due_date
+            const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date()
+            const startDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)
+            const endDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0)
+            startDateStr = startDate.toISOString().split('T')[0]
+            endDateStr = endDate.toISOString().split('T')[0]
+            console.log('Using month of due_date as fallback:', {
+              due_date: invoice.due_date,
+              month_start: startDateStr,
+              month_end: endDateStr
+            })
+          }
           
-          console.log('Fetching ALL payments for lease/property in month:', {
+          console.log('Fetching payments for lease/property in period:', {
             lease_id: invoice.lease_id,
             property_id: propertyId,
-            due_date: invoice.due_date,
-            month_start: startDateStr,
-            month_end: endDateStr
+            period_start: startDateStr,
+            period_end: endDateStr
           })
           
-          // First, get all payments without joins to avoid filtering issues
-          // Query by lease_id OR property_id to catch all payments
+          // First, get all payments within the period without joins to avoid filtering issues
           let periodQuery = supabaseServer
             .from('RENT_payments')
             .select('*')
@@ -321,10 +340,70 @@ export async function GET(request: Request) {
             
             console.log(`Found ${periodPayments.length} period payments (after filtering duplicates) for invoice ${invoiceId}`)
           }
+          
+          // FALLBACK: If no payments found in period, fetch ALL payments for the lease
+          if (periodPayments.length === 0 && safeLinkedPayments.length === 0) {
+            console.log('No payments found in period, fetching ALL payments for lease as fallback')
+            
+            let allLeaseQuery = supabaseServer
+              .from('RENT_payments')
+              .select('*')
+              .order('payment_date', { ascending: false })
+              .limit(100) // Limit to prevent huge queries
+            
+            // Use OR condition: payments matching lease_id OR property_id
+            if (propertyId) {
+              allLeaseQuery = allLeaseQuery.or(`lease_id.eq.${invoice.lease_id},property_id.eq.${propertyId}`)
+            } else {
+              allLeaseQuery = allLeaseQuery.eq('lease_id', invoice.lease_id)
+            }
+            
+            const { data: allLeasePaymentsData, error: allLeaseError } = await allLeaseQuery
+            
+            if (allLeaseError) {
+              console.error('Error fetching all lease payments:', allLeaseError)
+            } else if (allLeasePaymentsData && allLeasePaymentsData.length > 0) {
+              // Enrich the payments
+              const allPaymentIds = allLeasePaymentsData.map(p => p.id)
+              const { data: enrichedAllPayments, error: enrichAllError } = await supabaseServer
+                .from('RENT_payments')
+                .select(`
+                  *,
+                  RENT_tenants(
+                    id,
+                    full_name,
+                    first_name,
+                    last_name,
+                    email
+                  ),
+                  RENT_properties(
+                    id,
+                    name,
+                    address
+                  ),
+                  RENT_leases(
+                    id,
+                    rent,
+                    status
+                  )
+                `)
+                .in('id', allPaymentIds)
+              
+              if (enrichAllError) {
+                console.error('Error enriching all lease payments:', enrichAllError)
+                allLeasePayments = allLeasePaymentsData
+              } else {
+                allLeasePayments = enrichedAllPayments || []
+              }
+              
+              console.log(`Found ${allLeasePayments.length} total payments for lease (fallback)`)
+            }
+          }
         }
         
         // Combine and deduplicate by payment id
-        const allPayments = [...safeLinkedPayments, ...periodPayments]
+        // Priority: linked payments > period payments > all lease payments (fallback)
+        const allPayments = [...safeLinkedPayments, ...periodPayments, ...allLeasePayments]
         const uniquePayments = Array.from(
           new Map(allPayments.map(p => [p.id, p])).values()
         )
@@ -333,12 +412,19 @@ export async function GET(request: Request) {
         console.log('Final combined payments:', {
           linkedCount: safeLinkedPayments.length,
           periodCount: periodPayments.length,
+          fallbackCount: allLeasePayments.length,
           totalUnique: uniquePayments.length,
           paymentIds: uniquePayments.map(p => p.id),
-          paymentAmounts: uniquePayments.map(p => ({ id: p.id, amount: p.amount, date: p.payment_date }))
+          paymentAmounts: uniquePayments.map(p => ({ 
+            id: p.id, 
+            amount: p.amount, 
+            date: p.payment_date,
+            invoice_id: p.invoice_id,
+            isLinked: p.invoice_id === invoiceId
+          }))
         })
         
-        console.log(`Invoice ${invoiceId}: Found ${linkedPayments?.length || 0} linked payments, ${periodPayments.length} period payments, ${uniquePayments.length} total unique payments`)
+        console.log(`Invoice ${invoiceId}: Found ${safeLinkedPayments.length} linked payments, ${periodPayments.length} period payments, ${allLeasePayments.length} fallback payments, ${uniquePayments.length} total unique payments`)
       }
     } else {
       // Build the query for non-invoice queries

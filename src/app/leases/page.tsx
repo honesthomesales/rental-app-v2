@@ -179,7 +179,9 @@ export default function LeasesPage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create lease')
+        const errorMessage = errorData.details || errorData.error || 'Failed to create lease'
+        console.error('Lease creation error details:', errorData)
+        throw new Error(errorMessage)
       }
 
       const newLease = await response.json()

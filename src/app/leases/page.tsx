@@ -186,14 +186,16 @@ export default function LeasesPage() {
       const newLease = await response.json()
       console.log('Lease created successfully:', newLease)
 
+      // Reset the form before closing modal (in case form gets unmounted)
+      if (e.currentTarget) {
+        e.currentTarget.reset()
+      }
+      
       // Refresh the leases list
       await fetchLeases()
       
       // Close the modal
       setShowAddModal(false)
-      
-      // Reset the form
-      e.currentTarget.reset()
       
     } catch (error) {
       console.error('Error creating lease:', error)

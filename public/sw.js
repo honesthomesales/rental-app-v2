@@ -26,13 +26,43 @@ self.addEventListener('install', (event) => {
 
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', (event) => {
+  // Skip caching for API routes and non-GET requests
+  if (event.request.url.includes('/api/') || event.request.method !== 'GET') {
+    event.respondWith(fetch(event.request).catch(() => {
+      // Return a basic error response for API failures
+      return new Response(JSON.stringify({ error: 'Network error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
         // Return cached version or fetch from network
-        return response || fetch(event.request);
-      }
-    )
+        if (response) {
+          return response;
+        }
+        return fetch(event.request).then((fetchResponse) => {
+          // Only cache successful responses
+          if (fetchResponse && fetchResponse.status === 200) {
+            const responseToCache = fetchResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return fetchResponse;
+        }).catch((error) => {
+          console.error('Fetch failed:', error);
+          // Return a basic error page for navigation failures
+          if (event.request.mode === 'navigate') {
+            return caches.match('/') || new Response('Offline', { status: 503 });
+          }
+          throw error;
+        });
+      })
   );
 });
 

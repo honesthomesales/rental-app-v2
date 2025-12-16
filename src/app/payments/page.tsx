@@ -244,9 +244,12 @@ return'<div class="s">'+l+'</div>';
             if (paymentsResponse.ok) {
               const paymentsData = await paymentsResponse.json()
               if (Array.isArray(paymentsData) && paymentsData.length > 0) {
-                const actualPaid = paymentsData.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                // IMPORTANT: Only sum payments that are actually linked to this invoice
+                // The API may return unlinked payments for display, but we only count linked ones for calculation
+                const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
                 paymentTotalsMap.set(invoice.id, actualPaid)
-                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
+                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
               } else {
                 // No payments found, use invoice amount_paid
                 paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)

@@ -163,7 +163,6 @@ export default function LeasesPage() {
         rent: parseFloat(formData.get('rent') as string) || 0,
         rent_cadence: formData.get('rent_cadence') as string,
         rent_due_day: parseInt(formData.get('rent_due_day') as string) || 1,
-        grace_days: parseInt(formData.get('grace_days') as string) || 0,
         status: 'active'
       }
 
@@ -648,19 +647,6 @@ export default function LeasesPage() {
                     defaultValue="1"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="1"
-                  />
-                </div>
-
-                {/* Grace Days */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Grace Days</label>
-                  <input
-                    type="number"
-                    name="grace_days"
-                    min="0"
-                    defaultValue="0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="0"
                   />
                 </div>
               </div>

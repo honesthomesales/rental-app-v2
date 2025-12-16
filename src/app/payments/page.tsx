@@ -387,7 +387,7 @@ return'<div class="s">'+l+'</div>';
 
       console.log('Sending payment update:', { id: editingPayment.id, updateData })
 
-      const response = await fetch(`/api/rent/payments?id=${editingPayment.id}`, {
+      const response = await fetch(`/api/payments?id=${editingPayment.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)

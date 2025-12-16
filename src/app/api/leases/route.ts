@@ -47,7 +47,15 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('Error creating lease:', error)
-      throw new Error(`Supabase error: ${error.message}`)
+      return NextResponse.json(
+        { 
+          error: 'Failed to create lease', 
+          details: error.message, 
+          hint: error.hint, 
+          code: error.code 
+        },
+        { status: 500 }
+      )
     }
 
     console.log('Lease created successfully:', data)

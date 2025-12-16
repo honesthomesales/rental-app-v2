@@ -55,27 +55,76 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const paymentId = searchParams.get('id')
+    // Parse request body first (can only be read once)
     const body = await request.json()
+    
+    // Handle URL parsing - request.url might not be available in all contexts
+    let paymentId: string | null = null
+    try {
+      const url = new URL(request.url)
+      paymentId = url.searchParams.get('id')
+    } catch (urlError) {
+      console.error('Error parsing URL:', urlError)
+      // Fallback: get ID from request body
+      paymentId = body.id || null
+    }
     
     if (!paymentId) {
       return NextResponse.json(
-        { error: 'Payment ID is required' },
+        { error: 'Payment ID is required. Please provide it as a query parameter (?id=...) or in the request body.' },
         { status: 400 }
       )
     }
 
-    console.log('Updating payment (rent/payments):', paymentId, body)
+    // Validate required fields
+    if (body.amount !== undefined && (isNaN(body.amount) || body.amount <= 0)) {
+      return NextResponse.json(
+        { error: 'Amount must be a positive number' },
+        { status: 400 }
+      )
+    }
 
-    // Build update object
+    if (body.payment_date !== undefined && !body.payment_date) {
+      return NextResponse.json(
+        { error: 'Payment date is required' },
+        { status: 400 }
+      )
+    }
+
+    console.log('Updating payment (rent/payments):', { paymentId, body })
+
+    // Build update object - only include defined fields
     const updateData: any = {}
     if (body.payment_date !== undefined) updateData.payment_date = body.payment_date
-    if (body.amount !== undefined) updateData.amount = body.amount
+    if (body.amount !== undefined) updateData.amount = parseFloat(body.amount)
     if (body.payment_type !== undefined) updateData.payment_type = body.payment_type
-    if (body.notes !== undefined) updateData.notes = body.notes
+    if (body.notes !== undefined) updateData.notes = body.notes || ''
 
-    // Update payment - no select to avoid trigger issues
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: 'No fields to update. Please provide at least one field: payment_date, amount, payment_type, or notes.' },
+        { status: 400 }
+      )
+    }
+
+    console.log('Update data:', updateData)
+
+    // First check if payment exists
+    const { data: existingPayment, error: checkError } = await supabaseServer
+      .from('RENT_payments')
+      .select('id')
+      .eq('id', paymentId)
+      .single()
+
+    if (checkError || !existingPayment) {
+      console.error('Payment not found:', checkError)
+      return NextResponse.json(
+        { error: 'Payment not found', details: checkError?.message || 'Payment ID does not exist' },
+        { status: 404 }
+      )
+    }
+
+    // Update payment
     const { error } = await supabaseServer
       .from('RENT_payments')
       .update(updateData)
@@ -84,7 +133,7 @@ export async function PUT(request: Request) {
     if (error) {
       console.error('Database error:', error)
       return NextResponse.json(
-        { error: 'Failed to update payment', details: error.message },
+        { error: 'Failed to update payment', details: error.message, hint: error.hint, code: error.code },
         { status: 500 }
       )
     }

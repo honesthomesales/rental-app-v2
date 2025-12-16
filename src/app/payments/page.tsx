@@ -352,7 +352,10 @@ return'<div class="s">'+l+'</div>';
   const handleEditSinglePayment = (payment: any) => {
     setEditingPayment(payment)
     setPaymentAmount(payment.amount.toString())
-    setPaymentDate(payment.payment_date.split('T')[0])
+    // Handle date format - could be ISO string or YYYY-MM-DD
+    const dateStr = payment.payment_date || ''
+    const formattedDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.substring(0, 10)
+    setPaymentDate(formattedDate)
     setPaymentType(payment.payment_type || 'Rent')
     setPaymentNotes(payment.notes || '')
     setShowEditSinglePaymentModal(true)
@@ -361,13 +364,25 @@ return'<div class="s">'+l+'</div>';
   const handleUpdatePayment = async () => {
     if (!editingPayment) return
 
+    // Validate inputs
+    const paymentAmountNum = parseFloat(paymentAmount)
+    if (isNaN(paymentAmountNum) || paymentAmountNum <= 0) {
+      alert('Please enter a valid payment amount greater than 0')
+      return
+    }
+
+    if (!paymentDate) {
+      alert('Please enter a payment date')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const updateData = {
         payment_date: paymentDate,
-        amount: parseFloat(paymentAmount),
+        amount: paymentAmountNum,
         payment_type: paymentType,
-        notes: paymentNotes
+        notes: paymentNotes || ''
       }
 
       console.log('Sending payment update:', { id: editingPayment.id, updateData })
@@ -379,9 +394,16 @@ return'<div class="s">'+l+'</div>';
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Payment update failed:', errorData)
-        throw new Error(errorData.error || 'Failed to update payment')
+        let errorMessage = 'Failed to update payment'
+        try {
+          const errorData = await response.json()
+          console.error('Payment update failed:', errorData)
+          errorMessage = errorData.error || errorData.details || errorMessage
+        } catch (e) {
+          console.error('Could not parse error response:', e)
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        }
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
@@ -403,7 +425,8 @@ return'<div class="s">'+l+'</div>';
       }
     } catch (error) {
       console.error('Error updating payment:', error)
-      alert('Failed to update payment')
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      alert(`Failed to update payment: ${errorMessage}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -738,41 +761,62 @@ return'<div class="s">'+l+'</div>';
     setIsSubmitting(true)
     try {
       const paymentAmountNum = parseFloat(paymentAmount)
-      const currentPaid = parseFloat(selectedInvoice.amount_paid as any)
-      const newTotalPaid = currentPaid + paymentAmountNum
-      const amountTotal = parseFloat(selectedInvoice.amount_total as any)
-      const newBalance = amountTotal - newTotalPaid
+      
+      if (isNaN(paymentAmountNum) || paymentAmountNum <= 0) {
+        alert('Please enter a valid payment amount greater than 0')
+        return
+      }
 
-      console.log('Adding payment to invoice:', {
-        invoiceId: selectedInvoice.id,
-        currentPaid,
+      // Get required fields from selectedLease
+      const leaseId = selectedInvoice.lease_id || selectedLease.lease.id
+      const propertyId = selectedLease.property.id
+      const tenantId = selectedLease.tenant.id
+      const invoiceId = selectedInvoice.id
+
+      console.log('Creating payment record:', {
+        invoiceId,
+        leaseId,
+        propertyId,
+        tenantId,
         paymentAmount: paymentAmountNum,
-        newTotalPaid,
-        amountTotal,
-        newBalance
+        paymentDate,
+        paymentType,
+        notes: paymentNotes
       })
 
-      // Update invoice directly
-      const response = await fetch(`/api/invoices?id=${selectedInvoice.id}`, {
-        method: 'PUT',
+      // Create payment record via /api/payments POST
+      // This will create a RENT_payments record and automatically allocate it via FIFO RPC
+      const response = await fetch('/api/payments', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount_paid: newTotalPaid,
-          balance_due: newBalance,
-          status: newBalance <= 0 ? 'PAID' : 'OPEN',
-          paid_in_full_at: newBalance <= 0 ? new Date().toISOString() : null
+          lease_id: leaseId,
+          property_id: propertyId,
+          tenant_id: tenantId,
+          invoice_id: invoiceId,
+          amount: paymentAmountNum,
+          payment_date: paymentDate,
+          payment_type: paymentType,
+          notes: paymentNotes || ''
         })
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        console.error('Failed to update invoice:', errorData)
-        throw new Error('Failed to add payment')
+        console.error('Failed to create payment:', errorData)
+        throw new Error(errorData.error || 'Failed to add payment')
       }
 
-      console.log('Payment added successfully to invoice')
+      const result = await response.json()
+      console.log('Payment created successfully:', result)
 
-      // Refresh data
+      // Clear form fields
+      setPaymentAmount('')
+      setPaymentDate(new Date().toISOString().split('T')[0])
+      setPaymentType('Rent')
+      setPaymentNotes('')
+
+      // Refresh data to show updated invoice amounts
       setShowPaymentModal(false)
       await handleViewInvoices(selectedLease)
       await fetchLeases()

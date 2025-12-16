@@ -686,16 +686,47 @@ return'<div class="s">'+l+'</div>';
 
   const updateInvoiceBalance = async (invoiceId: string) => {
     try {
+      // First, fetch the invoice to get amount_total
+      const invoiceResponse = await fetch(`/api/invoices/${invoiceId}`)
+      if (!invoiceResponse.ok) {
+        console.error('Failed to fetch invoice:', invoiceId)
+        return
+      }
+      const invoiceData = await invoiceResponse.json()
+      const invoice = invoiceData.invoice || invoiceData
+      
+      if (!invoice) {
+        console.error('Invoice not found:', invoiceId)
+        return
+      }
+      
       // Fetch all payments for this invoice
       const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoiceId}`)
       const payments = await paymentsResponse.json()
       
-      // Calculate total paid
-      const totalPaid = Array.isArray(payments) 
-        ? payments.reduce((sum, p) => sum + parseFloat(p.amount), 0) 
-        : 0
+      // IMPORTANT: Only sum payments that are actually linked to this invoice
+      // The API may return unlinked payments for display, but we only count linked ones
+      const linkedPayments = Array.isArray(payments) 
+        ? payments.filter((p: any) => p.invoice_id === invoiceId)
+        : []
+      
+      // Calculate total paid from linked payments only
+      const totalPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+      
+      // Calculate balance_due correctly: amount_total - amount_paid
+      const amountTotal = parseFloat(invoice.amount_total as any)
+      const balanceDue = amountTotal - totalPaid
+      const newStatus = balanceDue <= 0 ? 'PAID' : (totalPaid > 0 ? 'PARTIAL' : 'OPEN')
 
-      console.log('Updating invoice balance:', { invoiceId, totalPaid, paymentsCount: payments.length })
+      console.log('Updating invoice balance:', { 
+        invoiceId, 
+        amountTotal,
+        totalPaid, 
+        balanceDue,
+        newStatus,
+        linkedPaymentsCount: linkedPayments.length,
+        allPaymentsCount: Array.isArray(payments) ? payments.length : 0
+      })
       
       // Update invoice balance using query parameter
       const updateResponse = await fetch(`/api/invoices?id=${invoiceId}`, {
@@ -703,8 +734,9 @@ return'<div class="s">'+l+'</div>';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount_paid: totalPaid,
-          balance_due: totalPaid,  // Will be recalculated on backend
-          status: 'updating'  // Will be recalculated on backend
+          balance_due: balanceDue,
+          status: newStatus,
+          paid_in_full_at: balanceDue <= 0 ? new Date().toISOString() : null
         })
       })
 

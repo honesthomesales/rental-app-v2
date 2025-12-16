@@ -35,31 +35,53 @@ export async function POST(request: Request) {
     
     console.log('Creating lease:', leaseData)
     
-    const { data, error } = await supabaseServer
+    // First, insert the lease with a simple select to avoid join issues
+    const { data: insertedLease, error: insertError } = await supabaseServer
       .from('RENT_leases')
       .insert(leaseData)
-      .select(`
-        *,
-        RENT_properties(*),
-        RENT_tenants(*)
-      `)
+      .select()
       .single()
 
-    if (error) {
-      console.error('Error creating lease:', error)
+    if (insertError) {
+      console.error('Error creating lease:', insertError)
       return NextResponse.json(
         { 
           error: 'Failed to create lease', 
-          details: error.message, 
-          hint: error.hint, 
-          code: error.code 
+          details: insertError.message, 
+          hint: insertError.hint, 
+          code: insertError.code 
         },
         { status: 500 }
       )
     }
 
-    console.log('Lease created successfully:', data)
-    return NextResponse.json(data)
+    if (!insertedLease) {
+      console.error('Lease insert returned no data')
+      return NextResponse.json(
+        { error: 'Failed to create lease', details: 'Insert succeeded but no data returned' },
+        { status: 500 }
+      )
+    }
+
+    // Now fetch the full lease with related data
+    const { data: fullLease, error: fetchError } = await supabaseServer
+      .from('RENT_leases')
+      .select(`
+        *,
+        RENT_properties(*),
+        RENT_tenants(*)
+      `)
+      .eq('id', insertedLease.id)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching lease with relations:', fetchError)
+      // Return the basic lease data even if fetch with relations fails
+      return NextResponse.json(insertedLease)
+    }
+
+    console.log('Lease created successfully:', fullLease)
+    return NextResponse.json(fullLease || insertedLease)
   } catch (error) {
     console.error('Error in lease creation API:', error)
     return NextResponse.json(

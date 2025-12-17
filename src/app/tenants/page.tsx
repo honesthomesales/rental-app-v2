@@ -541,14 +541,6 @@ export default function TenantsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Notes</label>
-                  <textarea
-                    name="notes"
-                    rows={3}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                  />
-                </div>
-                <div>
                   <label className="flex items-center">
                     <input
                       type="checkbox"
@@ -594,8 +586,7 @@ export default function TenantsPage() {
                 full_name: formData.get('full_name') as string,
                 email: formData.get('email') as string,
                 phone: formData.get('phone') as string,
-                is_active: formData.get('is_active') === 'on',
-                notes: formData.get('notes') as string
+                is_active: formData.get('is_active') === 'on'
               }
               handleSaveTenant(tenantData)
             }}>
@@ -651,15 +642,6 @@ export default function TenantsPage() {
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Notes</label>
-                  <textarea
-                    name="notes"
-                    defaultValue={editingTenant.notes || ''}
-                    rows={3}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                  />
                 </div>
                 <div>
                   <label className="flex items-center">

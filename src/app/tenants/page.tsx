@@ -155,9 +155,12 @@ export default function TenantsPage() {
         body: JSON.stringify(tenantData)
       })
 
+      const responseData = await response.json()
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || errorData.details || 'Failed to create tenant')
+        console.error('Error creating tenant:', responseData)
+        const errorMessage = responseData.details || responseData.error || responseData.hint || 'Failed to create tenant'
+        throw new Error(errorMessage)
       }
 
       // Refresh the tenants list
@@ -184,9 +187,12 @@ export default function TenantsPage() {
         })
       })
 
+      const responseData = await response.json()
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || errorData.details || 'Failed to update tenant')
+        console.error('Error updating tenant:', responseData)
+        const errorMessage = responseData.details || responseData.error || responseData.hint || 'Failed to update tenant'
+        throw new Error(errorMessage)
       }
 
       // Refresh the tenants list

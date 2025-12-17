@@ -116,14 +116,14 @@ export async function POST(request: Request) {
     }
     
     // Set defaults - convert empty strings to null
-    const newTenant = {
+    // Note: 'notes' column doesn't exist in RENT_tenants table, so we exclude it
+    const newTenant: any = {
       first_name: tenantData.first_name.trim(),
       last_name: tenantData.last_name.trim(),
       full_name: tenantData.full_name.trim(),
       email: nullIfEmpty(tenantData.email),
       phone: nullIfEmpty(tenantData.phone),
-      is_active: tenantData.is_active !== undefined ? tenantData.is_active : true,
-      notes: nullIfEmpty(tenantData.notes)
+      is_active: tenantData.is_active !== undefined ? tenantData.is_active : true
     }
     
     const { data, error } = await supabaseServer
@@ -193,10 +193,16 @@ export async function PUT(request: Request) {
     }
     
     // Clean up updateData - trim strings and convert empty strings to null
+    // Note: 'notes' column doesn't exist in RENT_tenants table, so we exclude it
     const cleanedUpdateData: any = {}
     Object.keys(updateData).forEach(key => {
+      // Skip 'notes' field as it doesn't exist in the database
+      if (key === 'notes') {
+        return
+      }
+      
       const value = updateData[key as keyof typeof updateData]
-      if (key === 'email' || key === 'phone' || key === 'notes') {
+      if (key === 'email' || key === 'phone') {
         cleanedUpdateData[key] = nullIfEmpty(value)
       } else if (key === 'first_name' || key === 'last_name' || key === 'full_name') {
         cleanedUpdateData[key] = typeof value === 'string' ? value.trim() : value

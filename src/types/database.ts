@@ -74,6 +74,19 @@ export interface Lease {
   updated_at?: string
 }
 
+export interface Deal {
+  id: string
+  address: string
+  seller_name?: string
+  seller_phone?: string
+  sell_price: number
+  date_purchased: string
+  "Soteris_$"?: number
+  notes?: string
+  created_at?: string
+  updated_at?: string
+}
+
 export interface RentPeriod {
   id: string
   tenant_id?: string

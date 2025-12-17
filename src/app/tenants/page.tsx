@@ -145,6 +145,30 @@ export default function TenantsPage() {
     }
   }
 
+  const handleCreateTenant = async (tenantData: Partial<Tenant>) => {
+    try {
+      const response = await fetch('/api/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tenantData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || errorData.details || 'Failed to create tenant')
+      }
+
+      // Refresh the tenants list
+      await fetchTenants()
+      setShowAddModal(false)
+    } catch (error) {
+      console.error('Error creating tenant:', error)
+      alert(error instanceof Error ? error.message : 'Failed to create tenant. Please try again.')
+    }
+  }
+
   const handleSaveTenant = async (tenantData: Partial<Tenant>) => {
     if (!editingTenant) return
 
@@ -162,7 +186,7 @@ export default function TenantsPage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update tenant')
+        throw new Error(errorData.error || errorData.details || 'Failed to update tenant')
       }
 
       // Refresh the tenants list
@@ -170,7 +194,7 @@ export default function TenantsPage() {
       setEditingTenant(null)
     } catch (error) {
       console.error('Error updating tenant:', error)
-      alert('Failed to update tenant. Please try again.')
+      alert(error instanceof Error ? error.message : 'Failed to update tenant. Please try again.')
     }
   }
 
@@ -443,26 +467,109 @@ export default function TenantsPage() {
         </div>
       )}
 
-      {/* Add Tenant Modal - Placeholder */}
+      {/* Add Tenant Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Tenant</h2>
-            <p className="text-gray-600 mb-4">Tenant form will be implemented here.</p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Save
-              </button>
-            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              const tenantData = {
+                first_name: formData.get('first_name') as string,
+                last_name: formData.get('last_name') as string,
+                full_name: formData.get('full_name') as string,
+                email: formData.get('email') as string,
+                phone: formData.get('phone') as string,
+                is_active: formData.get('is_active') === 'on',
+                notes: formData.get('notes') as string
+              }
+              handleCreateTenant(tenantData)
+            }}>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">First Name *</label>
+                    <input
+                      type="text"
+                      name="first_name"
+                      required
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Last Name *</label>
+                    <input
+                      type="text"
+                      name="last_name"
+                      required
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                  <input
+                    type="text"
+                    name="full_name"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="Auto-generated if left empty"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <input
+                      type="email"
+                      name="email"
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Phone</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Notes</label>
+                  <textarea
+                    name="notes"
+                    rows={3}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="is_active"
+                      defaultChecked={true}
+                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Active Tenant</span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Create Tenant
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

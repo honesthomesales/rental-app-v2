@@ -15,7 +15,143 @@ export async function POST(request: Request) {
     const receivedAt = paymentData.receivedAt || paymentData.payment_date
     const memo = paymentData.memo || paymentData.notes
     const paymentType = paymentData.payment_type || paymentData.paymentType || 'Rent'
-    const invoiceId = paymentData.invoice_id || paymentData.invoiceId
+    let invoiceId = paymentData.invoice_id || paymentData.invoiceId
+    
+    // Handle expected invoices (frontend-generated IDs like "expected-YYYY-MM-DD")
+    // If invoiceId starts with "expected-", create the actual invoice first
+    if (invoiceId && typeof invoiceId === 'string' && invoiceId.startsWith('expected-')) {
+      console.log('Detected expected invoice ID, creating invoice first:', invoiceId)
+      
+      // Extract due_date from expected invoice ID (format: expected-YYYY-MM-DD)
+      const dueDate = invoiceId.replace('expected-', '')
+      
+      // Fetch lease to get required data for invoice creation
+      const { data: lease, error: leaseError } = await supabaseServer
+        .from('RENT_leases')
+        .select('id, rent, rent_cadence, rent_due_day, property_id, tenant_id, lease_start_date, lease_end_date')
+        .eq('id', leaseId)
+        .single()
+      
+      if (leaseError || !lease) {
+        console.error('Error fetching lease for invoice creation:', leaseError)
+        return NextResponse.json(
+          { error: 'Lease not found. Cannot create invoice for expected invoice.', details: leaseError?.message },
+          { status: 404 }
+        )
+      }
+      
+      // Validate and calculate period dates from due_date (for monthly leases)
+      const dueDateObj = new Date(dueDate)
+      
+      // For monthly leases, validate due_date matches rent_due_day
+      const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
+      if (cadence === 'monthly' && lease.rent_due_day) {
+        const expectedDay = Math.min(lease.rent_due_day, new Date(dueDateObj.getFullYear(), dueDateObj.getMonth() + 1, 0).getDate())
+        if (dueDateObj.getDate() !== expectedDay) {
+          console.warn(`Due date (${dueDateObj.getDate()}) does not match lease rent_due_day (${lease.rent_due_day}). Using provided due date anyway.`)
+        }
+      }
+      
+      const periodStart = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), 1).toISOString().split('T')[0]
+      const periodEnd = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth() + 1, 0).toISOString().split('T')[0]
+      
+      // Check if invoice already exists for this lease and due_date
+      const { data: existingInvoice, error: checkError } = await supabaseServer
+        .from('RENT_invoices')
+        .select('id')
+        .eq('lease_id', leaseId)
+        .eq('due_date', dueDate)
+        .maybeSingle()
+      
+      if (checkError) {
+        console.error('Error checking for existing invoice:', checkError)
+        // Continue anyway - might be a transient error
+      }
+      
+      if (existingInvoice?.id) {
+        console.log('Invoice already exists for this lease and due date, using existing invoice:', existingInvoice.id)
+        invoiceId = existingInvoice.id
+      } else {
+        // Calculate invoice totals
+        const amountRent = parseFloat(lease.rent || 0)
+        const amountLate = 0
+        const amountOther = 0
+        const amountTotal = amountRent + amountLate + amountOther
+        const amountPaid = 0
+        const balanceDue = amountTotal - amountPaid
+        
+        // Create invoice record directly in database
+        const invoiceRecord: any = {
+          lease_id: leaseId,
+          property_id: propertyId || lease.property_id,
+          tenant_id: tenantId || lease.tenant_id,
+          due_date: dueDate,
+          period_start: periodStart,
+          period_end: periodEnd,
+          amount_rent: amountRent,
+          amount_late: amountLate,
+          amount_other: amountOther,
+          amount_total: amountTotal,
+          amount_paid: amountPaid,
+          balance_due: balanceDue,
+          status: balanceDue <= 0 ? 'PAID' : 'OPEN',
+          paid_in_full_at: balanceDue <= 0 ? new Date().toISOString() : null
+        }
+        
+        console.log('Creating invoice with data:', invoiceRecord)
+        
+        // Insert invoice into database
+        const { data: createdInvoice, error: invoiceError } = await supabaseServer
+          .from('RENT_invoices')
+          .insert([invoiceRecord])
+          .select()
+          .single()
+        
+        if (invoiceError || !createdInvoice) {
+          console.error('Failed to create invoice for expected invoice:', {
+            error: invoiceError,
+            invoiceRecord,
+            leaseId,
+            dueDate
+          })
+          return NextResponse.json(
+            { 
+              error: 'Failed to create invoice for expected invoice', 
+              details: invoiceError?.message || 'Unknown error',
+              hint: invoiceError?.hint || undefined,
+              code: invoiceError?.code || undefined
+            },
+            { status: 500 }
+          )
+        }
+        
+        if (!createdInvoice.id) {
+          console.error('Invoice created but no ID returned:', createdInvoice)
+          return NextResponse.json(
+            { 
+              error: 'Invoice created but no ID returned. Cannot link payment to invoice.',
+              details: 'Database returned invoice without ID'
+            },
+            { status: 500 }
+          )
+        }
+        
+        invoiceId = createdInvoice.id
+        console.log('Invoice created successfully for expected invoice:', invoiceId)
+      }
+    }
+    
+    // Final safety check: don't allow expected invoice IDs in payment record
+    if (invoiceId && typeof invoiceId === 'string' && invoiceId.startsWith('expected-')) {
+      console.error('Expected invoice ID still present after processing:', invoiceId)
+      return NextResponse.json(
+        { 
+          error: 'Invalid invoice ID. Expected invoice was not created properly.',
+          details: `Invoice ID "${invoiceId}" is not a valid UUID`
+        },
+        { status: 400 }
+      )
+    }
     
     // Validate required fields
     if (!tenantId || !leaseId || !amount) {
@@ -153,11 +289,19 @@ export async function GET(request: Request) {
       limit
     })
     
+    // Handle expected invoices FIRST before any database queries
+    if (invoiceId && typeof invoiceId === 'string' && invoiceId.startsWith('expected-')) {
+      console.log('Expected invoice ID provided, returning empty payments array:', invoiceId)
+      // Return empty array for expected invoices - they don't have payments yet
+      return NextResponse.json([])
+    }
+    
     // Special handling for invoiceId: fetch invoice details first, then get all related payments
     let payments: any[] = []
     let error: any = null
     
     if (invoiceId) {
+      
       // First, get the invoice to find its lease_id and period dates
       const { data: invoice, error: invoiceError } = await supabaseServer
         .from('RENT_invoices')

@@ -104,19 +104,26 @@ export async function POST(request: Request) {
     }
     
     // Auto-generate full_name if not provided
-    if (!tenantData.full_name) {
+    if (!tenantData.full_name || tenantData.full_name.trim() === '') {
       tenantData.full_name = `${tenantData.first_name} ${tenantData.last_name}`.trim()
     }
     
-    // Set defaults
+    // Helper function to convert empty strings to null
+    const nullIfEmpty = (value: any) => {
+      if (value === undefined || value === null) return null
+      if (typeof value === 'string' && value.trim() === '') return null
+      return value
+    }
+    
+    // Set defaults - convert empty strings to null
     const newTenant = {
-      first_name: tenantData.first_name,
-      last_name: tenantData.last_name,
-      full_name: tenantData.full_name,
-      email: tenantData.email || null,
-      phone: tenantData.phone || null,
+      first_name: tenantData.first_name.trim(),
+      last_name: tenantData.last_name.trim(),
+      full_name: tenantData.full_name.trim(),
+      email: nullIfEmpty(tenantData.email),
+      phone: nullIfEmpty(tenantData.phone),
       is_active: tenantData.is_active !== undefined ? tenantData.is_active : true,
-      notes: tenantData.notes || null
+      notes: nullIfEmpty(tenantData.notes)
     }
     
     const { data, error } = await supabaseServer
@@ -126,8 +133,31 @@ export async function POST(request: Request) {
       .single()
 
     if (error) {
-      console.error('Error creating tenant:', error)
-      throw new Error(`Supabase error: ${error.message}`)
+      console.error('Error creating tenant:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        newTenant
+      })
+      return NextResponse.json(
+        { 
+          error: 'Failed to create tenant', 
+          details: error.message,
+          hint: error.hint,
+          code: error.code
+        },
+        { status: 500 }
+      )
+    }
+
+    if (!data) {
+      console.error('Tenant created but no data returned')
+      return NextResponse.json(
+        { error: 'Tenant created but no data returned' },
+        { status: 500 }
+      )
     }
 
     console.log('Tenant created successfully:', data)
@@ -135,7 +165,10 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error in tenant create API:', error)
     return NextResponse.json(
-      { error: 'Failed to create tenant', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Failed to create tenant', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      },
       { status: 500 }
     )
   }
@@ -151,33 +184,82 @@ export async function PUT(request: Request) {
 
     console.log('Updating tenant:', id, updateData)
     
+    // Helper function to convert empty strings to null
+    const nullIfEmpty = (value: any) => {
+      if (value === undefined || value === null) return undefined // Don't update if not provided
+      if (typeof value === 'string' && value.trim() === '') return null
+      if (typeof value === 'string') return value.trim()
+      return value
+    }
+    
+    // Clean up updateData - trim strings and convert empty strings to null
+    const cleanedUpdateData: any = {}
+    Object.keys(updateData).forEach(key => {
+      const value = updateData[key as keyof typeof updateData]
+      if (key === 'email' || key === 'phone' || key === 'notes') {
+        cleanedUpdateData[key] = nullIfEmpty(value)
+      } else if (key === 'first_name' || key === 'last_name' || key === 'full_name') {
+        cleanedUpdateData[key] = typeof value === 'string' ? value.trim() : value
+      } else {
+        cleanedUpdateData[key] = value
+      }
+    })
+    
     // Auto-generate full_name if first_name or last_name changed
-    if (updateData.first_name || updateData.last_name) {
+    if (cleanedUpdateData.first_name || cleanedUpdateData.last_name) {
       // Get current tenant data to merge
-      const { data: currentTenant } = await supabaseServer
+      const { data: currentTenant, error: fetchError } = await supabaseServer
         .from('RENT_tenants')
         .select('first_name, last_name, full_name')
         .eq('id', id)
         .single()
       
-      const firstName = updateData.first_name || currentTenant?.first_name || ''
-      const lastName = updateData.last_name || currentTenant?.last_name || ''
+      if (fetchError) {
+        console.error('Error fetching current tenant:', fetchError)
+        return NextResponse.json(
+          { 
+            error: 'Failed to fetch current tenant data', 
+            details: fetchError.message,
+            hint: fetchError.hint,
+            code: fetchError.code
+          },
+          { status: 500 }
+        )
+      }
+      
+      if (!currentTenant) {
+        return NextResponse.json(
+          { error: 'Tenant not found' },
+          { status: 404 }
+        )
+      }
+      
+      const firstName = cleanedUpdateData.first_name || currentTenant?.first_name || ''
+      const lastName = cleanedUpdateData.last_name || currentTenant?.last_name || ''
       
       // Only update full_name if it wasn't explicitly provided
-      if (!updateData.full_name && (firstName || lastName)) {
-        updateData.full_name = `${firstName} ${lastName}`.trim()
+      if (!cleanedUpdateData.full_name && (firstName || lastName)) {
+        cleanedUpdateData.full_name = `${firstName} ${lastName}`.trim()
       }
     }
     
     const { data, error } = await supabaseServer
       .from('RENT_tenants')
-      .update(updateData)
+      .update(cleanedUpdateData)
       .eq('id', id)
       .select()
       .single()
 
     if (error) {
-      console.error('Error updating tenant:', error)
+      console.error('Error updating tenant:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        cleanedUpdateData,
+        id
+      })
       return NextResponse.json(
         { 
           error: 'Failed to update tenant', 

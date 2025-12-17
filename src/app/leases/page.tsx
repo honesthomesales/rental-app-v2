@@ -210,10 +210,6 @@ export default function LeasesPage() {
   }
 
   const handleDeleteLease = async (lease: LeaseWithDetails) => {
-    if (!confirm(`Are you sure you want to delete this lease for ${lease.RENT_properties?.name}?`)) {
-      return
-    }
-
     try {
       const response = await fetch(`/api/leases?id=${lease.id}`, {
         method: 'DELETE'

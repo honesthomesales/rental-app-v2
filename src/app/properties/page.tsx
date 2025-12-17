@@ -182,10 +182,6 @@ export default function PropertiesPage() {
   }
 
   const handleDeleteProperty = async (property: PropertyWithLease) => {
-    if (!confirm(`Are you sure you want to delete ${property.name}?`)) {
-      return
-    }
-
     try {
       const response = await fetch(`/api/properties?id=${property.id}`, {
         method: 'DELETE'

@@ -127,11 +127,6 @@ export default function TenantsPage() {
   }
 
   const handleDeleteTenant = async (tenant: Tenant) => {
-    const tenantName = tenant.full_name || `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim() || 'NO TENANT'
-    if (!confirm(`Are you sure you want to delete ${tenantName}?`)) {
-      return
-    }
-
     try {
       const response = await fetch(`/api/tenants?id=${tenant.id}`, {
         method: 'DELETE'

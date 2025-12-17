@@ -92,6 +92,70 @@ export default function PaymentsPage() {
     fetchProperties()
   }, [])
 
+  // Generate expected invoices for periods that don't have invoices yet
+  const generateExpectedInvoices = (lease: Lease, fromDate: string, toDate: string, existingInvoices: Invoice[]): Invoice[] => {
+    const expected: Invoice[] = []
+    const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
+    const rentDueDay = lease.rent_due_day || 1
+    const rentAmount = lease.rent || 0
+    
+    if (cadence !== 'monthly') {
+      // Only handle monthly for now
+      return expected
+    }
+    
+    // Create a set of existing invoice due dates for quick lookup
+    const existingDueDates = new Set(
+      existingInvoices.map(inv => inv.due_date?.split('T')[0] || inv.due_date)
+    )
+    
+    // Generate expected invoices for each month from lease start to today
+    const start = new Date(fromDate)
+    const end = new Date(toDate)
+    const current = new Date(start.getFullYear(), start.getMonth(), 1)
+    
+    while (current <= end) {
+      // Calculate due date for this month (rent_due_day of the month)
+      const year = current.getFullYear()
+      const month = current.getMonth()
+      const daysInMonth = new Date(year, month + 1, 0).getDate()
+      const dueDay = Math.min(rentDueDay, daysInMonth)
+      const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+      
+      // Only create expected invoice if:
+      // 1. The due date is on or after lease start
+      // 2. The due date is on or before today
+      // 3. There's no existing invoice for this due date
+      if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+        // Calculate period start and end (first and last day of the month)
+        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
+        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+        
+        expected.push({
+          id: `expected-${dueDate}`, // Temporary ID for expected invoices
+          invoice_no: `EXPECTED-${dueDate}`,
+          due_date: dueDate,
+          period_start: periodStart,
+          period_end: periodEnd,
+          lease_id: lease.id,
+          amount_rent: rentAmount,
+          amount_late: 0,
+          amount_other: 0,
+          amount_total: rentAmount,
+          amount_paid: 0,
+          balance_due: rentAmount,
+          status: 'OPEN',
+          paid_in_full_at: null
+        } as Invoice)
+      }
+      
+      // Move to next month
+      current.setMonth(current.getMonth() + 1)
+    }
+    
+    return expected
+  }
+
   const handlePrintNotice = () => {
     const printWin = window.open('', '_blank', 'width=900,height=1100')
     if (!printWin) { alert('Please allow popups'); return }
@@ -219,12 +283,11 @@ return'<div class="s">'+l+'</div>';
     setLoadingInvoices(true)
 
     try {
-      // Fetch all invoices for this lease for the current year up to today
-      const currentYear = new Date().getFullYear()
-      const yearStart = `${currentYear}-01-01`
+      // Fetch all invoices for this lease from lease start to today
+      const leaseStart = leaseRow.lease.lease_start_date
       const today = new Date().toISOString().split('T')[0]
       
-      const url = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${yearStart}&to=${today}`
+      const url = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseStart}&to=${today}`
       console.log('Fetching invoices from:', url)
       
       const response = await fetch(url)
@@ -232,7 +295,19 @@ return'<div class="s">'+l+'</div>';
       
       console.log('Invoices response:', invoicesData)
       
-      const invoices = Array.isArray(invoicesData) ? invoicesData : []
+      const existingInvoices = Array.isArray(invoicesData) ? invoicesData : []
+      
+      // Generate expected invoices for missing periods
+      const expectedInvoices = generateExpectedInvoices(leaseRow.lease, leaseStart, today, existingInvoices)
+      
+      // Merge existing and expected invoices, sorted by due_date
+      const allInvoices = [...existingInvoices, ...expectedInvoices].sort((a, b) => {
+        const dateA = new Date(a.due_date).getTime()
+        const dateB = new Date(b.due_date).getTime()
+        return dateB - dateA // Newest first
+      })
+      
+      const invoices = allInvoices
       
       // Fetch actual payment totals for all invoices in parallel
       const paymentTotalsMap = new Map<string, number>()
@@ -398,14 +473,24 @@ return'<div class="s">'+l+'</div>';
 
       if (!response.ok) {
         let errorMessage = 'Failed to update payment'
+        let fullErrorDetails = null
         try {
           const errorData = await response.json()
-          console.error('Payment update failed:', errorData)
+          console.error('Payment update failed - full error:', errorData)
+          fullErrorDetails = errorData
           errorMessage = errorData.error || errorData.details || errorMessage
+          // Include hint and code if available
+          if (errorData.hint) errorMessage += ` (${errorData.hint})`
+          if (errorData.code) errorMessage += ` [${errorData.code}]`
         } catch (e) {
           console.error('Could not parse error response:', e)
           errorMessage = `HTTP ${response.status}: ${response.statusText}`
         }
+        console.error('Payment update error details:', { 
+          status: response.status, 
+          statusText: response.statusText,
+          errorData: fullErrorDetails 
+        })
         throw new Error(errorMessage)
       }
 
@@ -634,8 +719,6 @@ return'<div class="s">'+l+'</div>';
   }
 
   const handleWaiveLateFee = async (invoice: Invoice) => {
-    if (!confirm('Are you sure you want to waive the late fee for this invoice?')) return
-
     try {
       const rentAmount = parseFloat(invoice.amount_rent as any)
       const paidAmount = parseFloat(invoice.amount_paid as any)
@@ -755,8 +838,6 @@ return'<div class="s">'+l+'</div>';
   }
 
   const handleDeletePayment = async (paymentId: string, invoiceId?: string) => {
-    if (!confirm('Are you sure you want to delete this payment?')) return
-
     try {
       const response = await fetch('/api/payments', {
         method: 'DELETE',
@@ -1886,7 +1967,7 @@ return'<div class="s">'+l+'</div>';
               
               // Only include property_id if a valid property is selected
               if (propertyId && propertyId !== '' && propertyId !== 'None') {
-                incomeData.property_id = propertyId
+                (incomeData as any).property_id = propertyId
               }
               
               handleSaveMiscIncome(incomeData)

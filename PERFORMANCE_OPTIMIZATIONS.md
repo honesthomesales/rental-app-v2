@@ -124,3 +124,4 @@ To verify improvements:
 - **Indexes**: Database indexes improve read performance but slightly slow writes. Monitor write performance after adding indexes.
 - **Batch Endpoint**: The new batch invoice endpoint should be used in the payments page to replace sequential invoice fetches.
 
+

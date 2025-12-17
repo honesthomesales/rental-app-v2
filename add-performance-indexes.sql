@@ -147,3 +147,4 @@ WHERE schemaname = 'public'
     AND tablename LIKE 'RENT_%'
 ORDER BY idx_scan DESC;
 
+

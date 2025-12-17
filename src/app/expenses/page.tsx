@@ -264,10 +264,6 @@ export default function ExpensesPage() {
   }
 
   const handleDeleteExpense = async (expense: Expense) => {
-    if (!confirm(`Are you sure you want to delete the expense for ${expense.address}?`)) {
-      return
-    }
-
     try {
       const response = await fetch(`/api/expenses?id=${expense.id}`, {
         method: 'DELETE'
@@ -287,11 +283,6 @@ export default function ExpensesPage() {
   }
 
   const handleDeleteOneTimeExpense = async (expense: Expense) => {
-    const description = expense.mail_info || 'this one-time expense'
-    if (!confirm(`Are you sure you want to delete ${description}?`)) {
-      return
-    }
-
     try {
       const response = await fetch(`/api/expenses?id=${expense.id}`, {
         method: 'DELETE'

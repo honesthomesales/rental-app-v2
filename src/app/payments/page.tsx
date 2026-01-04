@@ -1486,13 +1486,16 @@ return'<div class="s">'+l+'</div>';
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {invoices.map((invoice) => {
+                      {invoices.map((invoice, index) => {
                         // Use actual payment total from payments API, not invoice.amount_paid
                         const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
                         const amountTotal = parseFloat(invoice.amount_total as any)
                         const balance = amountTotal - actualPaid
                         const paid = actualPaid
                         const hasPayments = paid > 0
+                        // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
+                        const isMostRecent = index === 0
+                        const showPaymentButtons = balance > 0 || isMostRecent
                         
                         return (
                           <tr key={invoice.id} className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)}`}>
@@ -1530,33 +1533,35 @@ return'<div class="s">'+l+'</div>';
                                 >
                                   Payments
                                 </button>
-                                {balance > 0 && (
-                                  <>
-                                    <button
-                                      onClick={() => handleAddPayment(invoice)}
-                                      className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
-                                      type="button"
-                                    >
-                                      Add Payment
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setSelectedInvoice(invoice)
-                                        setPaymentAmount(invoice.balance_due.toString())
-                                        setPaymentDate(invoice.due_date)
-                                        setPaymentType('Rent')
-                                        setPaymentNotes('')
-                                        setPayNextInvoice(true)
-                                        setShowPaymentModal(true)
-                                      }}
-                                      className="px-2 py-1 bg-green-700 text-white text-xs font-bold rounded hover:bg-green-800 transition-colors"
-                                      type="button"
-                                      title="Pay this invoice + next cycle invoice"
-                                    >
-                                      +
-                                    </button>
-                                  </>
+                                {showPaymentButtons && (
+                                  <button
+                                    onClick={() => handleAddPayment(invoice)}
+                                    className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
+                                    type="button"
+                                    title={balance > 0 ? "Add payment to this invoice" : "Add advance payment (invoice is paid)"}
+                                  >
+                                    Add Payment
+                                  </button>
                                 )}
+                                {/* Always show + button to pay current + next invoice, even if property is up to date */}
+                                <button
+                                  onClick={() => {
+                                    setSelectedInvoice(invoice)
+                                    // If invoice is paid, set amount to the invoice total (for advance payment)
+                                    const paymentAmt = balance > 0 ? invoice.balance_due.toString() : invoice.amount_total.toString()
+                                    setPaymentAmount(paymentAmt)
+                                    setPaymentDate(invoice.due_date)
+                                    setPaymentType('Rent')
+                                    setPaymentNotes('')
+                                    setPayNextInvoice(true)
+                                    setShowPaymentModal(true)
+                                  }}
+                                  className="px-2 py-1 bg-green-700 text-white text-xs font-bold rounded hover:bg-green-800 transition-colors"
+                                  type="button"
+                                  title="Pay this invoice + next cycle invoice (will create next invoice if needed)"
+                                >
+                                  +
+                                </button>
                                 {hasPayments && (
                                   <button
                                     onClick={() => {

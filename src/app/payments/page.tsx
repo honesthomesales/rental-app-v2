@@ -1531,13 +1531,31 @@ return'<div class="s">'+l+'</div>';
                                   Payments
                                 </button>
                                 {balance > 0 && (
-                                  <button
-                                    onClick={() => handleAddPayment(invoice)}
-                                    className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
-                                    type="button"
-                                  >
-                                    Add Payment
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => handleAddPayment(invoice)}
+                                      className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
+                                      type="button"
+                                    >
+                                      Add Payment
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInvoice(invoice)
+                                        setPaymentAmount(invoice.balance_due.toString())
+                                        setPaymentDate(invoice.due_date)
+                                        setPaymentType('Rent')
+                                        setPaymentNotes('')
+                                        setPayNextInvoice(true)
+                                        setShowPaymentModal(true)
+                                      }}
+                                      className="px-2 py-1 bg-green-700 text-white text-xs font-bold rounded hover:bg-green-800 transition-colors"
+                                      type="button"
+                                      title="Pay this invoice + next cycle invoice"
+                                    >
+                                      +
+                                    </button>
+                                  </>
                                 )}
                                 {hasPayments && (
                                   <button

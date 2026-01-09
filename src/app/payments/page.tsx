@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 interface Lease {
   id: string
@@ -67,8 +67,9 @@ export default function PaymentsPage() {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
   const [paymentType, setPaymentType] = useState('Rent')
   const [paymentNotes, setPaymentNotes] = useState('')
-  const [payNextInvoice, setPayNextInvoice] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [highlightedInvoiceId, setHighlightedInvoiceId] = useState<string | null>(null)
+  const invoiceRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
   const [sortField, setSortField] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [showEditPaymentsModal, setShowEditPaymentsModal] = useState(false)
@@ -92,6 +93,20 @@ export default function PaymentsPage() {
     fetchLeases()
     fetchProperties()
   }, [])
+
+  // Handle scrolling to and highlighting newly created/shown invoice
+  useEffect(() => {
+    if (highlightedInvoiceId) {
+      const row = invoiceRowRefs.current.get(highlightedInvoiceId)
+      if (row) {
+        setTimeout(() => {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          // Remove highlight after 3 seconds
+          setTimeout(() => setHighlightedInvoiceId(null), 3000)
+        }, 100)
+      }
+    }
+  }, [highlightedInvoiceId])
 
   // Generate expected invoices for periods that don't have invoices yet
   const generateExpectedInvoices = (lease: Lease, fromDate: string, toDate: string, existingInvoices: Invoice[]): Invoice[] => {
@@ -359,7 +374,6 @@ return'<div class="s">'+l+'</div>';
     setPaymentDate(invoice.due_date) // Set to invoice due date instead of today
     setPaymentType('Rent')
     setPaymentNotes('')
-    setPayNextInvoice(false)
     setShowPaymentModal(true)
   }
 
@@ -970,115 +984,11 @@ return'<div class="s">'+l+'</div>';
       const result = await response.json()
       console.log('Payment created successfully:', result)
 
-      // If "Pay next invoice" is checked, also pay the next cycle invoice
-      if (payNextInvoice && selectedInvoice && selectedLease) {
-        try {
-          // Calculate next invoice period based on current invoice's period_end
-          const currentPeriodEnd = new Date(selectedInvoice.period_end + 'T12:00:00')
-          const nextPeriodStart = new Date(currentPeriodEnd)
-          nextPeriodStart.setDate(1) // First day of next month
-          nextPeriodStart.setMonth(currentPeriodEnd.getMonth() + 1)
-          
-          const nextPeriodEnd = new Date(nextPeriodStart.getFullYear(), nextPeriodStart.getMonth() + 1, 0) // Last day of next month
-          
-          // Calculate next due date based on lease rent_due_day
-          const rentDueDay = selectedLease.lease.rent_due_day || 1
-          const daysInNextMonth = nextPeriodEnd.getDate()
-          const nextDueDay = Math.min(rentDueDay, daysInNextMonth)
-          const nextDueDate = `${nextPeriodStart.getFullYear()}-${String(nextPeriodStart.getMonth() + 1).padStart(2, '0')}-${String(nextDueDay).padStart(2, '0')}`
-          
-          const nextPeriodStartStr = `${nextPeriodStart.getFullYear()}-${String(nextPeriodStart.getMonth() + 1).padStart(2, '0')}-01`
-          const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
-          
-          console.log('Calculated next invoice period:', {
-            nextDueDate,
-            nextPeriodStart: nextPeriodStartStr,
-            nextPeriodEnd: nextPeriodEndStr
-          })
-          
-          // Check if next invoice already exists
-          const nextInvoiceResponse = await fetch(`/api/invoices?leaseId=${leaseId}&from=${nextDueDate}&to=${nextDueDate}`)
-          const existingNextInvoices = await nextInvoiceResponse.json()
-          let nextInvoiceId: string | null = null
-          
-          if (Array.isArray(existingNextInvoices) && existingNextInvoices.length > 0) {
-            // Invoice exists, use it
-            nextInvoiceId = existingNextInvoices[0].id
-            console.log('Next invoice already exists:', nextInvoiceId)
-          } else {
-            // Create the next invoice
-            const nextInvoiceCreateData = {
-              lease_id: leaseId,
-              property_id: propertyId,
-              tenant_id: tenantId,
-              due_date: nextDueDate,
-              period_start: nextPeriodStartStr,
-              period_end: nextPeriodEndStr,
-              amount_rent: selectedLease.lease.rent || selectedInvoice.amount_rent || selectedInvoice.amount_total,
-              amount_late: 0,
-              amount_other: 0,
-              amount_total: selectedLease.lease.rent || selectedInvoice.amount_rent || selectedInvoice.amount_total,
-              amount_paid: 0,
-              balance_due: selectedLease.lease.rent || selectedInvoice.amount_rent || selectedInvoice.amount_total,
-              status: 'OPEN'
-            }
-            
-            const createNextInvoiceResponse = await fetch('/api/invoices', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(nextInvoiceCreateData)
-            })
-            
-            if (createNextInvoiceResponse.ok) {
-              const createdNextInvoice = await createNextInvoiceResponse.json()
-              nextInvoiceId = createdNextInvoice.id || createdNextInvoice.invoice?.id
-              console.log('Next invoice created successfully:', nextInvoiceId)
-            } else {
-              const errorData = await createNextInvoiceResponse.json().catch(() => ({}))
-              console.error('Failed to create next invoice:', errorData)
-              // Don't throw - just log the error and continue
-            }
-          }
-          
-          // If we have a next invoice ID, create payment for it
-          if (nextInvoiceId) {
-            const nextInvoiceAmount = selectedLease.lease.rent || selectedInvoice.amount_rent || selectedInvoice.amount_total
-            
-            const nextPaymentResponse = await fetch('/api/payments', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                lease_id: leaseId,
-                property_id: propertyId,
-                tenant_id: tenantId,
-                invoice_id: nextInvoiceId,
-                amount: nextInvoiceAmount,
-                payment_date: paymentDate, // Use same payment date
-                payment_type: paymentType,
-                notes: (paymentNotes || '') + ' (Next cycle - paid in advance)'
-              })
-            })
-            
-            if (nextPaymentResponse.ok) {
-              console.log('Next invoice payment created successfully')
-            } else {
-              const errorData = await nextPaymentResponse.json().catch(() => ({}))
-              console.error('Failed to create next invoice payment:', errorData)
-              // Don't throw - just log the error
-            }
-          }
-        } catch (error) {
-          console.error('Error paying next invoice:', error)
-          // Don't throw - just log the error so the main payment still succeeds
-        }
-      }
-
       // Clear form fields
       setPaymentAmount('')
       setPaymentDate(new Date().toISOString().split('T')[0])
       setPaymentType('Rent')
       setPaymentNotes('')
-      setPayNextInvoice(false)
 
       // Refresh data to show updated invoice amounts
       setShowPaymentModal(false)
@@ -1449,14 +1359,154 @@ return'<div class="s">'+l+'</div>';
                 <h2 className="text-2xl font-bold">{selectedLease.property?.name}</h2>
                 <p className="text-blue-100">{selectedLease.tenant?.full_name}</p>
               </div>
-              <button
-                onClick={() => setShowInvoiceModal(false)}
-                className="text-white hover:text-gray-200 transition-colors"
-              >
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    if (!selectedLease) return
+                    try {
+                      // Find the most recent invoice (first in the sorted list)
+                      const mostRecentInvoice = invoices.length > 0 ? invoices[0] : null
+                      
+                      if (!mostRecentInvoice) {
+                        // If no invoices, calculate from lease start
+                        const leaseStart = new Date(selectedLease.lease.lease_start_date + 'T12:00:00')
+                        const nextPeriodStart = new Date(leaseStart)
+                        nextPeriodStart.setMonth(leaseStart.getMonth() + 1)
+                        nextPeriodStart.setDate(1)
+                        
+                        const nextPeriodEnd = new Date(nextPeriodStart.getFullYear(), nextPeriodStart.getMonth() + 1, 0)
+                        const rentDueDay = selectedLease.lease.rent_due_day || 1
+                        const daysInNextMonth = nextPeriodEnd.getDate()
+                        const nextDueDay = Math.min(rentDueDay, daysInNextMonth)
+                        const nextDueDate = `${nextPeriodStart.getFullYear()}-${String(nextPeriodStart.getMonth() + 1).padStart(2, '0')}-${String(nextDueDay).padStart(2, '0')}`
+                        const nextPeriodStartStr = `${nextPeriodStart.getFullYear()}-${String(nextPeriodStart.getMonth() + 1).padStart(2, '0')}-01`
+                        const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
+                        
+                        // Check if invoice exists
+                        const checkResponse = await fetch(`/api/invoices?leaseId=${selectedLease.lease.id}&from=${nextDueDate}&to=${nextDueDate}`)
+                        const existingInvoices = await checkResponse.json()
+                        
+                        if (Array.isArray(existingInvoices) && existingInvoices.length > 0) {
+                          // Invoice exists, just refresh
+                          await handleViewInvoices(selectedLease)
+                          setHighlightedInvoiceId(existingInvoices[0].id)
+                        } else {
+                          // Create the invoice
+                          const invoiceData = {
+                            lease_id: selectedLease.lease.id,
+                            property_id: selectedLease.property.id,
+                            tenant_id: selectedLease.tenant.id,
+                            due_date: nextDueDate,
+                            period_start: nextPeriodStartStr,
+                            period_end: nextPeriodEndStr,
+                            amount_rent: selectedLease.lease.rent,
+                            amount_late: 0,
+                            amount_other: 0,
+                            amount_total: selectedLease.lease.rent,
+                            amount_paid: 0,
+                            balance_due: selectedLease.lease.rent,
+                            status: 'OPEN'
+                          }
+                          
+                          const createResponse = await fetch('/api/invoices', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(invoiceData)
+                          })
+                          
+                          if (createResponse.ok) {
+                            const createdInvoice = await createResponse.json()
+                            const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
+                            // Refresh the invoice list
+                            await handleViewInvoices(selectedLease)
+                            setHighlightedInvoiceId(newInvoiceId)
+                          } else {
+                            const errorData = await createResponse.json().catch(() => ({}))
+                            console.error('Failed to create next invoice:', errorData)
+                            alert('Failed to create next invoice: ' + (errorData.error || 'Unknown error'))
+                          }
+                        }
+                      } else {
+                        // Calculate next invoice period based on most recent invoice
+                        const currentPeriodEnd = new Date(mostRecentInvoice.period_end + 'T12:00:00')
+                        const nextPeriodStart = new Date(currentPeriodEnd)
+                        nextPeriodStart.setDate(1)
+                        nextPeriodStart.setMonth(currentPeriodEnd.getMonth() + 1)
+                        
+                        const nextPeriodEnd = new Date(nextPeriodStart.getFullYear(), nextPeriodStart.getMonth() + 1, 0)
+                        const rentDueDay = selectedLease.lease.rent_due_day || 1
+                        const daysInNextMonth = nextPeriodEnd.getDate()
+                        const nextDueDay = Math.min(rentDueDay, daysInNextMonth)
+                        const nextDueDate = `${nextPeriodStart.getFullYear()}-${String(nextPeriodStart.getMonth() + 1).padStart(2, '0')}-${String(nextDueDay).padStart(2, '0')}`
+                        const nextPeriodStartStr = `${nextPeriodStart.getFullYear()}-${String(nextPeriodStart.getMonth() + 1).padStart(2, '0')}-01`
+                        const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
+                        
+                        // Check if invoice exists
+                        const checkResponse = await fetch(`/api/invoices?leaseId=${selectedLease.lease.id}&from=${nextDueDate}&to=${nextDueDate}`)
+                        const existingInvoices = await checkResponse.json()
+                        
+                        if (Array.isArray(existingInvoices) && existingInvoices.length > 0) {
+                          // Invoice exists, just refresh
+                          await handleViewInvoices(selectedLease)
+                          setHighlightedInvoiceId(existingInvoices[0].id)
+                        } else {
+                          // Create the invoice
+                          const invoiceData = {
+                            lease_id: selectedLease.lease.id,
+                            property_id: selectedLease.property.id,
+                            tenant_id: selectedLease.tenant.id,
+                            due_date: nextDueDate,
+                            period_start: nextPeriodStartStr,
+                            period_end: nextPeriodEndStr,
+                            amount_rent: selectedLease.lease.rent || mostRecentInvoice.amount_rent || mostRecentInvoice.amount_total,
+                            amount_late: 0,
+                            amount_other: 0,
+                            amount_total: selectedLease.lease.rent || mostRecentInvoice.amount_rent || mostRecentInvoice.amount_total,
+                            amount_paid: 0,
+                            balance_due: selectedLease.lease.rent || mostRecentInvoice.amount_rent || mostRecentInvoice.amount_total,
+                            status: 'OPEN'
+                          }
+                          
+                          const createResponse = await fetch('/api/invoices', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(invoiceData)
+                          })
+                          
+                          if (createResponse.ok) {
+                            const createdInvoice = await createResponse.json()
+                            const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
+                            // Refresh the invoice list
+                            await handleViewInvoices(selectedLease)
+                            setHighlightedInvoiceId(newInvoiceId)
+                          } else {
+                            const errorData = await createResponse.json().catch(() => ({}))
+                            console.error('Failed to create next invoice:', errorData)
+                            alert('Failed to create next invoice: ' + (errorData.error || 'Unknown error'))
+                          }
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Error showing/creating next invoice:', error)
+                      alert('Failed to show next invoice: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                  type="button"
+                  title="Show next month's invoice (creates if needed)"
+                >
+                  <span className="text-lg">+</span>
+                  <span>Next Invoice</span>
+                </button>
+                <button
+                  onClick={() => setShowInvoiceModal(false)}
+                  className="text-white hover:text-gray-200 transition-colors"
+                >
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
@@ -1496,9 +1546,20 @@ return'<div class="s">'+l+'</div>';
                         // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
                         const isMostRecent = index === 0
                         const showPaymentButtons = balance > 0 || isMostRecent
+                        const isHighlighted = highlightedInvoiceId === invoice.id
                         
                         return (
-                          <tr key={invoice.id} className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)}`}>
+                          <tr 
+                            key={invoice.id} 
+                            className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)} ${isHighlighted ? 'bg-yellow-100 animate-pulse' : ''}`}
+                            ref={(el) => {
+                              if (el) {
+                                invoiceRowRefs.current.set(invoice.id, el)
+                              } else {
+                                invoiceRowRefs.current.delete(invoice.id)
+                              }
+                            }}
+                          >
                             <td className="px-3 py-2">
                               {getInvoiceStatusBadge(invoice)}
                             </td>
@@ -1543,25 +1604,6 @@ return'<div class="s">'+l+'</div>';
                                     Add Payment
                                   </button>
                                 )}
-                                {/* Always show + button to pay current + next invoice, even if property is up to date */}
-                                <button
-                                  onClick={() => {
-                                    setSelectedInvoice(invoice)
-                                    // If invoice is paid, set amount to the invoice total (for advance payment)
-                                    const paymentAmt = balance > 0 ? invoice.balance_due.toString() : invoice.amount_total.toString()
-                                    setPaymentAmount(paymentAmt)
-                                    setPaymentDate(invoice.due_date)
-                                    setPaymentType('Rent')
-                                    setPaymentNotes('')
-                                    setPayNextInvoice(true)
-                                    setShowPaymentModal(true)
-                                  }}
-                                  className="px-2 py-1 bg-green-700 text-white text-xs font-bold rounded hover:bg-green-800 transition-colors"
-                                  type="button"
-                                  title="Pay this invoice + next cycle invoice (will create next invoice if needed)"
-                                >
-                                  +
-                                </button>
                                 {hasPayments && (
                                   <button
                                     onClick={() => {
@@ -1688,26 +1730,6 @@ return'<div class="s">'+l+'</div>';
                 />
               </div>
 
-              <div className="pt-2 border-t border-gray-200">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="payNextInvoice"
-                    checked={payNextInvoice}
-                    onChange={(e) => setPayNextInvoice(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="payNextInvoice" className="text-sm font-medium text-gray-700 cursor-pointer flex items-center">
-                    <span className="text-lg font-bold text-green-600 mr-1">+</span>
-                    Pay next cycle invoice
-                  </label>
-                </div>
-                {payNextInvoice && selectedInvoice && selectedLease && (
-                  <div className="mt-2 ml-6 text-xs text-gray-600 bg-blue-50 p-2 rounded">
-                    Next invoice will be paid: <span className="font-semibold">${(selectedLease.lease.rent || selectedInvoice.amount_rent || selectedInvoice.amount_total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Modal Footer */}

@@ -543,7 +543,7 @@ export default function ProfitPage() {
                   <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-gray-100 z-10">
                     TOTALS
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                     {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.expected_rent || 0), 0))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

@@ -133,19 +133,19 @@ export async function GET(request: Request) {
               const monthEnd = new Date(endOfMonth)
               
               // Only count if lease is active during this month
-              if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
-                const rent = Number(lease.rent) || 0
-                const cadence = lease.rent_cadence?.toLowerCase()
-                
-                // Approximate expected rent based on cadence
-                if (cadence === 'monthly') {
-                  expectedRent += rent
-                } else if (cadence === 'biweekly') {
-                  expectedRent += rent * 2 // Approximately 2 payments per month
-                } else if (cadence === 'weekly') {
-                  expectedRent += rent * 4 // Approximately 4 payments per month
+                if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
+                  const rent = Number(lease.rent) || 0
+                  const cadence = lease.rent_cadence?.toLowerCase()
+                  
+                  // Calculate monthly equivalent based on cadence
+                  if (cadence === 'monthly') {
+                    expectedRent += rent
+                  } else if (cadence === 'biweekly') {
+                    expectedRent += (rent * 26) / 12 // 26 payments per year / 12 months
+                  } else if (cadence === 'weekly') {
+                    expectedRent += (rent * 52) / 12 // 52 payments per year / 12 months
+                  }
                 }
-              }
             })
           }
         }
@@ -326,12 +326,13 @@ export async function GET(request: Request) {
                   const rent = Number(lease.rent) || 0
                   const cadence = lease.rent_cadence?.toLowerCase()
                   
+                  // Calculate monthly equivalent based on cadence
                   if (cadence === 'monthly') {
                     expectedRentForProperty += rent
                   } else if (cadence === 'biweekly') {
-                    expectedRentForProperty += rent * 2
+                    expectedRentForProperty += (rent * 26) / 12 // 26 payments per year / 12 months
                   } else if (cadence === 'weekly') {
-                    expectedRentForProperty += rent * 4
+                    expectedRentForProperty += (rent * 52) / 12 // 52 payments per year / 12 months
                   }
                 }
               })

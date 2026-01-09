@@ -6,9 +6,20 @@ export const revalidate = 60
 
 export async function GET() {
   try {
-    console.log('Fetching tenants from leases...')
+    console.log('Fetching all tenants...')
     
-    // Fetch all leases with their tenant and property data (this is the source of truth)
+    // Fetch ALL tenants directly from RENT_tenants table (not just those with leases)
+    const { data: allTenants, error: tenantsError } = await supabaseServer
+      .from('RENT_tenants')
+      .select('*')
+      .order('full_name', { ascending: true })
+
+    if (tenantsError) {
+      console.error('Error fetching tenants:', tenantsError)
+      throw new Error(`Error fetching tenants: ${tenantsError.message}`)
+    }
+
+    // Also fetch leases to enrich tenant data with lease/property info
     const { data: allLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select(`
@@ -19,13 +30,12 @@ export async function GET() {
       .order('created_at', { ascending: false })
 
     if (leasesError) {
-      console.error('Error fetching leases:', leasesError)
-      throw new Error(`Error fetching leases: ${leasesError.message}`)
+      console.error('Error fetching leases (will continue without lease enrichment):', leasesError)
     }
 
-    // Create a map to store the most relevant lease for each tenant
+    // Create a map of tenant_id to lease data for enrichment
+    const leaseMap = new Map()
     const currentDate = new Date()
-    const tenantMap = new Map()
     
     if (allLeases && allLeases.length > 0) {
       allLeases.forEach(lease => {
@@ -37,47 +47,56 @@ export async function GET() {
         const isWithinLeasePeriod = currentDate >= startDate && (!endDate || currentDate <= endDate)
         const isActive = lease.status === 'active'
         
-        // Build tenant object from lease data
-        const tenantData = {
-          id: tenantId,
-          first_name: lease.RENT_tenants.first_name,
-          last_name: lease.RENT_tenants.last_name,
-          full_name: lease.RENT_tenants.full_name,
-          email: lease.RENT_tenants.email,
-          phone: lease.RENT_tenants.phone,
-          is_active: lease.RENT_tenants.is_active ?? isActive,
-          notes: lease.RENT_tenants.notes,
+        // Build lease data for enrichment
+        const leaseData = {
           lease_start_date: lease.lease_start_date,
           lease_end_date: lease.lease_end_date,
           property_id: lease.property_id,
           property: lease.RENT_properties || null,
-          created_at: lease.RENT_tenants.created_at,
-          updated_at: lease.RENT_tenants.updated_at
+          isWithinLeasePeriod,
+          isActive
         }
         
         // Decide if we should use this lease for the tenant
-        const existingTenant = tenantMap.get(tenantId)
-        if (!existingTenant) {
+        const existingLease = leaseMap.get(tenantId)
+        if (!existingLease) {
           // First lease for this tenant
-          tenantMap.set(tenantId, tenantData)
+          leaseMap.set(tenantId, leaseData)
         } else {
           // Prefer active leases within the lease period
-          const existingIsActive = existingTenant.lease_start_date && existingTenant.lease_end_date ?
-            (currentDate >= new Date(existingTenant.lease_start_date) && 
-             currentDate <= new Date(existingTenant.lease_end_date || '9999-12-31')) : false
+          const existingIsActive = existingLease.lease_start_date && existingLease.lease_end_date ?
+            (currentDate >= new Date(existingLease.lease_start_date) && 
+             currentDate <= new Date(existingLease.lease_end_date || '9999-12-31')) : false
           
           if (isWithinLeasePeriod && isActive && !existingIsActive) {
-            tenantMap.set(tenantId, tenantData)
+            leaseMap.set(tenantId, leaseData)
           } else if (isActive && !existingIsActive) {
             // Prefer active leases even if not currently in period
-            tenantMap.set(tenantId, tenantData)
+            leaseMap.set(tenantId, leaseData)
           }
         }
       })
     }
     
-    // Convert map to array
-    const tenantsWithDetails = Array.from(tenantMap.values())
+    // Enrich all tenants with lease data if available
+    const tenantsWithDetails = (allTenants || []).map((tenant: any) => {
+      const leaseData = leaseMap.get(tenant.id)
+      return {
+        id: tenant.id,
+        first_name: tenant.first_name,
+        last_name: tenant.last_name,
+        full_name: tenant.full_name,
+        email: tenant.email,
+        phone: tenant.phone,
+        is_active: tenant.is_active ?? leaseData?.isActive ?? true,
+        lease_start_date: leaseData?.lease_start_date || null,
+        lease_end_date: leaseData?.lease_end_date || null,
+        property_id: leaseData?.property_id || null,
+        property: leaseData?.property || null,
+        created_at: tenant.created_at,
+        updated_at: tenant.updated_at
+      }
+    })
     
     return NextResponse.json(tenantsWithDetails || [])
   } catch (error) {

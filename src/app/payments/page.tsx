@@ -1368,8 +1368,14 @@ return'<div class="s">'+l+'</div>';
                   onClick={async () => {
                     if (!selectedLease) return
                     try {
-                      // Find the most recent invoice (first in the sorted list)
+                      console.log('+ Next Invoice clicked. Current invoices:', invoices.length)
+                      // Find the most recent invoice by due_date (invoices are sorted newest first)
                       const mostRecentInvoice = invoices.length > 0 ? invoices[0] : null
+                      console.log('Most recent invoice:', mostRecentInvoice ? {
+                        id: mostRecentInvoice.id,
+                        due_date: mostRecentInvoice.due_date,
+                        period_end: mostRecentInvoice.period_end
+                      } : 'none')
                       
                       if (!mostRecentInvoice) {
                         // If no invoices, calculate from lease start
@@ -1387,15 +1393,19 @@ return'<div class="s">'+l+'</div>';
                         const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
                         
                         // Check if invoice exists
+                        console.log('Checking for existing invoice with due_date:', nextDueDate, '(no existing invoices case)')
                         const checkResponse = await fetch(`/api/invoices?leaseId=${selectedLease.lease.id}&from=${nextDueDate}&to=${nextDueDate}`)
                         const existingInvoices = await checkResponse.json()
+                        console.log('Existing invoices check result:', existingInvoices)
                         
                         if (Array.isArray(existingInvoices) && existingInvoices.length > 0) {
                           // Invoice exists, just refresh
+                          console.log('Invoice already exists, refreshing list. Invoice ID:', existingInvoices[0].id)
                           await handleViewInvoices(selectedLease)
                           setHighlightedInvoiceId(existingInvoices[0].id)
                         } else {
                           // Create the invoice
+                          console.log('Invoice does not exist, creating new invoice for:', nextDueDate)
                           const invoiceData = {
                             lease_id: selectedLease.lease.id,
                             property_id: selectedLease.property.id,
@@ -1453,15 +1463,19 @@ return'<div class="s">'+l+'</div>';
                         const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
                         
                         // Check if invoice exists
+                        console.log('Checking for existing invoice with due_date:', nextDueDate, 'Period:', nextPeriodStartStr, 'to', nextPeriodEndStr)
                         const checkResponse = await fetch(`/api/invoices?leaseId=${selectedLease.lease.id}&from=${nextDueDate}&to=${nextDueDate}`)
                         const existingInvoices = await checkResponse.json()
+                        console.log('Existing invoices check result:', existingInvoices)
                         
                         if (Array.isArray(existingInvoices) && existingInvoices.length > 0) {
                           // Invoice exists, just refresh
+                          console.log('Invoice already exists, refreshing list. Invoice ID:', existingInvoices[0].id)
                           await handleViewInvoices(selectedLease)
                           setHighlightedInvoiceId(existingInvoices[0].id)
                         } else {
                           // Create the invoice
+                          console.log('Invoice does not exist, creating new invoice for:', nextDueDate)
                           const invoiceData = {
                             lease_id: selectedLease.lease.id,
                             property_id: selectedLease.property.id,

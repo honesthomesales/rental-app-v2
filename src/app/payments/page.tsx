@@ -1434,8 +1434,59 @@ return'<div class="s">'+l+'</div>';
                             const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
                             console.log('New invoice ID:', newInvoiceId, 'Next due date:', nextDueDate)
                             if (newInvoiceId) {
-                              // Refresh the invoice list
-                              await handleViewInvoices(selectedLease)
+                              // Refresh with extended date range to include the newly created invoice
+                              const extendedFutureDate = new Date(nextDueDate)
+                              extendedFutureDate.setMonth(extendedFutureDate.getMonth() + 2) // Add 2 months to be safe
+                              const extendedFutureDateStr = extendedFutureDate.toISOString().split('T')[0]
+                              
+                              const leaseStart = selectedLease.lease.lease_start_date
+                              const extendedUrl = `/api/invoices?leaseId=${selectedLease.lease.id}&from=${leaseStart}&to=${extendedFutureDateStr}`
+                              console.log('Fetching invoices with extended range after creation:', extendedUrl)
+                              
+                              const extendedResponse = await fetch(extendedUrl)
+                              const extendedInvoicesData = await extendedResponse.json()
+                              const extendedExistingInvoices = Array.isArray(extendedInvoicesData) ? extendedInvoicesData : []
+                              
+                              // Generate expected invoices for missing periods (up to today only, not future)
+                              const today = new Date()
+                              const todayStr = today.toISOString().split('T')[0]
+                              const expectedInvoices = generateExpectedInvoices(selectedLease.lease, leaseStart, todayStr, extendedExistingInvoices)
+                              
+                              // Merge existing and expected invoices, sorted by due_date
+                              const allInvoices = [...extendedExistingInvoices, ...expectedInvoices].sort((a, b) => {
+                                const dateA = new Date(a.due_date).getTime()
+                                const dateB = new Date(b.due_date).getTime()
+                                return dateB - dateA // Newest first
+                              })
+                              
+                              // Fetch actual payment totals for all invoices in parallel
+                              const paymentTotalsMap = new Map<string, number>()
+                              
+                              await Promise.all(
+                                allInvoices.map(async (invoice: Invoice) => {
+                                  try {
+                                    const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+                                    if (paymentsResponse.ok) {
+                                      const paymentsData = await paymentsResponse.json()
+                                      if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                                        const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                                        const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                                        paymentTotalsMap.set(invoice.id, actualPaid)
+                                      } else {
+                                        paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                                      }
+                                    } else {
+                                      paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                                    }
+                                  } catch (error) {
+                                    console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+                                    paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                                  }
+                                })
+                              )
+                              
+                              setInvoicePaymentTotals(paymentTotalsMap)
+                              setInvoices(allInvoices)
                               setHighlightedInvoiceId(newInvoiceId)
                             } else {
                               console.error('Invoice created but no ID returned:', createdInvoice)
@@ -1504,8 +1555,59 @@ return'<div class="s">'+l+'</div>';
                             const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
                             console.log('New invoice ID:', newInvoiceId, 'Next due date:', nextDueDate)
                             if (newInvoiceId) {
-                              // Refresh the invoice list
-                              await handleViewInvoices(selectedLease)
+                              // Refresh with extended date range to include the newly created invoice
+                              const extendedFutureDate = new Date(nextDueDate)
+                              extendedFutureDate.setMonth(extendedFutureDate.getMonth() + 1) // Add one more month to be safe
+                              const extendedFutureDateStr = extendedFutureDate.toISOString().split('T')[0]
+                              
+                              const leaseStart = selectedLease.lease.lease_start_date
+                              const extendedUrl = `/api/invoices?leaseId=${selectedLease.lease.id}&from=${leaseStart}&to=${extendedFutureDateStr}`
+                              console.log('Fetching invoices with extended range after creation:', extendedUrl)
+                              
+                              const extendedResponse = await fetch(extendedUrl)
+                              const extendedInvoicesData = await extendedResponse.json()
+                              const extendedExistingInvoices = Array.isArray(extendedInvoicesData) ? extendedInvoicesData : []
+                              
+                              // Generate expected invoices for missing periods (up to today only, not future)
+                              const today = new Date()
+                              const todayStr = today.toISOString().split('T')[0]
+                              const expectedInvoices = generateExpectedInvoices(selectedLease.lease, leaseStart, todayStr, extendedExistingInvoices)
+                              
+                              // Merge existing and expected invoices, sorted by due_date
+                              const allInvoices = [...extendedExistingInvoices, ...expectedInvoices].sort((a, b) => {
+                                const dateA = new Date(a.due_date).getTime()
+                                const dateB = new Date(b.due_date).getTime()
+                                return dateB - dateA // Newest first
+                              })
+                              
+                              // Fetch actual payment totals for all invoices in parallel
+                              const paymentTotalsMap = new Map<string, number>()
+                              
+                              await Promise.all(
+                                allInvoices.map(async (invoice: Invoice) => {
+                                  try {
+                                    const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+                                    if (paymentsResponse.ok) {
+                                      const paymentsData = await paymentsResponse.json()
+                                      if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                                        const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                                        const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                                        paymentTotalsMap.set(invoice.id, actualPaid)
+                                      } else {
+                                        paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                                      }
+                                    } else {
+                                      paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                                    }
+                                  } catch (error) {
+                                    console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+                                    paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                                  }
+                                })
+                              )
+                              
+                              setInvoicePaymentTotals(paymentTotalsMap)
+                              setInvoices(allInvoices)
                               setHighlightedInvoiceId(newInvoiceId)
                             } else {
                               console.error('Invoice created but no ID returned:', createdInvoice)

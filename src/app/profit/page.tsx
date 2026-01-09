@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { ProfitMetrics, PropertyProfitData } from '@/types/database'
+
+type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
+type SortDirection = 'asc' | 'desc'
 
 export default function ProfitPage() {
   const [metrics, setMetrics] = useState<ProfitMetrics | null>(null)
@@ -9,6 +12,8 @@ export default function ProfitPage() {
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
+  const [sortField, setSortField] = useState<SortField>('property')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
   useEffect(() => {
     fetchMonthlyMetrics()
@@ -122,6 +127,55 @@ export default function ProfitPage() {
       return newDate
     })
   }
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  const sortedPropertyDetails = useMemo(() => {
+    if (!monthlyMetrics?.propertyDetails) return []
+    
+    const details = [...monthlyMetrics.propertyDetails]
+    
+    return details.sort((a: any, b: any) => {
+      let aValue: any
+      let bValue: any
+      
+      switch (sortField) {
+        case 'property':
+          aValue = (a.property_name || '').toLowerCase()
+          bValue = (b.property_name || '').toLowerCase()
+          break
+        case 'expected_rent':
+          aValue = a.expected_rent || 0
+          bValue = b.expected_rent || 0
+          break
+        case 'rent_collected':
+          aValue = a.rent_collected || 0
+          bValue = b.rent_collected || 0
+          break
+        case 'misc_income':
+          aValue = a.misc_income || 0
+          bValue = b.misc_income || 0
+          break
+        case 'total_income':
+          aValue = (a.rent_collected || 0) + (a.misc_income || 0)
+          bValue = (b.rent_collected || 0) + (b.misc_income || 0)
+          break
+        default:
+          return 0
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [monthlyMetrics?.propertyDetails, sortField, sortDirection])
 
   const renderMetricsView = () => (
     <div className="space-y-6">
@@ -382,26 +436,76 @@ export default function ProfitPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
-                  Property
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort('property')}
+                >
+                  <div className="flex items-center">
+                    Property
+                    {sortField === 'property' && (
+                      <span className="ml-2">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Expected Rent
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort('expected_rent')}
+                >
+                  <div className="flex items-center">
+                    Expected Rent
+                    {sortField === 'expected_rent' && (
+                      <span className="ml-2">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rent Collected
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort('rent_collected')}
+                >
+                  <div className="flex items-center">
+                    Rent Collected
+                    {sortField === 'rent_collected' && (
+                      <span className="ml-2">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Misc Income
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort('misc_income')}
+                >
+                  <div className="flex items-center">
+                    Misc Income
+                    {sortField === 'misc_income' && (
+                      <span className="ml-2">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total Income
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort('total_income')}
+                >
+                  <div className="flex items-center">
+                    Total Income
+                    {sortField === 'total_income' && (
+                      <span className="ml-2">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </div>
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {monthlyMetrics?.propertyDetails && monthlyMetrics.propertyDetails.length > 0 ? (
-                monthlyMetrics.propertyDetails.map((property: any, index: number) => (
+              {sortedPropertyDetails && sortedPropertyDetails.length > 0 ? (
+                sortedPropertyDetails.map((property: any, index: number) => (
                   <tr key={index} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10">
                       <div>
@@ -434,22 +538,22 @@ export default function ProfitPage() {
                   </td>
                 </tr>
               )}
-              {monthlyMetrics?.propertyDetails && monthlyMetrics.propertyDetails.length > 0 && (
+              {sortedPropertyDetails && sortedPropertyDetails.length > 0 && (
                 <tr className="bg-gray-100 font-semibold">
                   <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-gray-100 z-10">
                     TOTALS
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.expected_rent || 0), 0))}
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.expected_rent || 0), 0))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0), 0))}
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0), 0))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.misc_income || 0), 0))}
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.misc_income || 0), 0))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
-                    {formatCurrency(monthlyMetrics.propertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
                   </td>
                 </tr>
               )}

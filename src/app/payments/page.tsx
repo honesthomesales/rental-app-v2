@@ -299,11 +299,14 @@ return'<div class="s">'+l+'</div>';
     setLoadingInvoices(true)
 
     try {
-      // Fetch all invoices for this lease from lease start to today
+      // Fetch all invoices for this lease from lease start to 1 year in the future (to include future invoices)
       const leaseStart = leaseRow.lease.lease_start_date
-      const today = new Date().toISOString().split('T')[0]
+      const today = new Date()
+      const futureDate = new Date(today)
+      futureDate.setFullYear(today.getFullYear() + 1)
+      const futureDateStr = futureDate.toISOString().split('T')[0]
       
-      const url = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseStart}&to=${today}`
+      const url = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseStart}&to=${futureDateStr}`
       console.log('Fetching invoices from:', url)
       
       const response = await fetch(url)
@@ -313,7 +316,8 @@ return'<div class="s">'+l+'</div>';
       
       const existingInvoices = Array.isArray(invoicesData) ? invoicesData : []
       
-      // Generate expected invoices for missing periods
+      // Generate expected invoices for missing periods (up to today only, not future)
+      const today = new Date().toISOString().split('T')[0]
       const expectedInvoices = generateExpectedInvoices(leaseRow.lease, leaseStart, today, existingInvoices)
       
       // Merge existing and expected invoices, sorted by due_date
@@ -1416,10 +1420,17 @@ return'<div class="s">'+l+'</div>';
                           
                           if (createResponse.ok) {
                             const createdInvoice = await createResponse.json()
+                            console.log('Created invoice response (no existing invoices):', createdInvoice)
                             const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
-                            // Refresh the invoice list
-                            await handleViewInvoices(selectedLease)
-                            setHighlightedInvoiceId(newInvoiceId)
+                            console.log('New invoice ID:', newInvoiceId, 'Next due date:', nextDueDate)
+                            if (newInvoiceId) {
+                              // Refresh the invoice list
+                              await handleViewInvoices(selectedLease)
+                              setHighlightedInvoiceId(newInvoiceId)
+                            } else {
+                              console.error('Invoice created but no ID returned:', createdInvoice)
+                              alert('Invoice created but could not retrieve ID. Please refresh the page.')
+                            }
                           } else {
                             const errorData = await createResponse.json().catch(() => ({}))
                             console.error('Failed to create next invoice:', errorData)
@@ -1475,10 +1486,17 @@ return'<div class="s">'+l+'</div>';
                           
                           if (createResponse.ok) {
                             const createdInvoice = await createResponse.json()
+                            console.log('Created invoice response (with existing invoices):', createdInvoice)
                             const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
-                            // Refresh the invoice list
-                            await handleViewInvoices(selectedLease)
-                            setHighlightedInvoiceId(newInvoiceId)
+                            console.log('New invoice ID:', newInvoiceId, 'Next due date:', nextDueDate)
+                            if (newInvoiceId) {
+                              // Refresh the invoice list
+                              await handleViewInvoices(selectedLease)
+                              setHighlightedInvoiceId(newInvoiceId)
+                            } else {
+                              console.error('Invoice created but no ID returned:', createdInvoice)
+                              alert('Invoice created but could not retrieve ID. Please refresh the page.')
+                            }
                           } else {
                             const errorData = await createResponse.json().catch(() => ({}))
                             console.error('Failed to create next invoice:', errorData)

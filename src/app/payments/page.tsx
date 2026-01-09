@@ -302,6 +302,7 @@ return'<div class="s">'+l+'</div>';
       // Fetch all invoices for this lease from lease start to 1 year in the future (to include future invoices)
       const leaseStart = leaseRow.lease.lease_start_date
       const today = new Date()
+      const todayStr = today.toISOString().split('T')[0]
       const futureDate = new Date(today)
       futureDate.setFullYear(today.getFullYear() + 1)
       const futureDateStr = futureDate.toISOString().split('T')[0]
@@ -317,8 +318,7 @@ return'<div class="s">'+l+'</div>';
       const existingInvoices = Array.isArray(invoicesData) ? invoicesData : []
       
       // Generate expected invoices for missing periods (up to today only, not future)
-      const today = new Date().toISOString().split('T')[0]
-      const expectedInvoices = generateExpectedInvoices(leaseRow.lease, leaseStart, today, existingInvoices)
+      const expectedInvoices = generateExpectedInvoices(leaseRow.lease, leaseStart, todayStr, existingInvoices)
       
       // Merge existing and expected invoices, sorted by due_date
       const allInvoices = [...existingInvoices, ...expectedInvoices].sort((a, b) => {

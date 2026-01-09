@@ -68,10 +68,11 @@ export async function GET(request: Request) {
     let expectedRent = 0
     
     try {
-      // Get payments for the month
+      // Get payments for the month - ONLY payments linked to invoices
       const { data: payments, error: paymentsError } = await supabaseServer
         .from('RENT_payments')
         .select('amount, payment_date, payment_type')
+        .not('invoice_id', 'is', null)  // Only include payments with invoice_id
         .gte('payment_date', startOfMonth)
         .lte('payment_date', endOfMonth)
       
@@ -212,6 +213,7 @@ export async function GET(request: Request) {
           supabaseServer
             .from('RENT_payments')
             .select('property_id, amount')
+            .not('invoice_id', 'is', null)  // Only include payments with invoice_id
             .gte('payment_date', startOfMonth)
             .lte('payment_date', endOfMonth),
           supabaseServer

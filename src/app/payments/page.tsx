@@ -362,6 +362,93 @@ return'<div class="s">'+l+'</div>';
       )
       
       console.log('Payment totals map:', Array.from(paymentTotalsMap.entries()))
+      
+      // Check for invoices with payments that aren't in the current list (e.g., future invoices with payments)
+      // Fetch all payments for this lease to find any invoices we might have missed
+      try {
+        const allPaymentsResponse = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
+        if (allPaymentsResponse.ok) {
+          const allPaymentsData = await allPaymentsResponse.json()
+          if (Array.isArray(allPaymentsData) && allPaymentsData.length > 0) {
+            // Get unique invoice IDs from payments
+            const invoiceIdsFromPayments = new Set<string>()
+            allPaymentsData.forEach((payment: any) => {
+              if (payment.invoice_id && typeof payment.invoice_id === 'string' && !payment.invoice_id.startsWith('expected-')) {
+                invoiceIdsFromPayments.add(payment.invoice_id)
+              }
+            })
+            
+            // Find invoice IDs that aren't in our current list
+            const currentInvoiceIds = new Set(invoices.map((inv: Invoice) => inv.id))
+            const missingInvoiceIds = Array.from(invoiceIdsFromPayments).filter(id => !currentInvoiceIds.has(id))
+            
+            if (missingInvoiceIds.length > 0) {
+              console.log('Found invoices with payments not in current list:', missingInvoiceIds)
+              // Fetch these missing invoices
+              const missingInvoicesPromises = missingInvoiceIds.map(async (invoiceId: string) => {
+                try {
+                  // Fetch invoice by ID - we'll need to get it from the invoices API
+                  // Since we don't have a direct "get by ID" endpoint, we'll fetch with a wide date range
+                  const extendedFutureDate = new Date()
+                  extendedFutureDate.setFullYear(extendedFutureDate.getFullYear() + 5) // Look 5 years ahead
+                  const extendedUrl = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseStart}&to=${extendedFutureDate.toISOString().split('T')[0]}`
+                  const extendedResponse = await fetch(extendedUrl)
+                  const extendedInvoicesData = await extendedResponse.json()
+                  const extendedInvoices = Array.isArray(extendedInvoicesData) ? extendedInvoicesData : []
+                  return extendedInvoices.find((inv: Invoice) => inv.id === invoiceId)
+                } catch (error) {
+                  console.error(`Error fetching missing invoice ${invoiceId}:`, error)
+                  return null
+                }
+              })
+              
+              const missingInvoices = (await Promise.all(missingInvoicesPromises)).filter((inv): inv is Invoice => inv !== null)
+              
+              if (missingInvoices.length > 0) {
+                console.log('Adding missing invoices with payments:', missingInvoices.length)
+                // Add missing invoices to the list
+                const allInvoicesWithMissing = [...invoices, ...missingInvoices].sort((a, b) => {
+                  const dateA = new Date(a.due_date).getTime()
+                  const dateB = new Date(b.due_date).getTime()
+                  return dateB - dateA // Newest first
+                })
+                
+                // Update payment totals for missing invoices
+                await Promise.all(
+                  missingInvoices.map(async (invoice: Invoice) => {
+                    try {
+                      const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+                      if (paymentsResponse.ok) {
+                        const paymentsData = await paymentsResponse.json()
+                        if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                          const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                          const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                          paymentTotalsMap.set(invoice.id, actualPaid)
+                        } else {
+                          paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                        }
+                      } else {
+                        paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                      }
+                    } catch (error) {
+                      console.error(`Error fetching payments for missing invoice ${invoice.id}:`, error)
+                      paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                    }
+                  })
+                )
+                
+                setInvoicePaymentTotals(paymentTotalsMap)
+                setInvoices(allInvoicesWithMissing)
+                return
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for invoices with payments:', error)
+        // Continue with normal flow if this fails
+      }
+      
       setInvoicePaymentTotals(paymentTotalsMap)
       setInvoices(invoices)
     } catch (error) {
@@ -1780,12 +1867,14 @@ return'<div class="s">'+l+'</div>';
                         // Use actual payment total from payments API, not invoice.amount_paid
                         const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
                         const amountTotal = parseFloat(invoice.amount_total as any)
+                        const amountRent = parseFloat(invoice.amount_rent as any || 0)
                         const balance = amountTotal - actualPaid
                         const paid = actualPaid
                         const hasPayments = paid > 0
                         // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
+                        // BUT hide if paid >= rent (fully paid for rent amount)
                         const isMostRecent = index === 0
-                        const showPaymentButtons = balance > 0 || isMostRecent
+                        const showPaymentButtons = (balance > 0 || isMostRecent) && paid < amountRent
                         const isHighlighted = highlightedInvoiceId === invoice.id
                         
                         return (

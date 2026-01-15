@@ -2,8 +2,8 @@
 -- Run this in your Supabase SQL editor
 
 ALTER TABLE "RENT_properties" 
-ADD COLUMN IF NOT EXISTS "tax_paid_amount_current" DECIMAL(10,2) DEFAULT 0,
-ADD COLUMN IF NOT EXISTS "tax_paid_amount_previous" DECIMAL(10,2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "tax_paid_amount_current" DECIMAL(10,2),
+ADD COLUMN IF NOT EXISTS "tax_paid_amount_previous" DECIMAL(10,2),
 ADD COLUMN IF NOT EXISTS "county" VARCHAR(255);
 
 -- Add tax color state field to store user-selected color state (0-6)

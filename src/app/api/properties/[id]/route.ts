@@ -39,7 +39,9 @@ export async function PATCH(
             cleanedData[key] = null
           } else {
             // Ensure 2 decimal places for DECIMAL(10,2) fields
-            cleanedData[key] = parseFloat(numValue.toFixed(2))
+            // Round to 2 decimals to match DECIMAL(10,2) precision
+            const roundedValue = Math.round(numValue * 100) / 100
+            cleanedData[key] = parseFloat(roundedValue.toFixed(2))
           }
         }
       } else if (key === 'tax_color_state') {
@@ -57,9 +59,18 @@ export async function PATCH(
     
     console.log('Cleaned update data:', cleanedData)
     
+    // Only send fields that have values (or explicitly null)
+    const fieldsToUpdate: any = {}
+    Object.keys(cleanedData).forEach(key => {
+      // Always include the field, even if null (to allow clearing values)
+      fieldsToUpdate[key] = cleanedData[key]
+    })
+
+    console.log('Fields to update:', fieldsToUpdate)
+
     const { data, error } = await supabaseServer
       .from('RENT_properties')
-      .update(cleanedData)
+      .update(fieldsToUpdate)
       .eq('id', id)
       .select()
       .single()
@@ -70,18 +81,22 @@ export async function PATCH(
         details: error.details || 'No additional details',
         hint: error.hint || 'No hint provided',
         code: error.code || 'UNKNOWN',
-        updateData: cleanedData,
+        originalUpdateData: updateData,
+        cleanedData: cleanedData,
+        fieldsToUpdate: fieldsToUpdate,
         propertyId: id
       }
-      console.error('Supabase error updating property:', errorInfo)
+      console.error('Supabase error updating property:', JSON.stringify(errorInfo, null, 2))
       
+      // Return detailed error information for debugging
       return NextResponse.json(
         { 
           error: 'Failed to update property', 
           details: error.message || 'Unknown database error',
           hint: error.hint || '',
           code: error.code || '',
-          debug: process.env.NODE_ENV === 'development' ? errorInfo : undefined
+          // Include debug info in development or if explicitly requested
+          ...(process.env.NODE_ENV === 'development' && { debug: errorInfo })
         },
         { status: 500 }
       )

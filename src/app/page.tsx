@@ -60,10 +60,11 @@ export default function Dashboard() {
         console.log('Properties data for dashboard:', propertiesData?.length || 0)
         setProperties(propertiesData || [])
         
-        // Load color states from properties
+        // Load color states from properties (including 0 for default state)
         const colorStates = new Map<string, number>()
         propertiesData.forEach((property: any) => {
-          if (property.tax_color_state !== undefined && property.tax_color_state !== null) {
+          // Explicitly check for number type, including 0
+          if (typeof property.tax_color_state === 'number') {
             colorStates.set(property.id, property.tax_color_state)
           }
         })
@@ -409,18 +410,14 @@ export default function Dashboard() {
       nextState = currentState + 1
     }
     
-    // Update local state immediately
+    // Update local state immediately (always save state, including 0)
     setTaxSelectedProperties(prev => {
       const newMap = new Map(prev)
-      if (nextState === 0) {
-        newMap.delete(propertyId)
-      } else {
-        newMap.set(propertyId, nextState)
-      }
+      newMap.set(propertyId, nextState)
       return newMap
     })
     
-    // Save to database
+    // Save to database - always save the state (including 0 for default)
     try {
       const response = await fetch(`/api/properties/${propertyId}`, {
         method: 'PATCH',
@@ -433,17 +430,32 @@ export default function Dashboard() {
       })
       
       if (response.ok) {
-        // Update local property state
+        const updatedProperty = await response.json()
+        console.log('Color state saved successfully:', { propertyId, nextState, updatedProperty })
+        // Update local property state with server response
         setProperties(prev => prev.map(p => 
           p.id === propertyId 
             ? { ...p, tax_color_state: nextState }
             : p
         ))
       } else {
-        console.error('Failed to save color state')
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('Failed to save color state:', { propertyId, nextState, status: response.status, errorData })
+        // Revert local state on failure
+        setTaxSelectedProperties(prev => {
+          const newMap = new Map(prev)
+          newMap.set(propertyId, currentState)
+          return newMap
+        })
       }
     } catch (error) {
       console.error('Error saving color state:', error)
+      // Revert local state on error
+      setTaxSelectedProperties(prev => {
+        const newMap = new Map(prev)
+        newMap.set(propertyId, currentState)
+        return newMap
+      })
     }
   }
 

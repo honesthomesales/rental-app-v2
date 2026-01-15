@@ -996,7 +996,10 @@ export default function Dashboard() {
                 const taxesOwed = property.tax_owed !== null && property.tax_owed !== undefined 
                   ? parseFloat(String(property.tax_owed)) 
                   : Math.max(0, annualTaxDue - totalTaxesPaid)
-                const monthlyTaxOwed = taxesOwed / 12
+                // For yellow (1), light green (2), or light red (6) rows, show $0.00 for monthly tax
+                const monthlyTaxOwed = (colorState === 1 || colorState === 2 || colorState === 6) 
+                  ? 0 
+                  : taxesOwed / 12
                 
                 return (
                 <div key={property.id} className={`${rowColor} p-4 rounded-lg border cursor-pointer hover:opacity-90`}>

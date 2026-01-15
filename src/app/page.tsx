@@ -128,23 +128,44 @@ export default function Dashboard() {
     if (!editingProperty || !editingField) return
 
     try {
+      let updateData: any = {}
+      
+      // Special handling for taxes_owed field - calculate which field to update
+      if (editingField === 'taxes_owed') {
+        const annualTaxDue = ((editingProperty.property_tax || 0) * 12)
+        const currentPaid = editingProperty.tax_paid_amount_current || 0
+        const newOwed = parseFloat(editingValue) || 0
+        // Calculate what previous year paid should be: annualTaxDue - currentPaid - newOwed
+        const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
+        updateData.tax_paid_amount_previous = newPreviousPaid
+      } else {
+        updateData[editingField] = editingValue
+      }
+
       const response = await fetch(`/api/properties/${editingProperty.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          [editingField]: editingValue
-        })
+        body: JSON.stringify(updateData)
       })
 
       if (response.ok) {
         // Update local state
-        setProperties(prev => prev.map(p => 
-          p.id === editingProperty.id 
-            ? { ...p, [editingField]: editingValue }
-            : p
-        ))
+        setProperties(prev => prev.map(p => {
+          if (p.id === editingProperty.id) {
+            if (editingField === 'taxes_owed') {
+              const annualTaxDue = ((p.property_tax || 0) * 12)
+              const currentPaid = p.tax_paid_amount_current || 0
+              const newOwed = parseFloat(editingValue) || 0
+              const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
+              return { ...p, tax_paid_amount_previous: newPreviousPaid }
+            } else {
+              return { ...p, [editingField]: editingValue }
+            }
+          }
+          return p
+        }))
         
         // Clear editing state
         setEditingProperty(null)
@@ -966,9 +987,24 @@ export default function Dashboard() {
                   </div>
                   <div className="text-xs text-gray-500">
                     <span 
-                      className="px-1 rounded"
+                      onDoubleClick={() => handleDoubleClick(property, 'tax_paid_amount_previous')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
                     >
-                      {taxesOwed > 0 ? `$${taxesOwed.toLocaleString()}` : '$0'}
+                      {editingProperty?.id === property.id && editingField === 'tax_paid_amount_previous' ? (
+                        <input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                          placeholder="Enter owed amount"
+                        />
+                      ) : (taxesOwed > 0 ? `$${taxesOwed.toLocaleString()}` : '$0')}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">

@@ -141,11 +141,12 @@ export default function Dashboard() {
       
       // Special handling for taxes_owed field - calculate which field to update
       if (editingField === 'taxes_owed') {
-        const annualTaxDue = ((editingProperty.property_tax || 0) * 12)
+        const annualTaxDue = parseFloat(String(editingProperty.property_tax || 0)) * 12
         const currentPaid = parseFloat(String(editingProperty.tax_paid_amount_current || 0)) || 0
         const newOwed = parseFloat(editingValue) || 0
         // Calculate what previous year paid should be: annualTaxDue - currentPaid - newOwed
-        const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
+        // Preserve decimal precision (2 decimal places)
+        const newPreviousPaid = parseFloat(Math.max(0, annualTaxDue - currentPaid - newOwed).toFixed(2))
         updateData.tax_paid_amount_previous = newPreviousPaid
         console.log('Updating owed amount:', {
           propertyId: editingProperty.id,
@@ -153,6 +154,7 @@ export default function Dashboard() {
           currentPaid,
           newOwed,
           newPreviousPaid,
+          editingValue,
           updateData
         })
       } else {
@@ -1052,12 +1054,13 @@ export default function Dashboard() {
                   <div className="text-xs text-gray-500">
                     <span 
                       onDoubleClick={() => {
-                        const annualTaxDue = (parseFloat(String(property.property_tax || 0)) * 12)
-                        const totalPaid = (parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0)))
-                        const currentOwed = Math.max(0, annualTaxDue - totalPaid)
+                        const annualTaxDue = parseFloat(String(property.property_tax || 0)) * 12
+                        const totalPaid = parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0))
+                        const currentOwed = parseFloat(Math.max(0, annualTaxDue - totalPaid).toFixed(2))
                         setEditingProperty(property)
                         setEditingField('taxes_owed')
-                        setEditingValue(currentOwed.toFixed(2))
+                        // Use the calculated value with 2 decimals, but allow user to edit
+                        setEditingValue(currentOwed.toString())
                       }}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
                     >

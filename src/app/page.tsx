@@ -987,10 +987,17 @@ export default function Dashboard() {
                   </div>
                   <div className="text-xs text-gray-500">
                     <span 
-                      onDoubleClick={() => handleDoubleClick(property, 'tax_paid_amount_previous')}
+                      onDoubleClick={() => {
+                        const annualTaxDue = (property.property_tax || 0) * 12
+                        const totalPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
+                        const currentOwed = Math.max(0, annualTaxDue - totalPaid)
+                        setEditingProperty(property)
+                        setEditingField('taxes_owed')
+                        setEditingValue(currentOwed.toString())
+                      }}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
                     >
-                      {editingProperty?.id === property.id && editingField === 'tax_paid_amount_previous' ? (
+                      {editingProperty?.id === property.id && editingField === 'taxes_owed' ? (
                         <input
                           type="number"
                           value={editingValue}

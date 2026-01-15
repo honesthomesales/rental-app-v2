@@ -88,14 +88,24 @@ export async function PATCH(
       }
       console.error('Supabase error updating property:', JSON.stringify(errorInfo, null, 2))
       
+      // Check for common errors and provide helpful messages
+      let userMessage = error.message || 'Unknown database error'
+      if (error.message?.includes('column') && error.message?.includes('does not exist')) {
+        if (fieldsToUpdate.tax_owed !== undefined) {
+          userMessage = 'The tax_owed column does not exist. Please run the add-tax-owed-column.sql script in your Supabase SQL editor.'
+        }
+      }
+      
       // Return detailed error information for debugging
       return NextResponse.json(
         { 
           error: 'Failed to update property', 
-          details: error.message || 'Unknown database error',
+          details: userMessage,
           hint: error.hint || '',
           code: error.code || '',
-          // Include debug info in development or if explicitly requested
+          // Always include error message and code for client debugging
+          errorMessage: error.message,
+          // Include debug info in development
           ...(process.env.NODE_ENV === 'development' && { debug: errorInfo })
         },
         { status: 500 }

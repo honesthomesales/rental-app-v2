@@ -209,13 +209,15 @@ export default function Dashboard() {
             editingField,
             editingValue
           })
-          errorMessage = errorData.details || errorData.error || errorMessage
+          errorMessage = errorData.details || errorData.errorMessage || errorData.error || errorMessage
           if (errorData.hint) {
             errorMessage += `\nHint: ${errorData.hint}`
           }
           if (errorData.code) {
             errorMessage += `\nCode: ${errorData.code}`
           }
+          // Show full error details in console for debugging
+          console.error('Full error details:', errorData)
         } catch (parseError) {
           const text = await response.text()
           console.error('Failed to parse error response:', parseError, text)

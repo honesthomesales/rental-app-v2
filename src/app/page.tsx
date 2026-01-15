@@ -28,7 +28,6 @@ export default function Dashboard() {
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
   const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
   const [taxSelectedProperties, setTaxSelectedProperties] = useState<Set<string>>(new Set())
-  const [leases, setLeases] = useState<any[]>([])
 
   useEffect(() => {
     fetchDashboardData()
@@ -62,7 +61,6 @@ export default function Dashboard() {
           // Calculate potential income properties (unoccupied with rent_value)
         if (data && propertiesData && leasesResponse.ok) {
           const leasesData = await leasesResponse.json()
-          setLeases(leasesData || [])
           
           // Get occupied property IDs from active leases
           const occupiedPropertyIds = new Set<string>()
@@ -256,44 +254,10 @@ export default function Dashboard() {
     })
   }
 
-  const getTaxStatus = (property: any): 'unpaid' | 'customer_owed' | 'paid' | 'customer_paid' => {
-    const annualTaxDue = (property.property_tax || 0) * 12
-    const totalPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
-    
-    // Check if property has active lease (customer responsible)
-    const today = new Date().toISOString().split('T')[0]
-    const todayDate = new Date(today)
-    const hasActiveLease = leases.some((lease: any) => {
-      if (lease.property_id !== property.id || lease.status !== 'active') return false
-      const startDate = new Date(lease.lease_start_date)
-      const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
-      return todayDate >= startDate && (!endDate || todayDate <= endDate)
-    })
-    
-    if (totalPaid === 0 || (annualTaxDue > 0 && totalPaid < annualTaxDue * 0.1)) {
-      return 'unpaid'
-    } else if (totalPaid >= annualTaxDue) {
-      // If property has tenant, consider it customer paid, otherwise just paid
-      return hasActiveLease ? 'customer_paid' : 'paid'
-    } else {
-      // Partial payment - if has lease, customer owes, otherwise just unpaid
-      return hasActiveLease ? 'customer_owed' : 'unpaid'
-    }
-  }
-
-  const getTaxRowColor = (status: 'unpaid' | 'customer_owed' | 'paid' | 'customer_paid'): string => {
-    switch (status) {
-      case 'unpaid':
-        return 'bg-red-50'
-      case 'customer_owed':
-        return 'bg-yellow-50'
-      case 'paid':
-        return 'bg-lime-50'
-      case 'customer_paid':
-        return 'bg-green-50'
-      default:
-        return 'bg-gray-50'
-    }
+  const getTaxRowColor = (isToggled: boolean): string => {
+    // User controls color via toggle
+    // Toggled properties get highlighted, untoggled stay default
+    return isToggled ? 'bg-blue-50' : 'bg-gray-50'
   }
 
   const handleTaxToggle = (propertyId: string) => {
@@ -816,8 +780,8 @@ export default function Dashboard() {
               </div>
             ) : (
               getSortedTaxProperties().map((property) => {
-                const taxStatus = getTaxStatus(property)
-                const rowColor = getTaxRowColor(taxStatus)
+                const isToggled = taxSelectedProperties.has(property.id)
+                const rowColor = getTaxRowColor(isToggled)
                 const annualTaxDue = (property.property_tax || 0) * 12
                 const totalTaxesPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
                 const taxesOwed = Math.max(0, annualTaxDue - totalTaxesPaid)

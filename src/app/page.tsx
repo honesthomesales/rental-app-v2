@@ -249,10 +249,14 @@ export default function Dashboard() {
       
       // Special handling for sorting by color state
       if (taxSortField === 'color_state') {
+        // Sort order: 0 (default) comes last, then 6, 1, 2, 3, 4, 5
         const stateA = taxSelectedProperties.get(a.id) || 0
         const stateB = taxSelectedProperties.get(b.id) || 0
-        aValue = stateA
-        bValue = stateB
+        // Normalize: treat 0 as highest value for sorting (comes last)
+        const normalizedA = stateA === 0 ? 999 : stateA
+        const normalizedB = stateB === 0 ? 999 : stateB
+        aValue = normalizedA
+        bValue = normalizedB
       }
       
       if (typeof aValue === 'string') aValue = aValue.toLowerCase()
@@ -265,18 +269,27 @@ export default function Dashboard() {
   }
 
   const getTaxRowColor = (state: number): string => {
-    // Color states: 0 = default, 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
+    // Color states: 
+    // 0 = default (gray)
+    // 1 = yellow (Customer owed taxes) - more yellow and darker
+    // 2 = light green (Customer paid)
+    // 3 = lime/fluorescent green (Paid)
+    // 4 = medium red (Customer Owed)
+    // 5 = red (Owed)
+    // 6 = light red (Unpaid taxes)
     switch (state) {
       case 1:
-        return 'bg-yellow-50'
+        return 'bg-yellow-300' // More yellow and darker for Customer owed taxes
       case 2:
-        return 'bg-green-100' // Darker light green
+        return 'bg-green-100' // Light green for Customer paid
       case 3:
-        return 'bg-lime-50'
+        return 'bg-lime-400' // Fluorescent green for Paid
       case 4:
-        return 'bg-red-300' // Medium red
+        return 'bg-red-300' // Medium red for Customer Owed
       case 5:
-        return 'bg-red-500' // Bright red
+        return 'bg-red-500' // Red for Owed
+      case 6:
+        return 'bg-red-100' // Light red for Unpaid taxes
       default:
         return 'bg-gray-50' // Default
     }
@@ -286,8 +299,10 @@ export default function Dashboard() {
     setTaxSelectedProperties(prev => {
       const newMap = new Map(prev)
       const currentState = newMap.get(propertyId) || 0
-      // Cycle through: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
-      const nextState = currentState >= 5 ? 0 : currentState + 1
+      // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
+      // 6 = Light red (Unpaid), 1 = Yellow (Customer owed), 2 = Light green (Customer paid), 
+      // 3 = Lime (Paid), 4 = Med Red (Customer Owed), 5 = Red (Owed)
+      const nextState = currentState >= 6 ? 0 : (currentState === 0 ? 6 : currentState + 1)
       if (nextState === 0) {
         newMap.delete(propertyId)
       } else {
@@ -687,31 +702,31 @@ export default function Dashboard() {
           <div className="flex-1">
             <div className="flex items-center gap-4 mb-2">
               <h2 className="text-xl font-semibold text-gray-900">Property Tax Overview</h2>
-              <div className="flex items-center gap-3 text-xs">
+              <div className="flex items-center gap-3 text-xs flex-wrap">
                 <span className="font-medium text-gray-600">Colors:</span>
                 <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-gray-300 bg-gray-50"></div>
-                  <span className="text-gray-600">Default</span>
+                  <div className="w-4 h-4 rounded border border-red-200 bg-red-100"></div>
+                  <span className="text-gray-600">Light red: Unpaid taxes</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-yellow-400 bg-yellow-50"></div>
-                  <span className="text-gray-600">Yellow</span>
+                  <div className="w-4 h-4 rounded border border-yellow-500 bg-yellow-300"></div>
+                  <span className="text-gray-600">Yellow: Customer owed taxes</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-lime-500 bg-lime-400"></div>
+                  <span className="text-gray-600">Lime: Paid</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-4 h-4 rounded border border-green-500 bg-green-100"></div>
-                  <span className="text-gray-600">Light Green</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-lime-400 bg-lime-50"></div>
-                  <span className="text-gray-600">Lime</span>
+                  <span className="text-gray-600">Light green: Customer paid</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-4 h-4 rounded border border-red-400 bg-red-300"></div>
-                  <span className="text-gray-600">Med Red</span>
+                  <span className="text-gray-600">Med Red: Customer Owed</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-4 h-4 rounded border border-red-600 bg-red-500"></div>
-                  <span className="text-gray-600">Bright Red</span>
+                  <span className="text-gray-600">Red: Owed</span>
                 </div>
               </div>
             </div>
@@ -849,17 +864,19 @@ export default function Dashboard() {
                       className={`w-4 h-4 rounded border-2 ${
                         colorState === 0 
                           ? 'border-gray-300 bg-gray-100' 
+                          : colorState === 6
+                          ? 'border-red-200 bg-red-100'
                           : colorState === 1
-                          ? 'border-yellow-400 bg-yellow-50'
+                          ? 'border-yellow-500 bg-yellow-300'
                           : colorState === 2
                           ? 'border-green-500 bg-green-100'
                           : colorState === 3
-                          ? 'border-lime-400 bg-lime-50'
+                          ? 'border-lime-500 bg-lime-400'
                           : colorState === 4
                           ? 'border-red-400 bg-red-300'
                           : 'border-red-600 bg-red-500'
                       } hover:opacity-80 focus:outline-none`}
-                      title={`State: ${colorState === 0 ? 'Default' : colorState === 1 ? 'Yellow' : colorState === 2 ? 'Light Green' : colorState === 3 ? 'Lime' : colorState === 4 ? 'Medium Red' : 'Bright Red'}`}
+                      title={`State: ${colorState === 0 ? 'Default' : colorState === 6 ? 'Light red: Unpaid taxes' : colorState === 1 ? 'Yellow: Customer owed taxes' : colorState === 2 ? 'Light green: Customer paid' : colorState === 3 ? 'Lime: Paid' : colorState === 4 ? 'Med Red: Customer Owed' : 'Red: Owed'}`}
                     />
                   </div>
                   <div className="font-medium text-sm">{property.name}</div>

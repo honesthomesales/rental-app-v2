@@ -366,6 +366,7 @@ export default function Dashboard() {
     // 4 = medium red (Customer Owed)
     // 5 = red (Owed)
     // 6 = light red (Unpaid taxes)
+    // 7 = dark green (Bank paid)
     switch (state) {
       case 1:
         return 'bg-yellow-300' // More yellow and darker for Customer owed taxes
@@ -379,6 +380,8 @@ export default function Dashboard() {
         return 'bg-red-500' // Red for Owed
       case 6:
         return 'bg-red-100' // Light red for Unpaid taxes
+      case 7:
+        return 'bg-green-800' // Dark green for Bank paid
       default:
         return 'bg-gray-50' // Default
     }
@@ -386,7 +389,7 @@ export default function Dashboard() {
 
   const handleTaxToggle = async (propertyId: string) => {
     const currentState = taxSelectedProperties.get(propertyId) || 0
-    // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
+    // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 0
     // 0 = Default (gray)
     // 6 = Light red (Unpaid taxes)
     // 1 = Yellow (Customer owed taxes)
@@ -394,12 +397,15 @@ export default function Dashboard() {
     // 3 = Lime (Paid)
     // 4 = Med Red (Customer Owed)
     // 5 = Red (Owed)
+    // 7 = Dark green (Bank paid)
     let nextState: number
     if (currentState === 0) {
       nextState = 6
     } else if (currentState === 6) {
       nextState = 1
-    } else if (currentState >= 5) {
+    } else if (currentState === 5) {
+      nextState = 7
+    } else if (currentState === 7) {
       nextState = 0
     } else {
       nextState = currentState + 1
@@ -870,6 +876,10 @@ export default function Dashboard() {
                   <div className="w-4 h-4 rounded border border-red-600 bg-red-500"></div>
                   <span className="text-gray-600">Red: Owed</span>
                 </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-green-800 bg-green-800"></div>
+                  <span className="text-gray-600">Dark green: Bank paid</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1023,9 +1033,13 @@ export default function Dashboard() {
                           ? 'border-lime-500 bg-lime-400'
                           : colorState === 4
                           ? 'border-red-400 bg-red-300'
-                          : 'border-red-600 bg-red-500'
+                          : colorState === 5
+                          ? 'border-red-600 bg-red-500'
+                          : colorState === 7
+                          ? 'border-green-800 bg-green-800'
+                          : 'border-gray-300 bg-gray-100'
                       } hover:opacity-80 focus:outline-none`}
-                      title={`State: ${colorState === 0 ? 'Default' : colorState === 6 ? 'Light red: Unpaid taxes' : colorState === 1 ? 'Yellow: Customer owed taxes' : colorState === 2 ? 'Light green: Customer paid' : colorState === 3 ? 'Lime: Paid' : colorState === 4 ? 'Med Red: Customer Owed' : 'Red: Owed'}`}
+                      title={`State: ${colorState === 0 ? 'Default' : colorState === 6 ? 'Light red: Unpaid taxes' : colorState === 1 ? 'Yellow: Customer owed taxes' : colorState === 2 ? 'Light green: Customer paid' : colorState === 3 ? 'Lime: Paid' : colorState === 4 ? 'Med Red: Customer Owed' : colorState === 5 ? 'Red: Owed' : colorState === 7 ? 'Dark green: Bank paid' : 'Default'}`}
                     />
                   </div>
                   <div className="font-medium text-sm">{property.name}</div>

@@ -142,12 +142,13 @@ export default function Dashboard() {
       // Special handling for taxes_owed field - calculate which field to update
       if (editingField === 'taxes_owed') {
         const annualTaxDue = ((editingProperty.property_tax || 0) * 12)
-        const currentPaid = parseFloat(editingProperty.tax_paid_amount_current) || 0
+        const currentPaid = parseFloat(String(editingProperty.tax_paid_amount_current || 0)) || 0
         const newOwed = parseFloat(editingValue) || 0
         // Calculate what previous year paid should be: annualTaxDue - currentPaid - newOwed
         const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
         updateData.tax_paid_amount_previous = newPreviousPaid
         console.log('Updating owed amount:', {
+          propertyId: editingProperty.id,
           annualTaxDue,
           currentPaid,
           newOwed,

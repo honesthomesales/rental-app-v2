@@ -340,9 +340,23 @@ export default function Dashboard() {
   const handleTaxToggle = async (propertyId: string) => {
     const currentState = taxSelectedProperties.get(propertyId) || 0
     // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
-    // 6 = Light red (Unpaid), 1 = Yellow (Customer owed), 2 = Light green (Customer paid), 
-    // 3 = Lime (Paid), 4 = Med Red (Customer Owed), 5 = Red (Owed)
-    const nextState = currentState >= 6 ? 0 : (currentState === 0 ? 6 : currentState + 1)
+    // 0 = Default (gray)
+    // 6 = Light red (Unpaid taxes)
+    // 1 = Yellow (Customer owed taxes)
+    // 2 = Light green (Customer paid)
+    // 3 = Lime (Paid)
+    // 4 = Med Red (Customer Owed)
+    // 5 = Red (Owed)
+    let nextState: number
+    if (currentState === 0) {
+      nextState = 6
+    } else if (currentState === 6) {
+      nextState = 1
+    } else if (currentState >= 5) {
+      nextState = 0
+    } else {
+      nextState = currentState + 1
+    }
     
     // Update local state immediately
     setTaxSelectedProperties(prev => {

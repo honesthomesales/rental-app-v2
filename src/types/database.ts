@@ -24,6 +24,7 @@ export interface Property {
   property_tax?: number
   tax_paid_amount_current?: number
   tax_paid_amount_previous?: number
+  tax_owed?: number
   county?: string
   tax_color_state?: number
   purchase_payment?: number

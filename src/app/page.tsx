@@ -146,21 +146,14 @@ export default function Dashboard() {
     try {
       let updateData: any = {}
       
-      // Special handling for taxes_owed field - calculate which field to update
+      // Special handling for taxes_owed field - store directly in tax_owed field
       if (editingField === 'taxes_owed') {
-        const annualTaxDue = parseFloat(String(editingProperty.property_tax || 0)) * 12
-        const currentPaid = parseFloat(String(editingProperty.tax_paid_amount_current || 0)) || 0
         const newOwed = parseFloat(editingValue) || 0
-        // Calculate what previous year paid should be: annualTaxDue - currentPaid - newOwed
-        // Preserve decimal precision (2 decimal places)
-        const newPreviousPaid = parseFloat(Math.max(0, annualTaxDue - currentPaid - newOwed).toFixed(2))
-        updateData.tax_paid_amount_previous = newPreviousPaid
+        // Store the owed amount directly (manual override)
+        updateData.tax_owed = newOwed === 0 ? null : parseFloat(newOwed.toFixed(2))
         console.log('Updating owed amount:', {
           propertyId: editingProperty.id,
-          annualTaxDue,
-          currentPaid,
           newOwed,
-          newPreviousPaid,
           editingValue,
           updateData
         })
@@ -997,7 +990,10 @@ export default function Dashboard() {
                 const rowColor = getTaxRowColor(colorState)
                 const annualTaxDue = (parseFloat(String(property.property_tax || 0)) * 12)
                 const totalTaxesPaid = (parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0)))
-                const taxesOwed = Math.max(0, annualTaxDue - totalTaxesPaid)
+                // Use manual tax_owed if set, otherwise calculate
+                const taxesOwed = property.tax_owed !== null && property.tax_owed !== undefined 
+                  ? parseFloat(String(property.tax_owed)) 
+                  : Math.max(0, annualTaxDue - totalTaxesPaid)
                 const monthlyTaxOwed = taxesOwed / 12
                 
                 return (
@@ -1099,13 +1095,16 @@ export default function Dashboard() {
                   <div className="text-xs text-gray-500">
                     <span 
                       onDoubleClick={() => {
+                        // Use manual tax_owed if set, otherwise calculate
                         const annualTaxDue = parseFloat(String(property.property_tax || 0)) * 12
                         const totalPaid = parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0))
-                        const currentOwed = parseFloat(Math.max(0, annualTaxDue - totalPaid).toFixed(2))
+                        const currentOwed = property.tax_owed !== null && property.tax_owed !== undefined
+                          ? parseFloat(String(property.tax_owed))
+                          : Math.max(0, annualTaxDue - totalPaid)
                         setEditingProperty(property)
                         setEditingField('taxes_owed')
-                        // Use the calculated value with 2 decimals, but allow user to edit
-                        setEditingValue(currentOwed.toString())
+                        // Use the value with 2 decimals
+                        setEditingValue(parseFloat(currentOwed.toFixed(2)).toString())
                       }}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
                     >

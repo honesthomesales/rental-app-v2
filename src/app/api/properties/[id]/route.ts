@@ -21,7 +21,7 @@ export async function PATCH(
       const value = updateData[key]
       // Handle numeric fields - DECIMAL fields need to be numbers, INTEGER fields can be numbers
       if (key === 'tax_paid_amount_current' || key === 'tax_paid_amount_previous' || 
-          key === 'property_tax' || key === 'insurance_premium' || key === 'rent_value') {
+          key === 'tax_owed' || key === 'property_tax' || key === 'insurance_premium' || key === 'rent_value') {
         // DECIMAL(10,2) fields - ensure proper number conversion with 2 decimal precision
         if (value === null || value === undefined || value === '' || value === 'null' || value === 'undefined') {
           cleanedData[key] = null

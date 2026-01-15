@@ -204,9 +204,30 @@ export default function Dashboard() {
         setEditingField('')
         setEditingValue('')
       } else {
-        const errorData = await response.json()
-        console.error('Failed to update property:', errorData)
-        alert(`Failed to save: ${errorData.error || errorData.details || 'Unknown error'}`)
+        let errorMessage = `Failed to save (${response.status})`
+        try {
+          const errorData = await response.json()
+          console.error('Failed to update property:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData,
+            updateData,
+            editingField,
+            editingValue
+          })
+          errorMessage = errorData.details || errorData.error || errorMessage
+          if (errorData.hint) {
+            errorMessage += `\nHint: ${errorData.hint}`
+          }
+          if (errorData.code) {
+            errorMessage += `\nCode: ${errorData.code}`
+          }
+        } catch (parseError) {
+          const text = await response.text()
+          console.error('Failed to parse error response:', parseError, text)
+          errorMessage += `: ${text.substring(0, 200)}`
+        }
+        alert(errorMessage)
       }
     } catch (error) {
       console.error('Error updating property:', error)

@@ -19,15 +19,36 @@ export async function PATCH(
     const cleanedData: any = {}
     Object.keys(updateData).forEach(key => {
       const value = updateData[key]
-      // Handle numeric fields
+      // Handle numeric fields - DECIMAL fields need to be numbers, INTEGER fields can be numbers
       if (key === 'tax_paid_amount_current' || key === 'tax_paid_amount_previous' || 
-          key === 'property_tax' || key === 'tax_color_state' ||
-          key === 'insurance_premium' || key === 'rent_value') {
-        if (value === null || value === undefined || value === '') {
+          key === 'property_tax' || key === 'insurance_premium' || key === 'rent_value') {
+        // DECIMAL(10,2) fields - ensure proper number conversion with 2 decimal precision
+        if (value === null || value === undefined || value === '' || value === 'null' || value === 'undefined') {
           cleanedData[key] = null
         } else {
-          const numValue = typeof value === 'string' ? parseFloat(value) : value
-          cleanedData[key] = isNaN(numValue) ? null : numValue
+          let numValue: number
+          if (typeof value === 'string') {
+            numValue = parseFloat(value.replace(/[^0-9.-]/g, '')) // Remove any non-numeric chars except . and -
+          } else if (typeof value === 'number') {
+            numValue = value
+          } else {
+            numValue = parseFloat(String(value))
+          }
+          
+          if (isNaN(numValue)) {
+            cleanedData[key] = null
+          } else {
+            // Ensure 2 decimal places for DECIMAL(10,2) fields
+            cleanedData[key] = parseFloat(numValue.toFixed(2))
+          }
+        }
+      } else if (key === 'tax_color_state') {
+        // INTEGER field
+        if (value === null || value === undefined || value === '' || value === 'null') {
+          cleanedData[key] = null
+        } else {
+          const intValue = typeof value === 'string' ? parseInt(value, 10) : Math.floor(Number(value))
+          cleanedData[key] = isNaN(intValue) ? null : intValue
         }
       } else {
         cleanedData[key] = value
@@ -44,21 +65,23 @@ export async function PATCH(
       .single()
 
     if (error) {
-      console.error('Supabase error updating property:', {
-        error,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
+      const errorInfo = {
+        error: error.message || 'Unknown error',
+        details: error.details || 'No additional details',
+        hint: error.hint || 'No hint provided',
+        code: error.code || 'UNKNOWN',
         updateData: cleanedData,
-        id
-      })
+        propertyId: id
+      }
+      console.error('Supabase error updating property:', errorInfo)
+      
       return NextResponse.json(
         { 
           error: 'Failed to update property', 
-          details: error.message,
-          hint: error.hint,
-          code: error.code
+          details: error.message || 'Unknown database error',
+          hint: error.hint || '',
+          code: error.code || '',
+          debug: process.env.NODE_ENV === 'development' ? errorInfo : undefined
         },
         { status: 500 }
       )

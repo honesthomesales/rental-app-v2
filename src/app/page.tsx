@@ -60,6 +60,15 @@ export default function Dashboard() {
         console.log('Properties data for dashboard:', propertiesData?.length || 0)
         setProperties(propertiesData || [])
         
+        // Load color states from properties
+        const colorStates = new Map<string, number>()
+        propertiesData.forEach((property: any) => {
+          if (property.tax_color_state !== undefined && property.tax_color_state !== null) {
+            colorStates.set(property.id, property.tax_color_state)
+          }
+        })
+        setTaxSelectedProperties(colorStates)
+        
           // Calculate potential income properties (unoccupied with rent_value)
         if (data && propertiesData && leasesResponse.ok) {
           const leasesData = await leasesResponse.json()
@@ -137,9 +146,14 @@ export default function Dashboard() {
         const newOwed = parseFloat(editingValue) || 0
         // Calculate what previous year paid should be: annualTaxDue - currentPaid - newOwed
         const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
-        updateData.tax_paid_amount_previous = newPreviousPaid
+        updateData.tax_paid_amount_previous = newPreviousPaid.toString()
       } else {
-        updateData[editingField] = editingValue
+        // Ensure numeric fields are converted to numbers
+        if (editingField === 'tax_paid_amount_current' || editingField === 'tax_paid_amount_previous' || editingField === 'property_tax') {
+          updateData[editingField] = editingValue === '' ? null : parseFloat(editingValue) || 0
+        } else {
+          updateData[editingField] = editingValue
+        }
       }
 
       const response = await fetch(`/api/properties/${editingProperty.id}`, {
@@ -316,14 +330,16 @@ export default function Dashboard() {
     }
   }
 
-  const handleTaxToggle = (propertyId: string) => {
+  const handleTaxToggle = async (propertyId: string) => {
+    const currentState = taxSelectedProperties.get(propertyId) || 0
+    // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
+    // 6 = Light red (Unpaid), 1 = Yellow (Customer owed), 2 = Light green (Customer paid), 
+    // 3 = Lime (Paid), 4 = Med Red (Customer Owed), 5 = Red (Owed)
+    const nextState = currentState >= 6 ? 0 : (currentState === 0 ? 6 : currentState + 1)
+    
+    // Update local state immediately
     setTaxSelectedProperties(prev => {
       const newMap = new Map(prev)
-      const currentState = newMap.get(propertyId) || 0
-      // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
-      // 6 = Light red (Unpaid), 1 = Yellow (Customer owed), 2 = Light green (Customer paid), 
-      // 3 = Lime (Paid), 4 = Med Red (Customer Owed), 5 = Red (Owed)
-      const nextState = currentState >= 6 ? 0 : (currentState === 0 ? 6 : currentState + 1)
       if (nextState === 0) {
         newMap.delete(propertyId)
       } else {
@@ -331,6 +347,32 @@ export default function Dashboard() {
       }
       return newMap
     })
+    
+    // Save to database
+    try {
+      const response = await fetch(`/api/properties/${propertyId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tax_color_state: nextState
+        })
+      })
+      
+      if (response.ok) {
+        // Update local property state
+        setProperties(prev => prev.map(p => 
+          p.id === propertyId 
+            ? { ...p, tax_color_state: nextState }
+            : p
+        ))
+      } else {
+        console.error('Failed to save color state')
+      }
+    } catch (error) {
+      console.error('Error saving color state:', error)
+    }
   }
 
   const getFilteredProperties = () => {

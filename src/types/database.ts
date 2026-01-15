@@ -22,6 +22,10 @@ export interface Property {
   Sell_Price?: number
   Interest_Rate?: number
   property_tax?: number
+  tax_paid_amount_current?: number
+  tax_paid_amount_previous?: number
+  county?: string
+  tax_color_state?: number
   purchase_payment?: number
   Map_ID?: string
   map_id_trailer?: string

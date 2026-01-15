@@ -247,6 +247,14 @@ export default function Dashboard() {
         bValue = owedB
       }
       
+      // Special handling for sorting by color state
+      if (taxSortField === 'color_state') {
+        const stateA = taxSelectedProperties.get(a.id) || 0
+        const stateB = taxSelectedProperties.get(b.id) || 0
+        aValue = stateA
+        bValue = stateB
+      }
+      
       if (typeof aValue === 'string') aValue = aValue.toLowerCase()
       if (typeof bValue === 'string') bValue = bValue.toLowerCase()
       
@@ -675,11 +683,42 @@ export default function Dashboard() {
 
       {/* Tax Overview Section */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Property Tax Overview</h2>
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-4 mb-2">
+              <h2 className="text-xl font-semibold text-gray-900">Property Tax Overview</h2>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="font-medium text-gray-600">Colors:</span>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-gray-300 bg-gray-50"></div>
+                  <span className="text-gray-600">Default</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-yellow-400 bg-yellow-50"></div>
+                  <span className="text-gray-600">Yellow</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-green-500 bg-green-100"></div>
+                  <span className="text-gray-600">Light Green</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-lime-400 bg-lime-50"></div>
+                  <span className="text-gray-600">Lime</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-red-400 bg-red-300"></div>
+                  <span className="text-gray-600">Med Red</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-red-600 bg-red-500"></div>
+                  <span className="text-gray-600">Bright Red</span>
+                </div>
+              </div>
+            </div>
+          </div>
           <button
             onClick={() => setShowTaxSection(!showTaxSection)}
-            className="text-purple-600 hover:text-purple-800 font-medium"
+            className="text-purple-600 hover:text-purple-800 font-medium ml-4"
           >
             {showTaxSection ? 'Hide Details' : 'Show Details'}
           </button>
@@ -701,29 +740,14 @@ export default function Dashboard() {
             {/* Tax List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
               <div className="grid gap-2" style={{ gridTemplateColumns: '0.4fr 1.6fr 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.8fr' }}>
-                <div className="px-2 py-1 flex items-center justify-center">
-                  {/* Select all - cycles all to next state */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const allIds = getSortedTaxProperties().map(p => p.id)
-                      setTaxSelectedProperties(prev => {
-                        const newMap = new Map(prev)
-                        const currentMaxState = Math.max(...allIds.map(id => newMap.get(id) || 0), 0)
-                        const nextState = currentMaxState >= 5 ? 0 : currentMaxState + 1
-                        allIds.forEach(id => {
-                          if (nextState === 0) {
-                            newMap.delete(id)
-                          } else {
-                            newMap.set(id, nextState)
-                          }
-                        })
-                        return newMap
-                      })
-                    }}
-                    className="w-4 h-4 rounded border border-gray-300 bg-gray-100 hover:bg-gray-200 focus:outline-none"
-                    title="Cycle all colors"
-                  />
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center justify-center"
+                  onClick={() => handleTaxSort('color_state')}
+                >
+                  <span className="text-xs">Color</span>
+                  {taxSortField === 'color_state' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
                 </div>
                 <div 
                   className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"

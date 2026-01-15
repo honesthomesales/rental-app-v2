@@ -1024,24 +1024,8 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
-                    <span 
-                      onDoubleClick={() => handleDoubleClick(property, 'property_tax')}
-                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
-                    >
-                      {editingProperty?.id === property.id && editingField === 'property_tax' ? (
-                        <input
-                          type="number"
-                          value={editingValue}
-                          onChange={(e) => setEditingValue(e.target.value)}
-                          onBlur={handleSaveEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEdit()
-                            if (e.key === 'Escape') handleCancelEdit()
-                          }}
-                          className="text-xs border rounded px-1 w-full"
-                          autoFocus
-                        />
-                      ) : (property.property_tax ? `$${property.property_tax.toLocaleString()}` : 'Not set')}
+                    <span className="px-1 rounded">
+                      ${monthlyTaxOwed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">

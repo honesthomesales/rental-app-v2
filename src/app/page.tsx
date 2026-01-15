@@ -142,11 +142,18 @@ export default function Dashboard() {
       // Special handling for taxes_owed field - calculate which field to update
       if (editingField === 'taxes_owed') {
         const annualTaxDue = ((editingProperty.property_tax || 0) * 12)
-        const currentPaid = editingProperty.tax_paid_amount_current || 0
+        const currentPaid = parseFloat(editingProperty.tax_paid_amount_current) || 0
         const newOwed = parseFloat(editingValue) || 0
         // Calculate what previous year paid should be: annualTaxDue - currentPaid - newOwed
         const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
-        updateData.tax_paid_amount_previous = newPreviousPaid.toString()
+        updateData.tax_paid_amount_previous = newPreviousPaid
+        console.log('Updating owed amount:', {
+          annualTaxDue,
+          currentPaid,
+          newOwed,
+          newPreviousPaid,
+          updateData
+        })
       } else {
         // Ensure numeric fields are converted to numbers
         if (editingField === 'tax_paid_amount_current' || editingField === 'tax_paid_amount_previous' || editingField === 'property_tax') {
@@ -155,6 +162,8 @@ export default function Dashboard() {
           updateData[editingField] = editingValue
         }
       }
+
+      console.log('Saving property update:', { id: editingProperty.id, field: editingField, updateData })
 
       const response = await fetch(`/api/properties/${editingProperty.id}`, {
         method: 'PATCH',
@@ -165,31 +174,28 @@ export default function Dashboard() {
       })
 
       if (response.ok) {
-        // Update local state
-        setProperties(prev => prev.map(p => {
-          if (p.id === editingProperty.id) {
-            if (editingField === 'taxes_owed') {
-              const annualTaxDue = ((p.property_tax || 0) * 12)
-              const currentPaid = p.tax_paid_amount_current || 0
-              const newOwed = parseFloat(editingValue) || 0
-              const newPreviousPaid = Math.max(0, annualTaxDue - currentPaid - newOwed)
-              return { ...p, tax_paid_amount_previous: newPreviousPaid }
-            } else {
-              return { ...p, [editingField]: editingValue }
-            }
-          }
-          return p
-        }))
+        const updatedProperty = await response.json()
+        console.log('Property updated successfully:', updatedProperty)
+        
+        // Update local state with the actual response from server
+        setProperties(prev => prev.map(p => 
+          p.id === editingProperty.id 
+            ? { ...p, ...updatedProperty }
+            : p
+        ))
         
         // Clear editing state
         setEditingProperty(null)
         setEditingField('')
         setEditingValue('')
       } else {
-        console.error('Failed to update property')
+        const errorData = await response.json()
+        console.error('Failed to update property:', errorData)
+        alert(`Failed to save: ${errorData.error || errorData.details || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Error updating property:', error)
+      alert(`Error saving: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 

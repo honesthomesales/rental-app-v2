@@ -218,7 +218,8 @@ export default function Dashboard() {
             property.name?.toLowerCase().includes(searchLower) ||
             property.owner_name?.toLowerCase().includes(searchLower) ||
             property.county?.toLowerCase().includes(searchLower) ||
-            property.Map_ID?.toLowerCase().includes(searchLower)
+            property.Map_ID?.toLowerCase().includes(searchLower) ||
+            property.map_id_trailer?.toLowerCase().includes(searchLower)
           )
         })
       : filtered
@@ -639,7 +640,7 @@ export default function Dashboard() {
             <div className="mb-4">
               <input
                 type="text"
-                placeholder="Search by property name, owner, county, or map ID..."
+                placeholder="Search by property name, owner, county, map ID, or trailer..."
                 value={taxSearchTerm}
                 onChange={(e) => setTaxSearchTerm(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -648,7 +649,7 @@ export default function Dashboard() {
             
             {/* Tax List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
-              <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr 1.5fr' }}>
+              <div className="grid gap-2" style={{ gridTemplateColumns: '1.8fr 1.3fr 0.9fr 0.9fr 0.9fr 0.9fr 1.2fr 0.9fr' }}>
                 <div 
                   className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
                   onClick={() => handleTaxSort('name')}
@@ -712,6 +713,15 @@ export default function Dashboard() {
                     <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </div>
+                <div 
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  onClick={() => handleTaxSort('map_id_trailer')}
+                >
+                  Trailer
+                  {taxSortField === 'map_id_trailer' && (
+                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -723,7 +733,7 @@ export default function Dashboard() {
             ) : (
               getSortedTaxProperties().map((property) => (
                 <div key={property.id} className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100">
-                <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr 1fr 1.5fr' }}>
+                <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '1.8fr 1.3fr 0.9fr 0.9fr 0.9fr 0.9fr 1.2fr 0.9fr' }}>
                   <div className="font-medium text-sm">{property.name}</div>
                   <div className="text-xs text-gray-500">
                     <span 
@@ -849,6 +859,27 @@ export default function Dashboard() {
                           autoFocus
                         />
                       ) : (property.Map_ID || 'Not set')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    <span 
+                      onDoubleClick={() => handleDoubleClick(property, 'map_id_trailer')}
+                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                    >
+                      {editingProperty?.id === property.id && editingField === 'map_id_trailer' ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={handleSaveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit()
+                            if (e.key === 'Escape') handleCancelEdit()
+                          }}
+                          className="text-xs border rounded px-1 w-full"
+                          autoFocus
+                        />
+                      ) : (property.map_id_trailer || 'Not set')}
                     </span>
                   </div>
                 </div>

@@ -24,6 +24,7 @@ export interface Property {
   property_tax?: number
   purchase_payment?: number
   Map_ID?: string
+  map_id_trailer?: string
   notes?: string
   address_line1?: string
   address_line2?: string

@@ -27,6 +27,8 @@ export default function Dashboard() {
   const [taxSearchTerm, setTaxSearchTerm] = useState<string>('')
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
   const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
+  const [taxSelectedProperties, setTaxSelectedProperties] = useState<Set<string>>(new Set())
+  const [leases, setLeases] = useState<any[]>([])
 
   useEffect(() => {
     fetchDashboardData()
@@ -57,9 +59,10 @@ export default function Dashboard() {
         console.log('Properties data for dashboard:', propertiesData?.length || 0)
         setProperties(propertiesData || [])
         
-        // Calculate potential income properties (unoccupied with rent_value)
+          // Calculate potential income properties (unoccupied with rent_value)
         if (data && propertiesData && leasesResponse.ok) {
           const leasesData = await leasesResponse.json()
+          setLeases(leasesData || [])
           
           // Get occupied property IDs from active leases
           const occupiedPropertyIds = new Set<string>()
@@ -92,6 +95,7 @@ export default function Dashboard() {
         } else if (data && propertiesData) {
           // If leases fetch failed, still set properties but no potential income calculation
           setPotentialIncomeProperties([])
+          setLeases([])
         }
       }
     } catch (error) {
@@ -226,8 +230,22 @@ export default function Dashboard() {
     
     // Apply sorting
     return [...searchFiltered].sort((a, b) => {
-      let aValue = a[taxSortField] || ''
-      let bValue = b[taxSortField] || ''
+      let aValue: any = a[taxSortField] || ''
+      let bValue: any = b[taxSortField] || ''
+      
+      // Special handling for sorting by owed amount
+      if (taxSortField === 'tax_paid_amount_previous') {
+        const annualTaxDueA = ((a.property_tax || 0) * 12)
+        const totalPaidA = (a.tax_paid_amount_current || 0) + (a.tax_paid_amount_previous || 0)
+        const owedA = Math.max(0, annualTaxDueA - totalPaidA)
+        
+        const annualTaxDueB = ((b.property_tax || 0) * 12)
+        const totalPaidB = (b.tax_paid_amount_current || 0) + (b.tax_paid_amount_previous || 0)
+        const owedB = Math.max(0, annualTaxDueB - totalPaidB)
+        
+        aValue = owedA
+        bValue = owedB
+      }
       
       if (typeof aValue === 'string') aValue = aValue.toLowerCase()
       if (typeof bValue === 'string') bValue = bValue.toLowerCase()
@@ -235,6 +253,58 @@ export default function Dashboard() {
       if (aValue < bValue) return taxSortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return taxSortDirection === 'asc' ? 1 : -1
       return 0
+    })
+  }
+
+  const getTaxStatus = (property: any): 'unpaid' | 'customer_owed' | 'paid' | 'customer_paid' => {
+    const annualTaxDue = (property.property_tax || 0) * 12
+    const totalPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
+    
+    // Check if property has active lease (customer responsible)
+    const today = new Date().toISOString().split('T')[0]
+    const todayDate = new Date(today)
+    const hasActiveLease = leases.some((lease: any) => {
+      if (lease.property_id !== property.id || lease.status !== 'active') return false
+      const startDate = new Date(lease.lease_start_date)
+      const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
+      return todayDate >= startDate && (!endDate || todayDate <= endDate)
+    })
+    
+    if (totalPaid === 0 || (annualTaxDue > 0 && totalPaid < annualTaxDue * 0.1)) {
+      return 'unpaid'
+    } else if (totalPaid >= annualTaxDue) {
+      // If property has tenant, consider it customer paid, otherwise just paid
+      return hasActiveLease ? 'customer_paid' : 'paid'
+    } else {
+      // Partial payment - if has lease, customer owes, otherwise just unpaid
+      return hasActiveLease ? 'customer_owed' : 'unpaid'
+    }
+  }
+
+  const getTaxRowColor = (status: 'unpaid' | 'customer_owed' | 'paid' | 'customer_paid'): string => {
+    switch (status) {
+      case 'unpaid':
+        return 'bg-red-50'
+      case 'customer_owed':
+        return 'bg-yellow-50'
+      case 'paid':
+        return 'bg-lime-50'
+      case 'customer_paid':
+        return 'bg-green-50'
+      default:
+        return 'bg-gray-50'
+    }
+  }
+
+  const handleTaxToggle = (propertyId: string) => {
+    setTaxSelectedProperties(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(propertyId)) {
+        newSet.delete(propertyId)
+      } else {
+        newSet.add(propertyId)
+      }
+      return newSet
     })
   }
 
@@ -649,7 +719,21 @@ export default function Dashboard() {
             
             {/* Tax List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
-              <div className="grid gap-2" style={{ gridTemplateColumns: '1.8fr 1.3fr 0.9fr 0.9fr 0.9fr 0.9fr 1.2fr 0.9fr' }}>
+              <div className="grid gap-2" style={{ gridTemplateColumns: '0.4fr 1.6fr 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.8fr' }}>
+                <div className="px-2 py-1 flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={getSortedTaxProperties().length > 0 && getSortedTaxProperties().every(p => taxSelectedProperties.has(p.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setTaxSelectedProperties(new Set(getSortedTaxProperties().map(p => p.id)))
+                      } else {
+                        setTaxSelectedProperties(new Set())
+                      }
+                    }}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                </div>
                 <div 
                   className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
                   onClick={() => handleTaxSort('name')}
@@ -699,7 +783,7 @@ export default function Dashboard() {
                   className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
                   onClick={() => handleTaxSort('tax_paid_amount_previous')}
                 >
-                  Previous Year Paid
+                  Owed
                   {taxSortField === 'tax_paid_amount_previous' && (
                     <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
@@ -731,9 +815,25 @@ export default function Dashboard() {
                 No properties found. Total properties: {properties.length}
               </div>
             ) : (
-              getSortedTaxProperties().map((property) => (
-                <div key={property.id} className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100">
-                <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '1.8fr 1.3fr 0.9fr 0.9fr 0.9fr 0.9fr 1.2fr 0.9fr' }}>
+              getSortedTaxProperties().map((property) => {
+                const taxStatus = getTaxStatus(property)
+                const rowColor = getTaxRowColor(taxStatus)
+                const annualTaxDue = (property.property_tax || 0) * 12
+                const totalTaxesPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
+                const taxesOwed = Math.max(0, annualTaxDue - totalTaxesPaid)
+                
+                return (
+                <div key={property.id} className={`${rowColor} p-4 rounded-lg border cursor-pointer hover:opacity-90`}>
+                <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '0.4fr 1.6fr 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.8fr' }}>
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={taxSelectedProperties.has(property.id)}
+                      onChange={() => handleTaxToggle(property.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                  </div>
                   <div className="font-medium text-sm">{property.name}</div>
                   <div className="text-xs text-gray-500">
                     <span 
@@ -821,23 +921,9 @@ export default function Dashboard() {
                   </div>
                   <div className="text-xs text-gray-500">
                     <span 
-                      onDoubleClick={() => handleDoubleClick(property, 'tax_paid_amount_previous')}
-                      className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
+                      className="px-1 rounded"
                     >
-                      {editingProperty?.id === property.id && editingField === 'tax_paid_amount_previous' ? (
-                        <input
-                          type="number"
-                          value={editingValue}
-                          onChange={(e) => setEditingValue(e.target.value)}
-                          onBlur={handleSaveEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEdit()
-                            if (e.key === 'Escape') handleCancelEdit()
-                          }}
-                          className="text-xs border rounded px-1 w-full"
-                          autoFocus
-                        />
-                      ) : (property.tax_paid_amount_previous ? `$${property.tax_paid_amount_previous.toLocaleString()}` : 'Not set')}
+                      {taxesOwed > 0 ? `$${taxesOwed.toLocaleString()}` : '$0'}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -884,7 +970,8 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              ))
+                )
+              })
             )}
           </div>
         )}

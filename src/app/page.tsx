@@ -27,7 +27,9 @@ export default function Dashboard() {
   const [taxSearchTerm, setTaxSearchTerm] = useState<string>('')
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
   const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
-  const [taxSelectedProperties, setTaxSelectedProperties] = useState<Set<string>>(new Set())
+  const [taxSelectedProperties, setTaxSelectedProperties] = useState<Map<string, number>>(new Map())
+  
+  // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
   useEffect(() => {
     fetchDashboardData()
@@ -254,21 +256,36 @@ export default function Dashboard() {
     })
   }
 
-  const getTaxRowColor = (isToggled: boolean): string => {
-    // User controls color via toggle
-    // Toggled properties get highlighted, untoggled stay default
-    return isToggled ? 'bg-blue-50' : 'bg-gray-50'
+  const getTaxRowColor = (state: number): string => {
+    // Color states: 0 = default, 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
+    switch (state) {
+      case 1:
+        return 'bg-yellow-50'
+      case 2:
+        return 'bg-green-100' // Darker light green
+      case 3:
+        return 'bg-lime-50'
+      case 4:
+        return 'bg-red-300' // Medium red
+      case 5:
+        return 'bg-red-500' // Bright red
+      default:
+        return 'bg-gray-50' // Default
+    }
   }
 
   const handleTaxToggle = (propertyId: string) => {
     setTaxSelectedProperties(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(propertyId)) {
-        newSet.delete(propertyId)
+      const newMap = new Map(prev)
+      const currentState = newMap.get(propertyId) || 0
+      // Cycle through: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
+      const nextState = currentState >= 5 ? 0 : currentState + 1
+      if (nextState === 0) {
+        newMap.delete(propertyId)
       } else {
-        newSet.add(propertyId)
+        newMap.set(propertyId, nextState)
       }
-      return newSet
+      return newMap
     })
   }
 
@@ -685,17 +702,27 @@ export default function Dashboard() {
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
               <div className="grid gap-2" style={{ gridTemplateColumns: '0.4fr 1.6fr 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.8fr' }}>
                 <div className="px-2 py-1 flex items-center justify-center">
-                  <input
-                    type="checkbox"
-                    checked={getSortedTaxProperties().length > 0 && getSortedTaxProperties().every(p => taxSelectedProperties.has(p.id))}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setTaxSelectedProperties(new Set(getSortedTaxProperties().map(p => p.id)))
-                      } else {
-                        setTaxSelectedProperties(new Set())
-                      }
+                  {/* Select all - cycles all to next state */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const allIds = getSortedTaxProperties().map(p => p.id)
+                      setTaxSelectedProperties(prev => {
+                        const newMap = new Map(prev)
+                        const currentMaxState = Math.max(...allIds.map(id => newMap.get(id) || 0), 0)
+                        const nextState = currentMaxState >= 5 ? 0 : currentMaxState + 1
+                        allIds.forEach(id => {
+                          if (nextState === 0) {
+                            newMap.delete(id)
+                          } else {
+                            newMap.set(id, nextState)
+                          }
+                        })
+                        return newMap
+                      })
                     }}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 rounded border border-gray-300 bg-gray-100 hover:bg-gray-200 focus:outline-none"
+                    title="Cycle all colors"
                   />
                 </div>
                 <div 
@@ -780,8 +807,8 @@ export default function Dashboard() {
               </div>
             ) : (
               getSortedTaxProperties().map((property) => {
-                const isToggled = taxSelectedProperties.has(property.id)
-                const rowColor = getTaxRowColor(isToggled)
+                const colorState = taxSelectedProperties.get(property.id) || 0
+                const rowColor = getTaxRowColor(colorState)
                 const annualTaxDue = (property.property_tax || 0) * 12
                 const totalTaxesPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
                 const taxesOwed = Math.max(0, annualTaxDue - totalTaxesPaid)
@@ -790,12 +817,25 @@ export default function Dashboard() {
                 <div key={property.id} className={`${rowColor} p-4 rounded-lg border cursor-pointer hover:opacity-90`}>
                 <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '0.4fr 1.6fr 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.8fr' }}>
                   <div className="flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={taxSelectedProperties.has(property.id)}
-                      onChange={() => handleTaxToggle(property.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleTaxToggle(property.id)
+                      }}
+                      className={`w-4 h-4 rounded border-2 ${
+                        colorState === 0 
+                          ? 'border-gray-300 bg-gray-100' 
+                          : colorState === 1
+                          ? 'border-yellow-400 bg-yellow-50'
+                          : colorState === 2
+                          ? 'border-green-500 bg-green-100'
+                          : colorState === 3
+                          ? 'border-lime-400 bg-lime-50'
+                          : colorState === 4
+                          ? 'border-red-400 bg-red-300'
+                          : 'border-red-600 bg-red-500'
+                      } hover:opacity-80 focus:outline-none`}
+                      title={`State: ${colorState === 0 ? 'Default' : colorState === 1 ? 'Yellow' : colorState === 2 ? 'Light Green' : colorState === 3 ? 'Lime' : colorState === 4 ? 'Medium Red' : 'Bright Red'}`}
                     />
                   </div>
                   <div className="font-medium text-sm">{property.name}</div>

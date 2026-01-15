@@ -130,7 +130,13 @@ export default function Dashboard() {
   const handleDoubleClick = (property: any, field: string) => {
     setEditingProperty(property)
     setEditingField(field)
-    setEditingValue(property[field] || '')
+    // For numeric fields, preserve decimal format when editing
+    if (field === 'tax_paid_amount_current' || field === 'tax_paid_amount_previous' || field === 'property_tax') {
+      const value = property[field]
+      setEditingValue(value != null && value !== '' ? parseFloat(String(value)).toFixed(2) : '')
+    } else {
+      setEditingValue(property[field] || '')
+    }
   }
 
   const handleSaveEdit = async () => {
@@ -158,9 +164,15 @@ export default function Dashboard() {
           updateData
         })
       } else {
-        // Ensure numeric fields are converted to numbers
+        // Ensure numeric fields are converted to numbers with proper decimal precision
         if (editingField === 'tax_paid_amount_current' || editingField === 'tax_paid_amount_previous' || editingField === 'property_tax') {
-          updateData[editingField] = editingValue === '' ? null : parseFloat(editingValue) || 0
+          if (editingValue === '' || editingValue === null || editingValue === undefined) {
+            updateData[editingField] = null
+          } else {
+            const numValue = parseFloat(editingValue)
+            // Preserve decimal precision (2 decimal places) for tax-related fields
+            updateData[editingField] = isNaN(numValue) ? null : parseFloat(numValue.toFixed(2))
+          }
         } else {
           updateData[editingField] = editingValue
         }

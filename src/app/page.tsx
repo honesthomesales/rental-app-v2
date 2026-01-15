@@ -277,16 +277,32 @@ export default function Dashboard() {
       
       // Special handling for sorting by owed amount
       if (taxSortField === 'tax_paid_amount_previous') {
-        const annualTaxDueA = ((a.property_tax || 0) * 12)
-        const totalPaidA = (a.tax_paid_amount_current || 0) + (a.tax_paid_amount_previous || 0)
+        const annualTaxDueA = ((parseFloat(String(a.property_tax || 0)) * 12))
+        const totalPaidA = (parseFloat(String(a.tax_paid_amount_current || 0)) + parseFloat(String(a.tax_paid_amount_previous || 0)))
         const owedA = Math.max(0, annualTaxDueA - totalPaidA)
         
-        const annualTaxDueB = ((b.property_tax || 0) * 12)
-        const totalPaidB = (b.tax_paid_amount_current || 0) + (b.tax_paid_amount_previous || 0)
+        const annualTaxDueB = ((parseFloat(String(b.property_tax || 0)) * 12))
+        const totalPaidB = (parseFloat(String(b.tax_paid_amount_current || 0)) + parseFloat(String(b.tax_paid_amount_previous || 0)))
         const owedB = Math.max(0, annualTaxDueB - totalPaidB)
         
         aValue = owedA
         bValue = owedB
+      }
+      
+      // Special handling for sorting by monthly tax (owed/12)
+      if (taxSortField === 'property_tax') {
+        const annualTaxDueA = ((parseFloat(String(a.property_tax || 0)) * 12))
+        const totalPaidA = (parseFloat(String(a.tax_paid_amount_current || 0)) + parseFloat(String(a.tax_paid_amount_previous || 0)))
+        const owedA = Math.max(0, annualTaxDueA - totalPaidA)
+        const monthlyOwedA = owedA / 12
+        
+        const annualTaxDueB = ((parseFloat(String(b.property_tax || 0)) * 12))
+        const totalPaidB = (parseFloat(String(b.tax_paid_amount_current || 0)) + parseFloat(String(b.tax_paid_amount_previous || 0)))
+        const owedB = Math.max(0, annualTaxDueB - totalPaidB)
+        const monthlyOwedB = owedB / 12
+        
+        aValue = monthlyOwedA
+        bValue = monthlyOwedB
       }
       
       // Special handling for sorting by color state
@@ -879,7 +895,7 @@ export default function Dashboard() {
                   className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
                   onClick={() => handleTaxSort('property_tax')}
                 >
-                  Monthly Tax
+                  Monthly Tax (Owed/12)
                   {taxSortField === 'property_tax' && (
                     <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
@@ -932,9 +948,10 @@ export default function Dashboard() {
               getSortedTaxProperties().map((property) => {
                 const colorState = taxSelectedProperties.get(property.id) || 0
                 const rowColor = getTaxRowColor(colorState)
-                const annualTaxDue = (property.property_tax || 0) * 12
-                const totalTaxesPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
+                const annualTaxDue = (parseFloat(String(property.property_tax || 0)) * 12)
+                const totalTaxesPaid = (parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0)))
                 const taxesOwed = Math.max(0, annualTaxDue - totalTaxesPaid)
+                const monthlyTaxOwed = taxesOwed / 12
                 
                 return (
                 <div key={property.id} className={`${rowColor} p-4 rounded-lg border cursor-pointer hover:opacity-90`}>
@@ -1045,24 +1062,25 @@ export default function Dashboard() {
                           className="text-xs border rounded px-1 w-full"
                           autoFocus
                         />
-                      ) : (property.tax_paid_amount_current ? `$${property.tax_paid_amount_current.toLocaleString()}` : 'Not set')}
+                      ) : (property.tax_paid_amount_current ? `$${property.tax_paid_amount_current.toLocaleString()}` : '$0')}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
                     <span 
                       onDoubleClick={() => {
-                        const annualTaxDue = (property.property_tax || 0) * 12
-                        const totalPaid = (property.tax_paid_amount_current || 0) + (property.tax_paid_amount_previous || 0)
+                        const annualTaxDue = (parseFloat(String(property.property_tax || 0)) * 12)
+                        const totalPaid = (parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0)))
                         const currentOwed = Math.max(0, annualTaxDue - totalPaid)
                         setEditingProperty(property)
                         setEditingField('taxes_owed')
-                        setEditingValue(currentOwed.toString())
+                        setEditingValue(currentOwed.toFixed(2))
                       }}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
                     >
                       {editingProperty?.id === property.id && editingField === 'taxes_owed' ? (
                         <input
                           type="number"
+                          step="0.01"
                           value={editingValue}
                           onChange={(e) => setEditingValue(e.target.value)}
                           onBlur={handleSaveEdit}
@@ -1074,7 +1092,7 @@ export default function Dashboard() {
                           autoFocus
                           placeholder="Enter owed amount"
                         />
-                      ) : (taxesOwed > 0 ? `$${taxesOwed.toLocaleString()}` : '$0')}
+                      ) : (taxesOwed > 0 ? `$${taxesOwed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00')}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">

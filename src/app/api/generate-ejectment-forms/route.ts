@@ -148,6 +148,30 @@ This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) an
         violationLine = violationDescription
       }
 
+      // Build grounds section with proper formatting
+      let groundsText = ''
+      if (ejectmentReason === 'nonpayment') {
+        groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+
+The tenant fails or refuses to pay the rent when due or when demanded. The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.
+
+${checkbox2} The term of tenancy or occupancy has ended; or
+
+${checkbox3} The terms or conditions of the lease have been violated as follows:`
+      } else if (ejectmentReason === 'endtenancy') {
+        groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+
+${checkbox2} The term of tenancy or occupancy has ended; or
+
+${checkbox3} The terms or conditions of the lease have been violated as follows:`
+      } else {
+        groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+
+${checkbox2} The term of tenancy or occupancy has ended; or
+
+${checkbox3} The terms or conditions of the lease have been violated as follows: ${violationLine}`
+      }
+
       forms.ejectment = `APPLICATION FOR EJECTMENT (Eviction)
 
 STATE OF SOUTH CAROLINA
@@ -169,10 +193,7 @@ I further state that, with regard to the above described premises, a landlord-te
 
 GROUNDS FOR EJECTMENT:
 
-${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
-${ejectmentReason === 'nonpayment' ? `The tenant fails or refuses to pay the rent when due or when demanded. The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.` : ''}
-${checkbox2} The term of tenancy or occupancy has ended; or
-${checkbox3} The terms or conditions of the lease have been violated as follows: ${violationLine}
+${groundsText}
 
 WHEREFORE, the plaintiff demands possession of the premises, damages, costs, and such other relief as the Court may deem just and proper.
 
@@ -200,33 +221,34 @@ SCCA/732 (Amended 05/2008)`
       if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
         // Create itemization lines (form shows exactly 5 lines with dollar signs at the end)
         // Format: Description/text on left, then spaces, then dollar amount aligned right
-        // The form has blank lines with just dollar signs
+        // Match exact SC form layout - each line ends with a dollar sign
         const maxItems = 5
         const invoiceItems: string[] = []
-        const lineWidth = 75 // Approximate characters per line for alignment
+        const lineWidth = 80 // Characters per line for proper alignment
         
         if (unpaidInvoices && unpaidInvoices.length > 0) {
           unpaidInvoices.slice(0, maxItems).forEach((inv) => {
             const dueDate = new Date(inv.due_date + 'T12:00:00')
             const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
             const amount = parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            // Format: description text, then spaces, then $amount aligned right
+            // Format: description text on left, spaces in middle, $amount aligned right
             const description = `Rent due ${formattedDueDate}`
             const amountStr = `$${amount}`
-            const totalSpaces = lineWidth - description.length - amountStr.length
-            const padding = totalSpaces > 0 ? ' '.repeat(totalSpaces) : ' '
+            // Calculate padding to align dollar amounts to the right
+            const spacesNeeded = lineWidth - description.length - amountStr.length
+            const padding = spacesNeeded > 0 ? ' '.repeat(spacesNeeded) : ' '
             invoiceItems.push(`${description}${padding}${amountStr}`)
           })
         }
         
-        // Fill remaining lines if less than maxItems (form always shows 5 lines)
+        // Fill remaining lines if less than maxItems (form always shows exactly 5 lines)
         while (invoiceItems.length < maxItems) {
-          const amountStr = '$'
-          const padding = ' '.repeat(lineWidth - amountStr.length)
-          invoiceItems.push(`${padding}${amountStr}`)
+          // Empty line with just dollar sign at the end (aligned right)
+          const padding = ' '.repeat(lineWidth - 1)
+          invoiceItems.push(`${padding}$`)
         }
 
-        // Format TOTAL line with proper alignment
+        // Format TOTAL line with proper alignment (matches form layout)
         const totalAmount = `$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         const totalLabel = 'TOTAL'
         const totalSpaces = lineWidth - totalLabel.length - totalAmount.length

@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { LateTenantData } from '@/types/database'
 import { ExclamationTriangleIcon, PhoneIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 
 export default function LateTenantsPage() {
   const [summary, setSummary] = useState<any>({
@@ -37,6 +38,7 @@ export default function LateTenantsPage() {
   const [violationDescription, setViolationDescription] = useState('')
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
+  const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
 
   useEffect(() => {
     fetchLateTenants()
@@ -1172,6 +1174,20 @@ export default function LateTenantsPage() {
                 </>
               )}
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Download Format
+                </label>
+                <select
+                  value={downloadFormat}
+                  onChange={(e) => setDownloadFormat(e.target.value as 'pdf' | 'docx')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="pdf">PDF</option>
+                  <option value="docx">Word (DOCX)</option>
+                </select>
+              </div>
+
               <div className="pt-4 border-t border-gray-200 flex justify-end space-x-3">
                 <button
                   onClick={() => {
@@ -1226,17 +1242,15 @@ export default function LateTenantsPage() {
                   <div className="mt-3 flex justify-end">
                     <button
                       onClick={() => {
-                        const blob = new Blob([generatedForms.notice], { type: 'text/plain' })
-                        const url = URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = '7-Day-Notice.txt'
-                        a.click()
-                        URL.revokeObjectURL(url)
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf')
+                        } else {
+                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx')
+                        }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Notice
+                      Download Notice ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>
@@ -1251,17 +1265,15 @@ export default function LateTenantsPage() {
                   <div className="mt-3 flex justify-end">
                     <button
                       onClick={() => {
-                        const blob = new Blob([generatedForms.ejectment], { type: 'text/plain' })
-                        const url = URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = 'Application-for-Ejectment.txt'
-                        a.click()
-                        URL.revokeObjectURL(url)
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.ejectment, 'Application-for-Ejectment.pdf')
+                        } else {
+                          downloadAsWord(generatedForms.ejectment, 'Application-for-Ejectment.docx')
+                        }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Ejectment
+                      Download Ejectment ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>
@@ -1276,17 +1288,15 @@ export default function LateTenantsPage() {
                   <div className="mt-3 flex justify-end">
                     <button
                       onClick={() => {
-                        const blob = new Blob([generatedForms.affidavit], { type: 'text/plain' })
-                        const url = URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = 'Affidavit-of-Item-of-Account.txt'
-                        a.click()
-                        URL.revokeObjectURL(url)
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.pdf')
+                        } else {
+                          downloadAsWord(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.docx')
+                        }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Affidavit
+                      Download Affidavit ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>

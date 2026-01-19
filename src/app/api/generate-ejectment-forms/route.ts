@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { getMagistrateDistrict, getMagistrateCourtAddress } from '@/lib/magistrate-lookup'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
+import { jsPDF } from 'jspdf'
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +30,13 @@ export async function POST(request: Request) {
 
     const property = leaseData.RENT_properties
     const tenant = leaseData.RENT_tenants
+
+    // Determine magistrate from address
+    const magistrateDistrict = getMagistrateDistrict(
+      county,
+      property.city,
+      property.zip_code || property.postal_code
+    )
 
     // Get today's date
     const today = new Date()
@@ -125,6 +135,26 @@ This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) an
         reasonDescription = `The terms or conditions of the lease have been violated as follows: ${violationDescription}`
       }
 
+      // Format ejectment form exactly as SC form (SCCA/732) - matching exact layout
+      let ejectmentGrounds = ''
+      let groundsDescription = ''
+      
+      if (ejectmentReason === 'nonpayment') {
+        ejectmentGrounds = `[X] The tenant fails or refuses to pay the rent when due or when demanded; or
+[ ] The term of tenancy or occupancy has ended; or
+[ ] The terms or conditions of the lease have been violated as follows:`
+        groundsDescription = `The tenant fails or refuses to pay the rent when due or when demanded. The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.`
+      } else if (ejectmentReason === 'endtenancy') {
+        ejectmentGrounds = `[ ] The tenant fails or refuses to pay the rent when due or when demanded; or
+[X] The term of tenancy or occupancy has ended; or
+[ ] The terms or conditions of the lease have been violated as follows:`
+      } else {
+        ejectmentGrounds = `[ ] The tenant fails or refuses to pay the rent when due or when demanded; or
+[ ] The term of tenancy or occupancy has ended; or
+[X] The terms or conditions of the lease have been violated as follows:`
+        groundsDescription = violationDescription
+      }
+
       forms.ejectment = `APPLICATION FOR EJECTMENT (Eviction)
 
 STATE OF SOUTH CAROLINA
@@ -140,19 +170,14 @@ CIVIL CASE NUMBER: _________________________
 
 IN THE MAGISTRATE'S COURT
 
-I, Honest Home Sales, LLC, plaintiff in this action, do hereby state that I am the landlord-lessor of premises within the jurisdiction of Magistrate ________, which is described as: ${property.address}${property.city ? `, ${property.city}` : ''}${property.state ? `, ${property.state}` : ''}${property.zip_code ? ` ${property.zip_code}` : ''}.
+I, Honest Home Sales, LLC, plaintiff in this action, do hereby state that I am the landlord-lessor of premises within the jurisdiction of ${magistrateDistrict}, which is described as: (address and description of premises - apartment, house, etc.) ${property.address}${property.city ? `, ${property.city}` : ''}${property.state ? `, ${property.state}` : ''}${property.zip_code ? ` ${property.zip_code}` : ''}.
 
 I further state that, with regard to the above described premises, a landlord-tenant relationship exists between myself and the defendant ${tenant.first_name} ${tenant.last_name}, the tenant-lessee, as evidenced by the following: (Attach lease papers or other written proof.)
 
 GROUNDS FOR EJECTMENT:
 
-${ejectmentReason === 'nonpayment' ? '☑' : '☐'} The tenant fails or refuses to pay the rent when due or when demanded; or
-
-${ejectmentReason === 'endtenancy' ? '☑' : '☐'} The term of tenancy or occupancy has ended; or
-
-${ejectmentReason === 'violation' ? '☑' : '☐'} The terms or conditions of the lease have been violated as follows: ${ejectmentReason === 'violation' ? violationDescription : '_________________________'}
-
-${ejectmentReason === 'nonpayment' && reasonDescription ? `\nDescription: ${reasonDescription}` : ''}
+${ejectmentGrounds}
+${groundsDescription ? ` ${groundsDescription}` : ''}
 
 WHEREFORE, the plaintiff demands possession of the premises, damages, costs, and such other relief as the Court may deem just and proper.
 
@@ -176,15 +201,31 @@ Email: honesthomesales@gmail.com
 SCCA/732 (Amended 05/2008)`
     }
 
-    // Generate Affidavit of Item of Account if late rent
-    if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
-      const invoiceItems = unpaidInvoices?.map((inv, idx) => {
-        const dueDate = new Date(inv.due_date + 'T12:00:00')
-        const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-        return `${idx + 1}. Rent due ${formattedDueDate}: $${parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      }).join('\n') || 'No invoices found'
+      // Generate Affidavit of Item of Account if late rent - formatted exactly as SC form (SCCA/716)
+      if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
+        // Create itemization lines (form shows 5 blank lines with dollar signs at the end)
+        // Format: Description on left, dollar amount aligned right
+        const maxItems = 5
+        const invoiceItems: string[] = []
+        
+        if (unpaidInvoices && unpaidInvoices.length > 0) {
+          unpaidInvoices.slice(0, maxItems).forEach((inv) => {
+            const dueDate = new Date(inv.due_date + 'T12:00:00')
+            const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            const amount = parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            // Pad to align dollar amounts (approximately 60 characters width)
+            const description = `Rent due ${formattedDueDate}`
+            const padding = Math.max(1, 55 - description.length)
+            invoiceItems.push(`${description}${' '.repeat(padding)}$${amount}`)
+          })
+        }
+        
+        // Fill remaining lines if less than maxItems (form shows 5 lines total)
+        while (invoiceItems.length < maxItems) {
+          invoiceItems.push(`${' '.repeat(55)}$`)
+        }
 
-      forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS
+        forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS
 
 STATE OF SOUTH CAROLINA
 COUNTY OF ${county.toUpperCase()}
@@ -205,9 +246,9 @@ He further states that no part of the sum included in the itemization below has 
 
 ITEMIZATION OF ACCOUNTS
 
-${invoiceItems}
+${invoiceItems.join('\n')}
 
-TOTAL: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+TOTAL                                                    $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 
 (Copies of bills, papers or other proof of any of the above accounts should be attached to this document.)
 
@@ -221,7 +262,7 @@ My Commission expires: _________________________
 PLAINTIFF (or his attorney): _________________________
 
 SCCA/716 (Amended 05/2008)`
-    }
+      }
 
     return NextResponse.json(forms)
   } catch (error) {

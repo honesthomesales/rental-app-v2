@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { getMagistrateDistrict, getMagistrateCourtAddress } from '@/lib/magistrate-lookup'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
-import { jsPDF } from 'jspdf'
 
 export async function POST(request: Request) {
   try {

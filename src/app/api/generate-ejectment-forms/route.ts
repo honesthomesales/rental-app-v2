@@ -133,24 +133,19 @@ This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) an
         reasonDescription = `The terms or conditions of the lease have been violated as follows: ${violationDescription}`
       }
 
-      // Format ejectment form exactly as SC form (SCCA/732) - matching exact layout
-      let ejectmentGrounds = ''
-      let groundsDescription = ''
+      // Format ejectment form exactly as SC form (SCCA/732) - matching exact layout from official form
+      let checkbox1 = '[ ]'
+      let checkbox2 = '[ ]'
+      let checkbox3 = '[ ]'
+      let violationLine = '_________________________'
       
       if (ejectmentReason === 'nonpayment') {
-        ejectmentGrounds = `[X] The tenant fails or refuses to pay the rent when due or when demanded; or
-[ ] The term of tenancy or occupancy has ended; or
-[ ] The terms or conditions of the lease have been violated as follows:`
-        groundsDescription = `The tenant fails or refuses to pay the rent when due or when demanded. The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.`
+        checkbox1 = '[X]'
       } else if (ejectmentReason === 'endtenancy') {
-        ejectmentGrounds = `[ ] The tenant fails or refuses to pay the rent when due or when demanded; or
-[X] The term of tenancy or occupancy has ended; or
-[ ] The terms or conditions of the lease have been violated as follows:`
+        checkbox2 = '[X]'
       } else {
-        ejectmentGrounds = `[ ] The tenant fails or refuses to pay the rent when due or when demanded; or
-[ ] The term of tenancy or occupancy has ended; or
-[X] The terms or conditions of the lease have been violated as follows:`
-        groundsDescription = violationDescription
+        checkbox3 = '[X]'
+        violationLine = violationDescription
       }
 
       forms.ejectment = `APPLICATION FOR EJECTMENT (Eviction)
@@ -174,8 +169,10 @@ I further state that, with regard to the above described premises, a landlord-te
 
 GROUNDS FOR EJECTMENT:
 
-${ejectmentGrounds}
-${groundsDescription ? ` ${groundsDescription}` : ''}
+${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+${ejectmentReason === 'nonpayment' ? `The tenant fails or refuses to pay the rent when due or when demanded. The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.` : ''}
+${checkbox2} The term of tenancy or occupancy has ended; or
+${checkbox3} The terms or conditions of the lease have been violated as follows: ${violationLine}
 
 WHEREFORE, the plaintiff demands possession of the premises, damages, costs, and such other relief as the Court may deem just and proper.
 
@@ -201,27 +198,39 @@ SCCA/732 (Amended 05/2008)`
 
       // Generate Affidavit of Item of Account if late rent - formatted exactly as SC form (SCCA/716)
       if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
-        // Create itemization lines (form shows 5 blank lines with dollar signs at the end)
-        // Format: Description on left, dollar amount aligned right
+        // Create itemization lines (form shows exactly 5 lines with dollar signs at the end)
+        // Format: Description/text on left, then spaces, then dollar amount aligned right
+        // The form has blank lines with just dollar signs
         const maxItems = 5
         const invoiceItems: string[] = []
+        const lineWidth = 75 // Approximate characters per line for alignment
         
         if (unpaidInvoices && unpaidInvoices.length > 0) {
           unpaidInvoices.slice(0, maxItems).forEach((inv) => {
             const dueDate = new Date(inv.due_date + 'T12:00:00')
             const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
             const amount = parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            // Pad to align dollar amounts (approximately 60 characters width)
+            // Format: description text, then spaces, then $amount aligned right
             const description = `Rent due ${formattedDueDate}`
-            const padding = Math.max(1, 55 - description.length)
-            invoiceItems.push(`${description}${' '.repeat(padding)}$${amount}`)
+            const amountStr = `$${amount}`
+            const totalSpaces = lineWidth - description.length - amountStr.length
+            const padding = totalSpaces > 0 ? ' '.repeat(totalSpaces) : ' '
+            invoiceItems.push(`${description}${padding}${amountStr}`)
           })
         }
         
-        // Fill remaining lines if less than maxItems (form shows 5 lines total)
+        // Fill remaining lines if less than maxItems (form always shows 5 lines)
         while (invoiceItems.length < maxItems) {
-          invoiceItems.push(`${' '.repeat(55)}$`)
+          const amountStr = '$'
+          const padding = ' '.repeat(lineWidth - amountStr.length)
+          invoiceItems.push(`${padding}${amountStr}`)
         }
+
+        // Format TOTAL line with proper alignment
+        const totalAmount = `$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const totalLabel = 'TOTAL'
+        const totalSpaces = lineWidth - totalLabel.length - totalAmount.length
+        const totalPadding = totalSpaces > 0 ? ' '.repeat(totalSpaces) : ' '
 
         forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS
 
@@ -246,7 +255,7 @@ ITEMIZATION OF ACCOUNTS
 
 ${invoiceItems.join('\n')}
 
-TOTAL                                                    $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+${totalLabel}${totalPadding}${totalAmount}
 
 (Copies of bills, papers or other proof of any of the above accounts should be attached to this document.)
 

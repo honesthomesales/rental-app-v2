@@ -10,9 +10,10 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Sect
  */
 export async function downloadAsPDF(content: string, filename: string, htmlContent?: string) {
   // If HTML content is provided, use it for better formatting with html2canvas
-  if (htmlContent && typeof window !== 'undefined') {
+  // Only run in browser environment (client-side only)
+  if (htmlContent && typeof window !== 'undefined' && typeof document !== 'undefined') {
     try {
-      // Dynamically import html2canvas
+      // Dynamically import html2canvas - client-side only
       const html2canvas = (await import('html2canvas')).default
       
       // Create a temporary element with the HTML
@@ -118,8 +119,8 @@ export async function downloadAsPDF(content: string, filename: string, htmlConte
  * Download form as Word document - uses HTML if available for better formatting
  */
 export async function downloadAsWord(content: string, filename: string, htmlContent?: string) {
-  // If HTML content is provided, try to use it
-  if (htmlContent) {
+  // If HTML content is provided, try to use it (client-side only)
+  if (htmlContent && typeof window !== 'undefined' && typeof document !== 'undefined') {
     // For Word, we can create a better formatted document from HTML
     // Parse HTML and convert to Word document structure
     const parser = new DOMParser()

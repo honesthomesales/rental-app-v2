@@ -31,6 +31,16 @@ const nextConfig: NextConfig = {
     ],
   },
   
+  // Webpack configuration to handle client-side only packages
+  webpack: (config, { isServer }) => {
+    // Exclude html2canvas from server-side bundle (client-side only)
+    if (isServer) {
+      config.externals = config.externals || []
+      config.externals.push('html2canvas')
+    }
+    return config
+  },
+  
   // Optimize images
   images: {
     formats: ['image/avif', 'image/webp'],

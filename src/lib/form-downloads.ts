@@ -8,22 +8,63 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Sect
 /**
  * Download form as PDF - uses HTML if available for better formatting, otherwise uses text
  */
-export function downloadAsPDF(content: string, filename: string, htmlContent?: string) {
-  // If HTML content is provided, use it for better formatting
-  if (htmlContent) {
-    // Create a temporary element with the HTML
-    const element = document.createElement('div')
-    element.innerHTML = htmlContent
-    element.style.position = 'absolute'
-    element.style.left = '-9999px'
-    document.body.appendChild(element)
-    
-    // Use browser's print to PDF functionality via html2canvas approach
-    // For now, fall back to text-based PDF
-    document.body.removeChild(element)
+export async function downloadAsPDF(content: string, filename: string, htmlContent?: string) {
+  // If HTML content is provided, use it for better formatting with html2canvas
+  if (htmlContent && typeof window !== 'undefined') {
+    try {
+      // Dynamically import html2canvas
+      const html2canvas = (await import('html2canvas')).default
+      
+      // Create a temporary element with the HTML
+      const element = document.createElement('div')
+      element.innerHTML = htmlContent
+      element.style.position = 'absolute'
+      element.style.left = '-9999px'
+      element.style.width = '8.5in'
+      element.style.padding = '1in'
+      document.body.appendChild(element)
+      
+      // Wait a bit for rendering
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Convert HTML to canvas then to PDF
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        letterRendering: true,
+        width: 816, // 8.5in at 96 DPI
+        height: 1056 // 11in at 96 DPI
+      })
+      
+      document.body.removeChild(element)
+      
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'in', 'letter')
+      const imgWidth = 8.5
+      const pageHeight = 11
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      let heightLeft = imgHeight
+      let position = 0
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+      
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
+      
+      pdf.save(filename)
+      return
+    } catch (error) {
+      console.error('Error generating PDF from HTML:', error)
+      // Fall through to text-based PDF
+    }
   }
   
-  // Generate PDF from text content
+  // Generate PDF from text content (fallback)
   const doc = new jsPDF({
     unit: 'in',
     format: 'letter',
@@ -74,9 +115,71 @@ export function downloadAsPDF(content: string, filename: string, htmlContent?: s
 }
 
 /**
- * Download form as Word document with monospace font for exact formatting
+ * Download form as Word document - uses HTML if available for better formatting
  */
-export async function downloadAsWord(content: string, filename: string) {
+export async function downloadAsWord(content: string, filename: string, htmlContent?: string) {
+  // If HTML content is provided, try to use it
+  if (htmlContent) {
+    // For Word, we can create a better formatted document from HTML
+    // Parse HTML and convert to Word document structure
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(htmlContent, 'text/html')
+    const paragraphs: Paragraph[] = []
+    
+    // Extract text content preserving structure
+    const walkNode = (node: Node): void => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent?.trim()
+        if (text) {
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({ text, font: 'Times New Roman', size: 20 })],
+            spacing: { after: 100 },
+          }))
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as Element
+        if (element.tagName === 'DIV' && element.classList.contains('form-header')) {
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({ text: element.textContent || '', bold: true, size: 24 })],
+            spacing: { after: 200 },
+          }))
+        } else if (element.tagName === 'STRONG') {
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({ text: element.textContent || '', bold: true, size: 20 })],
+            spacing: { after: 150 },
+          }))
+        } else {
+          Array.from(node.childNodes).forEach(walkNode)
+        }
+      }
+    }
+    
+    Array.from(doc.body.childNodes).forEach(walkNode)
+    
+    if (paragraphs.length > 0) {
+      const wordDoc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+            },
+          },
+          children: paragraphs,
+        }],
+      })
+      
+      const blob = await Packer.toBlob(wordDoc)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      URL.revokeObjectURL(url)
+      return
+    }
+  }
+  
+  // Fallback to text-based Word document
   // Split content into paragraphs, preserving exact spacing
   const paragraphs = content.split('\n').map((line, index, array) => {
     const trimmed = line.trim()

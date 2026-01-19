@@ -36,10 +36,6 @@ export async function POST(request: Request) {
       property.zip_code || property.postal_code
     )
 
-    // Get today's date
-    const today = new Date()
-    const todayDate = new Date(today.toISOString().split('T')[0])
-
     // Get today's date for filtering late invoices (matching late tenants screen logic)
     const todayDate = new Date()
     todayDate.setHours(0, 0, 0, 0)
@@ -97,11 +93,11 @@ export async function POST(request: Request) {
       month: 'long', 
       day: 'numeric' 
     })
-    const currentDate = dateFormatter.format(today)
-    const todayFormatted = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    const day = today.getDate()
-    const month = today.toLocaleDateString('en-US', { month: 'long' })
-    const year = today.getFullYear()
+    const currentDate = dateFormatter.format(todayDate)
+    const todayFormatted = todayDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const day = todayDate.getDate()
+    const month = todayDate.toLocaleDateString('en-US', { month: 'long' })
+    const year = todayDate.getFullYear()
 
     const forms: any = {}
 

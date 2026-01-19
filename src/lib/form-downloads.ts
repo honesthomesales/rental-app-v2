@@ -1,9 +1,10 @@
 /**
  * Utilities for downloading forms as PDF or Word documents
+ * 
+ * NOTE: These functions are client-side only and use dynamic imports
+ * to prevent server-side bundling issues with browser-only libraries.
+ * This file should only be imported in client components.
  */
-
-import jsPDF from 'jspdf'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, SectionType } from 'docx'
 
 /**
  * Download form as PDF - uses HTML if available for better formatting, otherwise uses text
@@ -40,6 +41,8 @@ export async function downloadAsPDF(content: string, filename: string, htmlConte
       document.body.removeChild(element)
       
       const imgData = canvas.toDataURL('image/png')
+      // Dynamically import jsPDF - client-side only
+      const { default: jsPDF } = await import('jspdf')
       const pdf = new jsPDF('p', 'in', 'letter')
       const imgWidth = 8.5
       const pageHeight = 11
@@ -66,6 +69,8 @@ export async function downloadAsPDF(content: string, filename: string, htmlConte
   }
   
   // Generate PDF from text content (fallback)
+  // Dynamic import to prevent server-side bundling
+  const { default: jsPDF } = await import('jspdf')
   const doc = new jsPDF({
     unit: 'in',
     format: 'letter',
@@ -119,13 +124,16 @@ export async function downloadAsPDF(content: string, filename: string, htmlConte
  * Download form as Word document - uses HTML if available for better formatting
  */
 export async function downloadAsWord(content: string, filename: string, htmlContent?: string) {
+  // Dynamically import docx - client-side only
+  const { Document, Paragraph, TextRun, Packer } = await import('docx')
+  
   // If HTML content is provided, try to use it (client-side only)
   if (htmlContent && typeof window !== 'undefined' && typeof document !== 'undefined') {
     // For Word, we can create a better formatted document from HTML
     // Parse HTML and convert to Word document structure
     const parser = new DOMParser()
     const doc = parser.parseFromString(htmlContent, 'text/html')
-    const paragraphs: Paragraph[] = []
+    const paragraphs: InstanceType<typeof Paragraph>[] = []
     
     // Extract text content preserving structure
     const walkNode = (node: Node): void => {
@@ -182,7 +190,7 @@ export async function downloadAsWord(content: string, filename: string, htmlCont
   
   // Fallback to text-based Word document
   // Split content into paragraphs, preserving exact spacing
-  const paragraphs = content.split('\n').map((line, index, array) => {
+  const paragraphs = content.split('\n').map((line) => {
     const trimmed = line.trim()
     
     // Preserve empty lines for spacing

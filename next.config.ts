@@ -33,10 +33,12 @@ const nextConfig: NextConfig = {
   
   // Webpack configuration to handle client-side only packages
   webpack: (config, { isServer }) => {
-    // Exclude html2canvas from server-side bundle (client-side only)
+    // Exclude browser-only packages from server-side bundle
     if (isServer) {
       config.externals = config.externals || []
+      // Exclude html2canvas and jspdf from server bundle (browser-only)
       config.externals.push('html2canvas')
+      config.externals.push('jspdf')
     }
     return config
   },

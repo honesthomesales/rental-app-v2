@@ -40,13 +40,16 @@ export async function POST(request: Request) {
     const today = new Date()
     const todayDate = new Date(today.toISOString().split('T')[0])
 
-    // Fetch all unpaid invoices for this lease
-    const { data: unpaidInvoices, error: invoicesError } = await supabaseServer
+    // Get today's date for filtering late invoices (matching late tenants screen logic)
+    const todayDate = new Date()
+    todayDate.setHours(0, 0, 0, 0)
+    
+    // Fetch all invoices for this lease (matching late tenants screen logic)
+    const { data: allInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
       .eq('lease_id', leaseId)
-      .eq('status', 'OPEN')
-      .gt('balance_due', 0)
+      .lte('due_date', todayDate.toISOString().split('T')[0])
       .order('due_date', { ascending: true })
 
     if (invoicesError) {
@@ -54,12 +57,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch invoice data' }, { status: 500 })
     }
 
-    // Calculate totals - totalDue includes everything (rent + late fees), rentAmount is just rent
-    const totalDue = unpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.balance_due || 0), 0) || 0
-    const rentAmount = unpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_rent || 0), 0) || 0
-    const lateFeeAmount = unpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_late || 0), 0) || 0
-    // Number of periods = count of all unpaid invoices (each invoice represents one rent cycle)
-    const numberOfPeriods = unpaidInvoices?.length || 0
+    // Filter invoices within lease start date range (matching late tenants screen)
+    const leaseStartDate = leaseData.lease_start_date
+    const validInvoices = allInvoices?.filter(invoice => 
+      !leaseStartDate || invoice.due_date >= leaseStartDate
+    ) || []
+
+    // Find late invoices (due before today and not fully paid) - EXACT same logic as late tenants screen
+    const lateInvoices = validInvoices.filter(invoice => {
+      const dueDate = new Date(invoice.due_date)
+      dueDate.setHours(0, 0, 0, 0)
+      const isPastDue = dueDate < todayDate
+      const hasBalance = parseFloat(invoice.balance_due || 0) > 0
+      return isPastDue && hasBalance && invoice.status === 'OPEN'
+    })
+
+    // Calculate totals using EXACT same logic as late tenants screen
+    // totalLateAmount = sum of balance_due from late invoices (rent + late fees)
+    const totalDue = lateInvoices.reduce((sum, invoice) => 
+      sum + parseFloat(invoice.balance_due || 0), 0
+    )
+    // totalLateFees = sum of amount_late from late invoices
+    const lateFeeAmount = lateInvoices.reduce((sum, invoice) => 
+      sum + parseFloat(invoice.amount_late || 0), 0
+    )
+    // Rent amount = total due minus late fees (or sum of amount_rent)
+    const rentAmount = lateInvoices.reduce((sum, invoice) => 
+      sum + parseFloat(invoice.amount_rent || 0), 0
+    )
+    // Number of rent cycles = count of late invoices (matching late tenants screen)
+    const numberOfPeriods = lateInvoices.length
+    
+    // Use lateInvoices for all form generation (not all unpaid invoices)
+    const unpaidInvoices = lateInvoices
 
     // Format dates
     const dateFormatter = new Intl.DateTimeFormat('en-US', { 

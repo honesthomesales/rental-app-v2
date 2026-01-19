@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
 import { Property } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
-type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'isOccupied' | 'is_for_rent' | 'insurance_premium' | 'property_tax'
+type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'isOccupied' | 'is_for_rent'
 type SortDirection = 'asc' | 'desc'
 
 type PropertyWithLease = Property & {
@@ -259,6 +260,19 @@ export default function PropertiesPage() {
         </div>
       </div>
 
+      {/* Info Banner */}
+      <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="flex items-center">
+          <svg className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm text-blue-800">
+            <span className="font-medium">Note:</span> Insurance premiums and property taxes are managed on the{' '}
+            <Link href="/" className="font-semibold underline hover:text-blue-900">Dashboard</Link> page.
+          </p>
+        </div>
+      </div>
+
       {/* Properties Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
@@ -283,28 +297,6 @@ export default function PropertiesPage() {
                   <div className="flex items-center">
                     City
                     {sortField === 'city' && (
-                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('insurance_premium')}
-                >
-                  <div className="flex items-center">
-                    Insurance (Yearly)
-                    {sortField === 'insurance_premium' && (
-                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
-                <th 
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('property_tax')}
-                >
-                  <div className="flex items-center">
-                    Taxes (Yearly)
-                    {sortField === 'property_tax' && (
                       <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                     )}
                   </div>
@@ -384,12 +376,6 @@ export default function PropertiesPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {property.city}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${property.insurance_premium?.toLocaleString() || 'N/A'}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${property.property_tax?.toLocaleString() || 'N/A'}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full capitalize">
@@ -483,8 +469,6 @@ export default function PropertiesPage() {
                 bathrooms: parseFloat(formData.get('bathrooms') as string) || 0,
                 square_feet: parseInt(formData.get('square_feet') as string) || 0,
                 rent_value: parseFloat(formData.get('rent_value') as string) || 0,
-                insurance_premium: parseFloat(formData.get('insurance_premium') as string) || 0,
-                property_tax: parseFloat(formData.get('property_tax') as string) || 0,
                 is_for_rent: formData.get('is_for_rent') === 'on'
               }
               handleSaveProperty(propertyData)
@@ -567,28 +551,30 @@ export default function PropertiesPage() {
                     placeholder="Enter monthly rent value"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Insurance Premium (Yearly)</label>
-                    <input
-                      type="number"
-                      name="insurance_premium"
-                      step="0.01"
-                      defaultValue={editingProperty?.insurance_premium || ''}
-                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                      placeholder="Enter yearly insurance premium"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Property Tax (Yearly)</label>
-                    <input
-                      type="number"
-                      name="property_tax"
-                      step="0.01"
-                      defaultValue={editingProperty?.property_tax || ''}
-                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                      placeholder="Enter yearly property tax"
-                    />
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="ml-3 flex-1">
+                      <h3 className="text-sm font-medium text-blue-800">Insurance & Tax Management</h3>
+                      <div className="mt-2 text-sm text-blue-700">
+                        <p>To view or edit insurance premiums and property taxes, please use the <Link href="/" className="font-semibold underline hover:text-blue-900">Dashboard</Link> page.</p>
+                        {editingProperty && (editingProperty.insurance_premium || editingProperty.property_tax) && (
+                          <div className="mt-2 text-xs">
+                            <p className="font-medium">Current values:</p>
+                            {editingProperty.insurance_premium && (
+                              <p>Insurance: ${editingProperty.insurance_premium.toLocaleString()}/year</p>
+                            )}
+                            {editingProperty.property_tax && (
+                              <p>Tax: ${editingProperty.property_tax.toLocaleString()}/year</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-4">

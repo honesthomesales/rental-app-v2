@@ -54,10 +54,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch invoice data' }, { status: 500 })
     }
 
-    // Calculate totals
+    // Calculate totals - totalDue includes everything (rent + late fees), rentAmount is just rent
     const totalDue = unpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.balance_due || 0), 0) || 0
     const rentAmount = unpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_rent || 0), 0) || 0
     const lateFeeAmount = unpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_late || 0), 0) || 0
+    // Number of periods = count of all unpaid invoices (each invoice represents one rent cycle)
     const numberOfPeriods = unpaidInvoices?.length || 0
 
     // Format dates
@@ -220,8 +221,8 @@ SCCA/732 (Amended 05/2008)`
       // Generate Affidavit of Item of Account if late rent - formatted exactly as SC form (SCCA/716)
       if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
         // Create itemization lines (form shows exactly 5 lines with dollar signs at the end)
-        // Format: Description/text on left, then spaces, then dollar amount aligned right
-        // Match exact SC form layout - each line ends with a dollar sign
+        // IMPORTANT: Itemization shows only RENT amounts (amount_rent), not balance_due (which includes late fees)
+        // The TOTAL shows totalDue (which includes all balances with late fees)
         const maxItems = 5
         const invoiceItems: string[] = []
         const lineWidth = 80 // Characters per line for proper alignment
@@ -230,10 +231,11 @@ SCCA/732 (Amended 05/2008)`
           unpaidInvoices.slice(0, maxItems).forEach((inv) => {
             const dueDate = new Date(inv.due_date + 'T12:00:00')
             const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            const amount = parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            // Use amount_rent (base rent only) for itemization, NOT balance_due
+            const rentAmount = parseFloat(inv.amount_rent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             // Format: description text on left, spaces in middle, $amount aligned right
             const description = `Rent due ${formattedDueDate}`
-            const amountStr = `$${amount}`
+            const amountStr = `$${rentAmount}`
             // Calculate padding to align dollar amounts to the right
             const spacesNeeded = lineWidth - description.length - amountStr.length
             const padding = spacesNeeded > 0 ? ' '.repeat(spacesNeeded) : ' '
@@ -248,7 +250,7 @@ SCCA/732 (Amended 05/2008)`
           invoiceItems.push(`${padding}$`)
         }
 
-        // Format TOTAL line with proper alignment (matches form layout)
+        // Format TOTAL line with proper alignment - TOTAL includes all amounts (rent + late fees)
         const totalAmount = `$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         const totalLabel = 'TOTAL'
         const totalSpaces = lineWidth - totalLabel.length - totalAmount.length
@@ -319,13 +321,15 @@ SCCA/716 (Amended 05/2008)`
     
     if (forms.affidavit) {
       const { generateAffidavitHTML } = await import('@/lib/form-html-generator')
+      // Use amount_rent for itemization (not balance_due)
       const invoiceItemsForHTML = unpaidInvoices?.slice(0, 5).map((inv) => {
         const dueDate = new Date(inv.due_date + 'T12:00:00')
         const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-        const amount = parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        // Itemization shows only rent amounts, not late fees
+        const rentAmount = parseFloat(inv.amount_rent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         return {
           description: `Rent due ${formattedDueDate}`,
-          amount: amount
+          amount: rentAmount
         }
       }) || []
       

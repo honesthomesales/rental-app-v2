@@ -18,10 +18,10 @@ export function generateEjectmentHTML(
   plaintiffPhone: string,
   plaintiffEmail: string
 ): string {
-  // Use checkbox characters instead of HTML checkboxes for better PDF rendering
-  const checkbox1 = ejectmentReason === 'nonpayment' ? '☑' : '☐'
-  const checkbox2 = ejectmentReason === 'endtenancy' ? '☑' : '☐'
-  const checkbox3 = ejectmentReason === 'violation' ? '☑' : '☐'
+  // Use checkbox characters that match PDF forms - use [X] and [ ] format to match SC forms exactly
+  const checkbox1 = ejectmentReason === 'nonpayment' ? '[X]' : '[ ]'
+  const checkbox2 = ejectmentReason === 'endtenancy' ? '[X]' : '[ ]'
+  const checkbox3 = ejectmentReason === 'violation' ? '[X]' : '[ ]'
 
   return `<!DOCTYPE html>
 <html>
@@ -117,15 +117,15 @@ export function generateEjectmentHTML(
 
   <div class="form-section">
     <div class="form-line" style="font-weight: bold; margin-bottom: 12pt;">GROUNDS FOR EJECTMENT:</div>
-    <div class="form-line indent">
-      <span class="checkbox">${checkbox1}</span> The tenant fails or refuses to pay the rent when due or when demanded; or
-      ${ejectmentReason === 'nonpayment' ? `<div style="margin-left: 32pt; margin-top: 8pt; margin-bottom: 12pt;">${reasonDescription}</div>` : ''}
+    <div class="form-line indent" style="margin-bottom: 12pt;">
+      ${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+      ${ejectmentReason === 'nonpayment' ? `<div style="margin-left: 24pt; margin-top: 8pt; margin-bottom: 12pt;">${reasonDescription}</div>` : ''}
+    </div>
+    <div class="form-line indent" style="margin-bottom: 12pt;">
+      ${checkbox2} The term of tenancy or occupancy has ended; or
     </div>
     <div class="form-line indent">
-      <span class="checkbox">${checkbox2}</span> The term of tenancy or occupancy has ended; or
-    </div>
-    <div class="form-line indent">
-      <span class="checkbox">${checkbox3}</span> The terms or conditions of the lease have been violated as follows: ${ejectmentReason === 'violation' ? reasonDescription : '<span class="blank-line"></span>'}
+      ${checkbox3} The terms or conditions of the lease have been violated as follows: ${ejectmentReason === 'violation' ? reasonDescription : '<span class="blank-line"></span>'}
     </div>
   </div>
 

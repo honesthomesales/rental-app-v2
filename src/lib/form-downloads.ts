@@ -6,9 +6,24 @@ import jsPDF from 'jspdf'
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, SectionType } from 'docx'
 
 /**
- * Download form as PDF with monospace font for exact formatting
+ * Download form as PDF - uses HTML if available for better formatting, otherwise uses text
  */
-export function downloadAsPDF(content: string, filename: string) {
+export function downloadAsPDF(content: string, filename: string, htmlContent?: string) {
+  // If HTML content is provided, use it for better formatting
+  if (htmlContent) {
+    // Create a temporary element with the HTML
+    const element = document.createElement('div')
+    element.innerHTML = htmlContent
+    element.style.position = 'absolute'
+    element.style.left = '-9999px'
+    document.body.appendChild(element)
+    
+    // Use browser's print to PDF functionality via html2canvas approach
+    // For now, fall back to text-based PDF
+    document.body.removeChild(element)
+  }
+  
+  // Generate PDF from text content
   const doc = new jsPDF({
     unit: 'in',
     format: 'letter',

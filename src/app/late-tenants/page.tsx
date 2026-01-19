@@ -1262,18 +1262,34 @@ export default function LateTenantsPage() {
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
                   </div>
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end space-x-2">
+                    {generatedForms.ejectmentHTML && (
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([generatedForms.ejectmentHTML], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Application-for-Ejectment.html'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View HTML
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.ejectment, 'Application-for-Ejectment.pdf')
+                          downloadAsPDF(generatedForms.ejectment, 'Application-for-Ejectment.pdf', generatedForms.ejectmentHTML)
                         } else {
                           downloadAsWord(generatedForms.ejectment, 'Application-for-Ejectment.docx')
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Ejectment ({downloadFormat.toUpperCase()})
+                      Download ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>
@@ -1285,18 +1301,34 @@ export default function LateTenantsPage() {
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.affidavit}</pre>
                   </div>
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end space-x-2">
+                    {generatedForms.affidavitHTML && (
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([generatedForms.affidavitHTML], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Affidavit-of-Item-of-Account.html'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View HTML
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.pdf')
+                          downloadAsPDF(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.pdf', generatedForms.affidavitHTML)
                         } else {
                           downloadAsWord(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.docx')
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Affidavit ({downloadFormat.toUpperCase()})
+                      Download ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>

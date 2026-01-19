@@ -293,7 +293,55 @@ PLAINTIFF (or his attorney): _________________________
 SCCA/716 (Amended 05/2008)`
       }
 
-    return NextResponse.json(forms)
+    // Also include HTML versions for better formatting
+    const formsWithHTML: any = { ...forms }
+    
+    if (forms.ejectment) {
+      const { generateEjectmentHTML } = await import('@/lib/form-html-generator')
+      formsWithHTML.ejectmentHTML = generateEjectmentHTML(
+        county,
+        'Honest Home Sales, LLC',
+        `${tenant.first_name} ${tenant.last_name}`,
+        magistrateDistrict,
+        `${property.address}${property.city ? `, ${property.city}` : ''}${property.state ? `, ${property.state}` : ''}${property.zip_code ? ` ${property.zip_code}` : ''}`,
+        ejectmentReason,
+        ejectmentReason === 'nonpayment' ? `The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.` : 
+        ejectmentReason === 'violation' ? violationDescription : '',
+        day,
+        month,
+        year,
+        'PO Box 705, Cowpens, SC 29330',
+        'Cowpens, SC 29330',
+        '864-322-3432',
+        'honesthomesales@gmail.com'
+      )
+    }
+    
+    if (forms.affidavit) {
+      const { generateAffidavitHTML } = await import('@/lib/form-html-generator')
+      const invoiceItemsForHTML = unpaidInvoices?.slice(0, 5).map((inv) => {
+        const dueDate = new Date(inv.due_date + 'T12:00:00')
+        const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        const amount = parseFloat(inv.balance_due || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        return {
+          description: `Rent due ${formattedDueDate}`,
+          amount: amount
+        }
+      }) || []
+      
+      formsWithHTML.affidavitHTML = generateAffidavitHTML(
+        county,
+        'Honest Home Sales, LLC',
+        `${tenant.first_name} ${tenant.last_name}`,
+        invoiceItemsForHTML,
+        totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        day,
+        month,
+        year
+      )
+    }
+
+    return NextResponse.json(formsWithHTML)
   } catch (error) {
     console.error('Error generating forms:', error)
     return NextResponse.json(

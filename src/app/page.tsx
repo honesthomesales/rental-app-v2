@@ -6,7 +6,9 @@ import {
   HomeIcon, 
   CurrencyDollarIcon, 
   ExclamationTriangleIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  XMarkIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline'
 
 export default function Dashboard() {
@@ -26,8 +28,10 @@ export default function Dashboard() {
   const [insuranceSearchTerm, setInsuranceSearchTerm] = useState<string>('')
   const [taxSearchTerm, setTaxSearchTerm] = useState<string>('')
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
+  const [showPotentialIncomeModal, setShowPotentialIncomeModal] = useState(false)
   const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
   const [taxSelectedProperties, setTaxSelectedProperties] = useState<Map<string, number>>(new Map())
+  const [editingRentValue, setEditingRentValue] = useState<{propertyId: string, value: string} | null>(null)
   
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
@@ -518,7 +522,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
+        <div 
+          className="bg-white p-6 rounded-lg shadow cursor-pointer hover:shadow-lg transition-shadow"
+          onClick={() => setShowPotentialIncomeModal(true)}
+        >
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <CurrencyDollarIcon className="h-8 w-8 text-indigo-600" />
@@ -529,6 +536,7 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500 mt-1">
                 Unoccupied: ${metrics?.potentialIncome?.toLocaleString() || 0}
               </p>
+              <p className="text-xs text-indigo-600 mt-1 font-medium">Click to view/edit</p>
             </div>
           </div>
         </div>
@@ -1195,6 +1203,152 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Potential Income Modal */}
+      {showPotentialIncomeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Unoccupied Properties - Potential Rent</h2>
+                <p className="text-sm text-gray-600 mt-1">Edit rent_value to update potential income</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPotentialIncomeModal(false)
+                  setEditingRentValue(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {potentialIncomeProperties.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No unoccupied properties with potential income found.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Property
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Address
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Potential Rent (Monthly)
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {potentialIncomeProperties.map((property) => (
+                        <tr key={property.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">{property.address || 'N/A'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            {editingRentValue?.propertyId === property.id ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingRentValue.value}
+                                onChange={(e) => setEditingRentValue({ propertyId: property.id, value: e.target.value })}
+                                onBlur={async () => {
+                                  const newValue = parseFloat(editingRentValue.value) || 0
+                                  try {
+                                    const response = await fetch(`/api/properties/${property.id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ rent_value: newValue })
+                                    })
+                                    if (response.ok) {
+                                      // Update local state
+                                      setPotentialIncomeProperties(prev => 
+                                        prev.map(p => p.id === property.id ? { ...p, rent_value: newValue } : p)
+                                      )
+                                      // Refresh dashboard metrics
+                                      fetchDashboardData()
+                                    } else {
+                                      alert('Failed to update rent value')
+                                    }
+                                  } catch (error) {
+                                    console.error('Error updating rent value:', error)
+                                    alert('Error updating rent value')
+                                  }
+                                  setEditingRentValue(null)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.currentTarget.blur()
+                                  } else if (e.key === 'Escape') {
+                                    setEditingRentValue(null)
+                                  }
+                                }}
+                                className="text-sm text-right border rounded px-2 py-1 w-32"
+                                autoFocus
+                              />
+                            ) : (
+                              <div 
+                                className="text-sm font-semibold text-indigo-600 cursor-pointer hover:text-indigo-800"
+                                onClick={() => setEditingRentValue({ propertyId: property.id, value: (property.rent_value || 0).toString() })}
+                              >
+                                ${(property.rent_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <button
+                              onClick={() => setEditingRentValue({ propertyId: property.id, value: (property.rent_value || 0).toString() })}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="Edit rent value"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {potentialIncomeProperties.length > 0 && (
+                        <tr className="bg-gray-100 font-semibold">
+                          <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            Total Potential Income
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600">
+                            ${potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td></td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowPotentialIncomeModal(false)
+                  setEditingRentValue(null)
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

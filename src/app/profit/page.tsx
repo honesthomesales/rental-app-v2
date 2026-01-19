@@ -418,7 +418,17 @@ export default function ProfitPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+          {monthlyMetrics?.averageProfit12Months !== undefined && (
+            <div className="text-right">
+              <p className="text-sm text-gray-600">Average Profit (12 Months)</p>
+              <p className={`text-2xl font-bold ${monthlyMetrics.averageProfit12Months >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatCurrency(monthlyMetrics.averageProfit12Months)}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
 

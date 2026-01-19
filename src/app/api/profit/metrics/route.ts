@@ -363,6 +363,70 @@ export async function GET(request: Request) {
     // Collection rate as decimal (0-1) for gauge
     const collectionRate = expectedRent > 0 ? (rentCollected / expectedRent) : 0
     
+    // Calculate average profit for previous 12 months
+    let averageProfit12Months = 0
+    try {
+      const profitAmounts: number[] = []
+      const currentMonth = new Date(year, monthNum, 1)
+      
+      // Calculate profit for each of the previous 12 months
+      for (let i = 1; i <= 12; i++) {
+        const pastMonth = new Date(currentMonth)
+        pastMonth.setMonth(pastMonth.getMonth() - i)
+        const pastMonthStr = `${pastMonth.getFullYear()}-${String(pastMonth.getMonth() + 1).padStart(2, '0')}`
+        
+        const pastStartOfMonth = `${pastMonthStr}-01`
+        const pastYear = pastMonth.getFullYear()
+        const pastMonthNum = pastMonth.getMonth()
+        const pastEndOfMonth = new Date(pastYear, pastMonthNum + 1, 0).toISOString().slice(0, 10)
+        
+        // Fetch payments for that month
+        const { data: pastPayments } = await supabaseServer
+          .from('RENT_payments')
+          .select('amount')
+          .not('invoice_id', 'is', null)
+          .gte('payment_date', pastStartOfMonth)
+          .lte('payment_date', pastEndOfMonth)
+        
+        const pastRentCollected = pastPayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0
+        
+        // Fetch misc income for that month
+        const { data: pastMiscIncome } = await supabaseServer
+          .from('RENT_expenses')
+          .select('amount_owed')
+          .eq('interest_rate', 9.9999)
+          .gte('last_paid_date', pastStartOfMonth)
+          .lte('last_paid_date', pastEndOfMonth)
+        
+        const pastMiscIncomeAmount = pastMiscIncome?.reduce((sum, e) => sum + (Number(e.amount_owed) || 0), 0) || 0
+        
+        // Fetch one-time expenses for that month
+        const { data: pastOneTimeExpenses } = await supabaseServer
+          .from('RENT_expenses')
+          .select('amount_owed')
+          .eq('interest_rate', -9.9999)
+          .gte('last_paid_date', pastStartOfMonth)
+          .lte('last_paid_date', pastEndOfMonth)
+        
+        const pastOtherExpenses = pastOneTimeExpenses?.reduce((sum, e) => sum + (Number(e.amount_owed) || 0), 0) || 0
+        
+        // Calculate profit for that month (income - expenses)
+        const pastTotalIncome = pastRentCollected + pastMiscIncomeAmount
+        const pastTotalExpenses = totalInsurance + totalTaxes + totalPayments + pastOtherExpenses
+        const pastProfit = pastTotalIncome - pastTotalExpenses
+        
+        profitAmounts.push(pastProfit)
+      }
+      
+      // Calculate average
+      if (profitAmounts.length > 0) {
+        averageProfit12Months = profitAmounts.reduce((sum, p) => sum + p, 0) / profitAmounts.length
+      }
+    } catch (error) {
+      console.error('Error calculating average profit:', error)
+      // Continue with 0 if calculation fails
+    }
+    
     const metrics = {
       fixedExpenses: {
         insurance: Math.round(totalInsurance * 100) / 100,
@@ -393,7 +457,8 @@ export async function GET(request: Request) {
         expected: Math.round(expectedRent * 100) / 100,
         collectionRate: Math.round(collectionRatePercent * 100) / 100, // Percentage for display
         collectionRateDecimal: collectionRate // Decimal 0-1 for gauge
-      }
+      },
+      averageProfit12Months: Math.round(averageProfit12Months * 100) / 100
     }
     
     console.log('Calculated metrics:', JSON.stringify(metrics, null, 2))

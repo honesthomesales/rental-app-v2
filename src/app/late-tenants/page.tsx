@@ -307,7 +307,7 @@ export default function LateTenantsPage() {
           formType,
           ejectmentReason,
           violationDescription,
-          leaseId: tenant.leaseId,
+          leaseId: tenant.leaseId || tenant.lease.id,
         }),
       })
 

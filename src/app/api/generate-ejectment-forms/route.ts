@@ -5,14 +5,8 @@ export async function POST(request: Request) {
   try {
     const { tenantId, county, formType, ejectmentReason, violationDescription, leaseId } = await request.json()
 
-    if (!tenantId || !county || !leaseId) {
-      return NextResponse.json({ error: 'Tenant ID, county, and lease ID are required' }, { status: 400 })
-    }
-
-    // Parse tenant ID (format: "Property Name - Tenant Name")
-    const parts = tenantId.split(' - ')
-    if (parts.length !== 2) {
-      return NextResponse.json({ error: 'Invalid tenant ID format' }, { status: 400 })
+    if (!county || !leaseId) {
+      return NextResponse.json({ error: 'County and lease ID are required' }, { status: 400 })
     }
 
     // Fetch lease, property, and tenant details

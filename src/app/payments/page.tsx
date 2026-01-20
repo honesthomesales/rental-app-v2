@@ -259,21 +259,30 @@ return'<div class="s">'+l+'</div>';
             const invoicesData = await invoicesResponse.json()
             const invoices = Array.isArray(invoicesData) ? invoicesData : []
             
-            // Calculate unpaid invoices and total owed
-            // First, get existing unpaid invoices
-            const existingUnpaidInvoices = invoices.filter((inv: Invoice) => 
+            // Generate expected invoices for missing periods (same logic as invoice modal)
+            // This ensures consistency between payments page and invoice modal
+            const expectedInvoices = generateExpectedInvoices(
+              leaseData,
+              leaseData.lease_start_date,
+              today,
+              invoices
+            )
+            
+            // Combine real and expected invoices
+            const allInvoices = [...invoices, ...expectedInvoices]
+            
+            // Filter unpaid invoices (both real and expected)
+            // Only count invoices with status='OPEN' and balance_due > 0
+            const unpaidInvoices = allInvoices.filter((inv: Invoice) => 
               inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
             )
             
-            // For now, let's be conservative and only count existing unpaid invoices
-            // TODO: Add missing invoice detection later if needed
-            let missingInvoicesCount = 0
-            let missingInvoicesAmount = 0
-            
-            const totalUnpaidCount = existingUnpaidInvoices.length + missingInvoicesCount
-            const totalOwed = existingUnpaidInvoices.reduce((sum: number, inv: Invoice) => 
+            // Calculate total owed from unpaid invoices (real + expected)
+            const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
               sum + parseFloat(inv.balance_due as any), 0
-            ) + missingInvoicesAmount
+            )
+            
+            const totalUnpaidCount = unpaidInvoices.length
 
             return {
               lease: leaseData,

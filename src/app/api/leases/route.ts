@@ -138,25 +138,39 @@ export async function PUT(request: Request) {
       throw new Error(`Supabase error: ${updateError.message}`)
     }
 
-    // If lease terms changed, delete PAID invoices BEFORE new lease_start_date and regenerate
+    // If lease terms changed, delete invoices and regenerate
     if (leaseTermsChanged) {
-      console.log('Lease terms changed, deleting paid invoices before new lease_start_date and regenerating...')
+      console.log('Lease terms changed, deleting invoices and regenerating...')
       
-      // Delete all PAID invoices with due_date < new lease_start_date
+      // 1. Delete all PAID invoices with due_date < new lease_start_date
       // Keep unpaid invoices before new lease (they still need to be paid)
       // This removes historical paid invoices from old lease terms
-      const { error: deleteError } = await supabaseServer
+      const { error: deletePaidBeforeError } = await supabaseServer
         .from('RENT_invoices')
         .delete()
         .eq('lease_id', id)
         .lt('due_date', newLeaseStartDate)
         .eq('status', 'PAID')  // Only delete paid invoices
 
-      if (deleteError) {
-        console.error('Error deleting paid invoices before new lease_start_date:', deleteError)
-        // Continue anyway - regeneration will handle duplicates
+      if (deletePaidBeforeError) {
+        console.error('Error deleting paid invoices before new lease_start_date:', deletePaidBeforeError)
       } else {
         console.log('Deleted paid invoices before new lease_start_date')
+      }
+
+      // 2. Delete ALL invoices (paid and unpaid) with due_date >= new lease_start_date
+      // These need to be regenerated with new lease terms
+      const { error: deleteFutureError } = await supabaseServer
+        .from('RENT_invoices')
+        .delete()
+        .eq('lease_id', id)
+        .gte('due_date', newLeaseStartDate)  // All invoices on/after new lease start
+
+      if (deleteFutureError) {
+        console.error('Error deleting future invoices:', deleteFutureError)
+        // Continue anyway - regeneration will handle duplicates
+      } else {
+        console.log('Deleted all invoices on/after new lease_start_date')
       }
 
       // Generate new invoices from new lease_start_date forward

@@ -124,6 +124,17 @@ export async function DELETE(
 
     console.log('Deleting invoice with ID:', id)
 
+    // Expected invoices (virtual invoices) cannot be deleted - they don't exist in the database
+    if (id.startsWith('expected-')) {
+      return NextResponse.json(
+        { 
+          error: 'Cannot delete expected invoice', 
+          details: 'Expected invoices are virtual invoices that don\'t exist in the database. To remove them, create a real invoice for the period or wait until the invoice is generated automatically.' 
+        },
+        { status: 400 }
+      )
+    }
+
     // Check if invoice has payments linked to it
     const { data: payments, error: paymentsError } = await supabaseServer
       .from('RENT_payments')

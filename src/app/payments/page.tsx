@@ -1274,6 +1274,14 @@ return'<div class="s">'+l+'</div>';
   const handleDeleteInvoice = async () => {
     if (!invoiceToDelete || !selectedLease) return
     
+    // Expected invoices (virtual invoices) cannot be deleted
+    if (invoiceToDelete.id.startsWith('expected-')) {
+      alert('Cannot delete expected invoice. Expected invoices are virtual invoices that don\'t exist in the database. To remove them, create a real invoice for the period or wait until the invoice is generated automatically.')
+      setShowDeleteInvoiceModal(false)
+      setInvoiceToDelete(null)
+      return
+    }
+    
     setDeletingInvoice(true)
     try {
       const response = await fetch(`/api/invoices/${invoiceToDelete.id}`, {
@@ -2121,6 +2129,11 @@ return'<div class="s">'+l+'</div>';
                             key={invoice.id} 
                             className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)} ${isHighlighted ? 'bg-yellow-100 animate-pulse' : ''} cursor-pointer`}
                             onDoubleClick={() => {
+                              // Prevent deletion of expected invoices (virtual invoices)
+                              if (invoice.id.startsWith('expected-')) {
+                                alert('Cannot delete expected invoice. Expected invoices are virtual invoices that don\'t exist in the database. To remove them, create a real invoice for the period or wait until the invoice is generated automatically.')
+                                return
+                              }
                               setInvoiceToDelete(invoice)
                               setShowDeleteInvoiceModal(true)
                             }}

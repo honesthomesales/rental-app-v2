@@ -119,10 +119,44 @@ export default function PaymentsPage() {
     const rentDueDay = lease.rent_due_day || 1
     const rentAmount = lease.rent || 0
     
-    // Create a set of existing invoice due dates for quick lookup
-    const existingDueDates = new Set(
-      existingInvoices.map(inv => inv.due_date?.split('T')[0] || inv.due_date)
-    )
+    // Helper function to check if a period overlaps with any existing invoice
+    const hasInvoiceForPeriod = (periodStart: string, periodEnd: string, dueDate: string): boolean => {
+      // Normalize dates for comparison
+      const periodStartDate = new Date(periodStart)
+      const periodEndDate = new Date(periodEnd)
+      const dueDateNormalized = dueDate.split('T')[0]
+      
+      // Check if any existing invoice covers this period
+      for (const inv of existingInvoices) {
+        // Skip expected invoices (virtual invoices)
+        if (inv.id?.startsWith('expected-')) {
+          continue
+        }
+        
+        // Normalize existing invoice dates
+        const invDueDate = (inv.due_date?.split('T')[0] || inv.due_date) || ''
+        const invPeriodStart = (inv.period_start?.split('T')[0] || inv.period_start) || ''
+        const invPeriodEnd = (inv.period_end?.split('T')[0] || inv.period_end) || ''
+        
+        // Check exact due_date match first (most common case)
+        if (invDueDate === dueDateNormalized) {
+          return true
+        }
+        
+        // Check if periods overlap (if period dates exist)
+        if (invPeriodStart && invPeriodEnd) {
+          const invStartDate = new Date(invPeriodStart)
+          const invEndDate = new Date(invPeriodEnd)
+          
+          // Check if periods overlap: start1 <= end2 && start2 <= end1
+          if (periodStartDate <= invEndDate && invStartDate <= periodEndDate) {
+            return true
+          }
+        }
+      }
+      
+      return false
+    }
     
     if (cadence === 'weekly') {
       // Generate weekly invoices: every 7 days from lease start
@@ -138,13 +172,18 @@ export default function PaymentsPage() {
         // Only create expected invoice if:
         // 1. The due date is on or after lease start
         // 2. The due date is on or before today
-        // 3. There's no existing invoice for this due date
-        if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+        // 3. There's no existing invoice for this period
+        if (dueDate >= fromDate && dueDate <= toDate) {
           // Calculate period: 7 days (period_start to period_start + 6 days)
           const periodStart = dueDate
           const periodEndDate = new Date(current)
           periodEndDate.setDate(periodEndDate.getDate() + 6)
           const periodEnd = periodEndDate.toISOString().split('T')[0]
+          
+          // Check if a real invoice already exists for this period
+          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate)) {
+            continue // Skip - real invoice exists for this period
+          }
           
           expected.push({
             id: `expected-${dueDate}`,
@@ -183,12 +222,17 @@ export default function PaymentsPage() {
       while (current <= end) {
         const dueDate = current.toISOString().split('T')[0]
         
-        if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+        if (dueDate >= fromDate && dueDate <= toDate) {
           // Calculate period: 14 days (period_start to period_start + 13 days)
           const periodStart = dueDate
           const periodEndDate = new Date(current)
           periodEndDate.setDate(periodEndDate.getDate() + 13)
           const periodEnd = periodEndDate.toISOString().split('T')[0]
+          
+          // Check if a real invoice already exists for this period
+          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate)) {
+            continue // Skip - real invoice exists for this period
+          }
           
           expected.push({
             id: `expected-${dueDate}`,
@@ -233,11 +277,18 @@ export default function PaymentsPage() {
         // Only create expected invoice if:
         // 1. The due date is on or after lease start
         // 2. The due date is on or before today
-        // 3. There's no existing invoice for this due date
-        if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+        // 3. There's no existing invoice for this period
+        if (dueDate >= fromDate && dueDate <= toDate) {
           // Calculate period start and end (first and last day of the month)
           const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
           const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+          
+          // Check if a real invoice already exists for this period
+          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate)) {
+            // Move to next month
+            current.setMonth(current.getMonth() + 1)
+            continue // Skip - real invoice exists for this period
+          }
           
           expected.push({
             id: `expected-${dueDate}`,

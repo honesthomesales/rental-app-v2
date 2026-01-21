@@ -81,6 +81,7 @@ export default function PaymentsPage() {
   const [showEditInvoiceModal, setShowEditInvoiceModal] = useState(false)
   const [editInvoiceAmountPaid, setEditInvoiceAmountPaid] = useState('')
   const [editInvoiceLateFee, setEditInvoiceLateFee] = useState('')
+  const [showAllInvoices, setShowAllInvoices] = useState(false)
   const [togglingLateFee, setTogglingLateFee] = useState<string | null>(null)
   const [generatingNotice, setGeneratingNotice] = useState<string | null>(null)
   const [showNoticeModal, setShowNoticeModal] = useState(false)
@@ -1463,6 +1464,8 @@ return'<div class="s">'+l+'</div>';
                 <button
                   onClick={async () => {
                     if (!selectedLease) return
+                    // Show all invoices when Next Invoice button is clicked
+                    setShowAllInvoices(true)
                     try {
                       console.log('+ Next Invoice clicked. Current invoices:', invoices.length)
                       // Find the most recent invoice by due_date (invoices are sorted newest first)
@@ -1857,37 +1860,83 @@ return'<div class="s">'+l+'</div>';
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b-2 border-gray-200">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Status</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Due Date</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Period</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Rent</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Late Fee</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Total</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Paid</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Balance</th>
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {invoices.map((invoice, index) => {
-                        // Use actual payment total from payments API, not invoice.amount_paid
-                        const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
-                        const amountTotal = parseFloat(invoice.amount_total as any)
-                        const amountRent = parseFloat(invoice.amount_rent as any || 0)
-                        const balance = amountTotal - actualPaid
-                        const paid = actualPaid
-                        const hasPayments = paid > 0
-                        // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
-                        // BUT hide if paid >= rent (fully paid for rent amount)
-                        const isMostRecent = index === 0
-                        const showPaymentButtons = (balance > 0 || isMostRecent) && paid < amountRent
-                        const isHighlighted = highlightedInvoiceId === invoice.id
-                        
-                        return (
-                          <tr 
+                  {(() => {
+                    // Calculate cutoff date: 3 periods past today
+                    const today = new Date()
+                    today.setHours(0, 0, 0, 0)
+                    const cadence = selectedLease?.lease.rent_cadence?.toLowerCase() || 'monthly'
+                    let cutoffDate = new Date(today)
+                    
+                    // Calculate 3 periods past today based on cadence
+                    if (cadence === 'monthly') {
+                      cutoffDate.setMonth(today.getMonth() + 3)
+                    } else if (cadence === 'weekly') {
+                      cutoffDate.setDate(today.getDate() + (3 * 7))
+                    } else if (cadence === 'biweekly') {
+                      cutoffDate.setDate(today.getDate() + (3 * 14))
+                    } else {
+                      // Default to monthly if unknown
+                      cutoffDate.setMonth(today.getMonth() + 3)
+                    }
+                    
+                    const cutoffDateStr = cutoffDate.toISOString().split('T')[0]
+                    
+                    // Filter invoices: show all if showAllInvoices is true, otherwise only show up to 3 periods past today
+                    const filteredInvoices = showAllInvoices 
+                      ? invoices 
+                      : invoices.filter((inv: Invoice) => {
+                          const invoiceDueDate = inv.due_date?.split('T')[0] || inv.due_date
+                          return invoiceDueDate <= cutoffDateStr
+                        })
+                    
+                    const hiddenCount = invoices.length - filteredInvoices.length
+                    
+                    return (
+                      <>
+                        {hiddenCount > 0 && !showAllInvoices && (
+                          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-blue-800">
+                              Showing {filteredInvoices.length} of {invoices.length} invoices. 
+                              <button
+                                onClick={() => setShowAllInvoices(true)}
+                                className="ml-2 text-blue-600 font-semibold underline hover:text-blue-800"
+                              >
+                                Show all invoices
+                              </button>
+                            </p>
+                          </div>
+                        )}
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b-2 border-gray-200">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Status</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Due Date</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Period</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Rent</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Late Fee</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Total</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Paid</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Balance</th>
+                              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {filteredInvoices.map((invoice, index) => {
+                              // Use actual payment total from payments API, not invoice.amount_paid
+                              const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
+                              const amountTotal = parseFloat(invoice.amount_total as any)
+                              const amountRent = parseFloat(invoice.amount_rent as any || 0)
+                              const balance = amountTotal - actualPaid
+                              const paid = actualPaid
+                              const hasPayments = paid > 0
+                              // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
+                              // BUT hide if paid >= rent (fully paid for rent amount)
+                              const isMostRecent = index === 0
+                              const showPaymentButtons = (balance > 0 || isMostRecent) && paid < amountRent
+                              const isHighlighted = highlightedInvoiceId === invoice.id
+                              
+                              return (
+                                <tr 
                             key={invoice.id} 
                             className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)} ${isHighlighted ? 'bg-yellow-100 animate-pulse' : ''}`}
                             ref={(el) => {
@@ -1995,12 +2044,15 @@ return'<div class="s">'+l+'</div>';
                               </div>
                             </td>
                           </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                              )
+                            })}
+                            </tbody>
+                          </table>
+                        </>
+                      )
+                    })()}
+                  </div>
+                )}
             </div>
           </div>
         </div>

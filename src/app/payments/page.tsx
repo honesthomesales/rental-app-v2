@@ -1104,21 +1104,61 @@ return'<div class="s">'+l+'</div>';
   }
 
   const getInvoiceStatusColor = (invoice: Invoice) => {
-    const balance = parseFloat(invoice.balance_due as any)
-    const total = parseFloat(invoice.amount_total as any)
+    // Use actual payment total from payments API, same as invoice row rendering
+    const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
+    const amountTotal = parseFloat(invoice.amount_total as any)
+    const balance = amountTotal - actualPaid
     
-    if (balance === 0) return 'bg-green-50 border-green-200'
-    if (balance < total) return 'bg-yellow-50 border-yellow-200'
-    return 'bg-red-50 border-red-200'
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dueDate = new Date(invoice.due_date + 'T12:00:00')
+    dueDate.setHours(0, 0, 0, 0)
+    const isPastDue = dueDate < today
+    const isFuture = dueDate > today
+    
+    // Bright green: Fully paid
+    if (balance === 0) return 'bg-green-200 border-green-400'
+    
+    // Green: Partially paid
+    if (balance > 0 && balance < amountTotal) return 'bg-green-50 border-green-200'
+    
+    // Gray: Not yet owed (future invoice)
+    if (isFuture) return 'bg-gray-100 border-gray-300'
+    
+    // Darker red: Not paid and past due
+    if (balance > 0 && isPastDue) return 'bg-red-200 border-red-400'
+    
+    // Default: Unpaid but not past due yet
+    return 'bg-red-100 border-red-300'
   }
 
   const getInvoiceStatusBadge = (invoice: Invoice) => {
-    const balance = parseFloat(invoice.balance_due as any)
-    const total = parseFloat(invoice.amount_total as any)
+    // Use actual payment total from payments API, same as invoice row rendering
+    const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
+    const amountTotal = parseFloat(invoice.amount_total as any)
+    const balance = amountTotal - actualPaid
     
-    if (balance === 0) return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Paid</span>
-    if (balance < total) return <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">Partial</span>
-    return <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">Unpaid</span>
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dueDate = new Date(invoice.due_date + 'T12:00:00')
+    dueDate.setHours(0, 0, 0, 0)
+    const isPastDue = dueDate < today
+    const isFuture = dueDate > today
+    
+    // Bright green: Fully paid
+    if (balance === 0) return <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">Paid</span>
+    
+    // Green: Partially paid
+    if (balance > 0 && balance < amountTotal) return <span className="px-2 py-1 text-xs font-medium bg-green-400 text-green-900 rounded">Partial</span>
+    
+    // Gray: Not yet owed (future invoice)
+    if (isFuture) return <span className="px-2 py-1 text-xs font-medium bg-gray-400 text-gray-900 rounded">Future</span>
+    
+    // Darker red: Not paid and past due
+    if (balance > 0 && isPastDue) return <span className="px-2 py-1 text-xs font-medium bg-red-700 text-white rounded">Past Due</span>
+    
+    // Default: Unpaid but not past due yet
+    return <span className="px-2 py-1 text-xs font-medium bg-red-500 text-white rounded">Unpaid</span>
   }
 
   const normalizeCadence = (cadence: string) => {

@@ -194,61 +194,158 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
   const rentDueDay = lease.rent_due_day || 1
   const rentAmount = lease.rent || 0
   
-  if (cadence !== 'monthly') {
-    // Only handle monthly for now (can extend later)
-    console.log('Invoice generation only supports monthly cadence for now')
-    return
-  }
-
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
-  const start = new Date(startDate)
-  const current = new Date(start.getFullYear(), start.getMonth(), 1)
-  const end = new Date(today)
-
   const invoicesToCreate: any[] = []
 
-  while (current <= end) {
-    const year = current.getFullYear()
-    const month = current.getMonth()
-    const daysInMonth = new Date(year, month + 1, 0).getDate()
-    const dueDay = Math.min(rentDueDay, daysInMonth)
-    const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+  if (cadence === 'weekly') {
+    // Generate weekly invoices: every 7 days from lease start
+    const start = new Date(startDate)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(today)
+    end.setHours(23, 59, 59, 999)
+    const current = new Date(start)
     
-    // Only create invoice if due date is on/after lease start
-    if (dueDate >= startDate && dueDate <= todayStr) {
-      const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
-      const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+    while (current <= end) {
+      const dueDate = current.toISOString().split('T')[0]
       
-      // Check if invoice already exists
-      const { data: existing } = await supabaseServer
-        .from('RENT_invoices')
-        .select('id')
-        .eq('lease_id', lease.id)
-        .eq('due_date', dueDate)
-        .maybeSingle()
+      // Only create invoice if due date is on/after lease start and on/before today
+      if (dueDate >= startDate && dueDate <= todayStr) {
+        // Calculate period: 7 days (period_start to period_start + 6 days)
+        const periodStart = dueDate
+        const periodEndDate = new Date(current)
+        periodEndDate.setDate(periodEndDate.getDate() + 6)
+        const periodEnd = periodEndDate.toISOString().split('T')[0]
+        
+        // Check if invoice already exists
+        const { data: existing } = await supabaseServer
+          .from('RENT_invoices')
+          .select('id')
+          .eq('lease_id', lease.id)
+          .eq('due_date', dueDate)
+          .maybeSingle()
 
-      if (!existing) {
-        invoicesToCreate.push({
-          lease_id: lease.id,
-          property_id: lease.property_id,
-          tenant_id: lease.tenant_id,
-          due_date: dueDate,
-          period_start: periodStart,
-          period_end: periodEnd,
-          amount_rent: rentAmount,
-          amount_late: 0,
-          amount_other: 0,
-          amount_total: rentAmount,
-          amount_paid: 0,
-          balance_due: rentAmount,
-          status: 'OPEN'
-        })
+        if (!existing) {
+          invoicesToCreate.push({
+            lease_id: lease.id,
+            property_id: lease.property_id,
+            tenant_id: lease.tenant_id,
+            due_date: dueDate,
+            period_start: periodStart,
+            period_end: periodEnd,
+            amount_rent: rentAmount,
+            amount_late: 0,
+            amount_other: 0,
+            amount_total: rentAmount,
+            amount_paid: 0,
+            balance_due: rentAmount,
+            status: 'OPEN'
+          })
+        }
       }
+      
+      // Move to next week (7 days later)
+      current.setDate(current.getDate() + 7)
     }
+  } else if (cadence === 'biweekly') {
+    // Generate biweekly invoices: every 14 days from lease start
+    const start = new Date(startDate)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(today)
+    end.setHours(23, 59, 59, 999)
+    const current = new Date(start)
+    
+    while (current <= end) {
+      const dueDate = current.toISOString().split('T')[0]
+      
+      if (dueDate >= startDate && dueDate <= todayStr) {
+        // Calculate period: 14 days (period_start to period_start + 13 days)
+        const periodStart = dueDate
+        const periodEndDate = new Date(current)
+        periodEndDate.setDate(periodEndDate.getDate() + 13)
+        const periodEnd = periodEndDate.toISOString().split('T')[0]
+        
+        // Check if invoice already exists
+        const { data: existing } = await supabaseServer
+          .from('RENT_invoices')
+          .select('id')
+          .eq('lease_id', lease.id)
+          .eq('due_date', dueDate)
+          .maybeSingle()
 
-    // Move to next month
-    current.setMonth(current.getMonth() + 1)
+        if (!existing) {
+          invoicesToCreate.push({
+            lease_id: lease.id,
+            property_id: lease.property_id,
+            tenant_id: lease.tenant_id,
+            due_date: dueDate,
+            period_start: periodStart,
+            period_end: periodEnd,
+            amount_rent: rentAmount,
+            amount_late: 0,
+            amount_other: 0,
+            amount_total: rentAmount,
+            amount_paid: 0,
+            balance_due: rentAmount,
+            status: 'OPEN'
+          })
+        }
+      }
+      
+      // Move to next biweekly period (14 days later)
+      current.setDate(current.getDate() + 14)
+    }
+  } else if (cadence === 'monthly') {
+    // Generate monthly invoices: each month from lease start to today
+    const start = new Date(startDate)
+    const current = new Date(start.getFullYear(), start.getMonth(), 1)
+    const end = new Date(today)
+
+    while (current <= end) {
+      const year = current.getFullYear()
+      const month = current.getMonth()
+      const daysInMonth = new Date(year, month + 1, 0).getDate()
+      const dueDay = Math.min(rentDueDay, daysInMonth)
+      const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+      
+      // Only create invoice if due date is on/after lease start
+      if (dueDate >= startDate && dueDate <= todayStr) {
+        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
+        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+        
+        // Check if invoice already exists
+        const { data: existing } = await supabaseServer
+          .from('RENT_invoices')
+          .select('id')
+          .eq('lease_id', lease.id)
+          .eq('due_date', dueDate)
+          .maybeSingle()
+
+        if (!existing) {
+          invoicesToCreate.push({
+            lease_id: lease.id,
+            property_id: lease.property_id,
+            tenant_id: lease.tenant_id,
+            due_date: dueDate,
+            period_start: periodStart,
+            period_end: periodEnd,
+            amount_rent: rentAmount,
+            amount_late: 0,
+            amount_other: 0,
+            amount_total: rentAmount,
+            amount_paid: 0,
+            balance_due: rentAmount,
+            status: 'OPEN'
+          })
+        }
+      }
+
+      // Move to next month
+      current.setMonth(current.getMonth() + 1)
+    }
+  } else {
+    console.log(`Invoice generation doesn't support cadence: ${cadence}`)
+    return
   }
 
   // Insert all new invoices
@@ -260,7 +357,7 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
     if (insertError) {
       console.error('Error creating invoices:', insertError)
     } else {
-      console.log(`Created ${invoicesToCreate.length} new invoices for lease ${lease.id}`)
+      console.log(`Created ${invoicesToCreate.length} new invoices for lease ${lease.id} (${cadence} cadence)`)
     }
   }
 }

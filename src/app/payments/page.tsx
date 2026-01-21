@@ -119,58 +119,137 @@ export default function PaymentsPage() {
     const rentDueDay = lease.rent_due_day || 1
     const rentAmount = lease.rent || 0
     
-    if (cadence !== 'monthly') {
-      // Only handle monthly for now
-      return expected
-    }
-    
     // Create a set of existing invoice due dates for quick lookup
     const existingDueDates = new Set(
       existingInvoices.map(inv => inv.due_date?.split('T')[0] || inv.due_date)
     )
     
-    // Generate expected invoices for each month from lease start to today
-    const start = new Date(fromDate)
-    const end = new Date(toDate)
-    const current = new Date(start.getFullYear(), start.getMonth(), 1)
-    
-    while (current <= end) {
-      // Calculate due date for this month (rent_due_day of the month)
-      const year = current.getFullYear()
-      const month = current.getMonth()
-      const daysInMonth = new Date(year, month + 1, 0).getDate()
-      const dueDay = Math.min(rentDueDay, daysInMonth)
-      const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+    if (cadence === 'weekly') {
+      // Generate weekly invoices: every 7 days from lease start
+      const start = new Date(fromDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(toDate)
+      end.setHours(23, 59, 59, 999)
+      const current = new Date(start)
       
-      // Only create expected invoice if:
-      // 1. The due date is on or after lease start
-      // 2. The due date is on or before today
-      // 3. There's no existing invoice for this due date
-      if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
-        // Calculate period start and end (first and last day of the month)
-        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
-        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+      while (current <= end) {
+        const dueDate = current.toISOString().split('T')[0]
         
-        expected.push({
-          id: `expected-${dueDate}`, // Temporary ID for expected invoices
-          invoice_no: `EXPECTED-${dueDate}`,
-          due_date: dueDate,
-          period_start: periodStart,
-          period_end: periodEnd,
-          lease_id: lease.id,
-          amount_rent: rentAmount,
-          amount_late: 0,
-          amount_other: 0,
-          amount_total: rentAmount,
-          amount_paid: 0,
-          balance_due: rentAmount,
-          status: 'OPEN',
-          paid_in_full_at: null
-        } as Invoice)
+        // Only create expected invoice if:
+        // 1. The due date is on or after lease start
+        // 2. The due date is on or before today
+        // 3. There's no existing invoice for this due date
+        if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+          // Calculate period: 7 days (period_start to period_start + 6 days)
+          const periodStart = dueDate
+          const periodEndDate = new Date(current)
+          periodEndDate.setDate(periodEndDate.getDate() + 6)
+          const periodEnd = periodEndDate.toISOString().split('T')[0]
+          
+          expected.push({
+            id: `expected-${dueDate}`,
+            invoice_no: `EXPECTED-${dueDate}`,
+            due_date: dueDate,
+            period_start: periodStart,
+            period_end: periodEnd,
+            lease_id: lease.id,
+            amount_rent: rentAmount,
+            amount_late: 0,
+            amount_other: 0,
+            amount_total: rentAmount,
+            amount_paid: 0,
+            balance_due: rentAmount,
+            status: 'OPEN',
+            paid_in_full_at: null
+          } as Invoice)
+        }
+        
+        // Move to next week (7 days later)
+        current.setDate(current.getDate() + 7)
       }
+    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
+      // Generate biweekly invoices: every 14 days from lease start
+      const start = new Date(fromDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(toDate)
+      end.setHours(23, 59, 59, 999)
+      const current = new Date(start)
       
-      // Move to next month
-      current.setMonth(current.getMonth() + 1)
+      while (current <= end) {
+        const dueDate = current.toISOString().split('T')[0]
+        
+        if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+          // Calculate period: 14 days (period_start to period_start + 13 days)
+          const periodStart = dueDate
+          const periodEndDate = new Date(current)
+          periodEndDate.setDate(periodEndDate.getDate() + 13)
+          const periodEnd = periodEndDate.toISOString().split('T')[0]
+          
+          expected.push({
+            id: `expected-${dueDate}`,
+            invoice_no: `EXPECTED-${dueDate}`,
+            due_date: dueDate,
+            period_start: periodStart,
+            period_end: periodEnd,
+            lease_id: lease.id,
+            amount_rent: rentAmount,
+            amount_late: 0,
+            amount_other: 0,
+            amount_total: rentAmount,
+            amount_paid: 0,
+            balance_due: rentAmount,
+            status: 'OPEN',
+            paid_in_full_at: null
+          } as Invoice)
+        }
+        
+        // Move to next biweekly period (14 days later)
+        current.setDate(current.getDate() + 14)
+      }
+    } else if (cadence === 'monthly') {
+      // Generate monthly invoices: each month from lease start to today
+      const start = new Date(fromDate)
+      const end = new Date(toDate)
+      const current = new Date(start.getFullYear(), start.getMonth(), 1)
+      
+      while (current <= end) {
+        // Calculate due date for this month (rent_due_day of the month)
+        const year = current.getFullYear()
+        const month = current.getMonth()
+        const daysInMonth = new Date(year, month + 1, 0).getDate()
+        const dueDay = Math.min(rentDueDay, daysInMonth)
+        const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+        
+        // Only create expected invoice if:
+        // 1. The due date is on or after lease start
+        // 2. The due date is on or before today
+        // 3. There's no existing invoice for this due date
+        if (dueDate >= fromDate && dueDate <= toDate && !existingDueDates.has(dueDate)) {
+          // Calculate period start and end (first and last day of the month)
+          const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
+          const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+          
+          expected.push({
+            id: `expected-${dueDate}`,
+            invoice_no: `EXPECTED-${dueDate}`,
+            due_date: dueDate,
+            period_start: periodStart,
+            period_end: periodEnd,
+            lease_id: lease.id,
+            amount_rent: rentAmount,
+            amount_late: 0,
+            amount_other: 0,
+            amount_total: rentAmount,
+            amount_paid: 0,
+            balance_due: rentAmount,
+            status: 'OPEN',
+            paid_in_full_at: null
+          } as Invoice)
+        }
+        
+        // Move to next month
+        current.setMonth(current.getMonth() + 1)
+      }
     }
     
     return expected
@@ -312,15 +391,16 @@ return'<div class="s">'+l+'</div>';
     setLoadingInvoices(true)
 
     try {
-      // Fetch all invoices for this lease from lease start to 1 year in the future (to include future invoices)
-      const leaseStart = leaseRow.lease.lease_start_date
+      // Fetch ALL invoices for this lease (no date filter to show history)
+      // This ensures old invoices (before new lease_start_date) are also shown
       const today = new Date()
       const todayStr = today.toISOString().split('T')[0]
       const futureDate = new Date(today)
       futureDate.setFullYear(today.getFullYear() + 1)
       const futureDateStr = futureDate.toISOString().split('T')[0]
       
-      const url = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseStart}&to=${futureDateStr}`
+      // Fetch all invoices for this lease (no from date filter to include old invoices)
+      const url = `/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`
       console.log('Fetching invoices from:', url)
       
       const response = await fetch(url)
@@ -1119,8 +1199,8 @@ return'<div class="s">'+l+'</div>';
     const isPastDue = dueDate < today
     const isFuture = dueDate > today
     
-    // Bright green: Fully paid
-    if (balance === 0) return 'bg-green-200 border-green-400'
+    // Bright green: Fully paid or overpaid
+    if (balance <= 0) return 'bg-green-200 border-green-400'
     
     // Green: Partially paid
     if (balance > 0 && balance < amountTotal) return 'bg-green-50 border-green-200'
@@ -1148,8 +1228,8 @@ return'<div class="s">'+l+'</div>';
     const isPastDue = dueDate < today
     const isFuture = dueDate > today
     
-    // Bright green: Fully paid
-    if (balance === 0) return <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">Paid</span>
+    // Bright green: Fully paid or overpaid
+    if (balance <= 0) return <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">{balance < 0 ? 'Overpaid' : 'Paid'}</span>
     
     // Green: Partially paid
     if (balance > 0 && balance < amountTotal) return <span className="px-2 py-1 text-xs font-medium bg-green-400 text-green-900 rounded">Partial</span>

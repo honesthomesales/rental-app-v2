@@ -129,7 +129,7 @@ export default function PaymentsPage() {
       const start = new Date(fromDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(toDate)
-      end.setHours(23, 59, 59, 999)
+      end.setHours(0, 0, 0, 0)
       const current = new Date(start)
       
       while (current <= end) {
@@ -166,13 +166,18 @@ export default function PaymentsPage() {
         
         // Move to next week (7 days later)
         current.setDate(current.getDate() + 7)
+        
+        // Stop if we've exceeded today's date
+        if (current > end) {
+          break
+        }
       }
     } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
       // Generate biweekly invoices: every 14 days from lease start
       const start = new Date(fromDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(toDate)
-      end.setHours(23, 59, 59, 999)
+      end.setHours(0, 0, 0, 0)
       const current = new Date(start)
       
       while (current <= end) {
@@ -205,6 +210,11 @@ export default function PaymentsPage() {
         
         // Move to next biweekly period (14 days later)
         current.setDate(current.getDate() + 14)
+        
+        // Stop if we've exceeded today's date
+        if (current > end) {
+          break
+        }
       }
     } else if (cadence === 'monthly') {
       // Generate monthly invoices: each month from lease start to today
@@ -335,9 +345,9 @@ return'<div class="s">'+l+'</div>';
         data
           .filter((lease: any) => lease.status === 'active')
           .map(async (leaseData: any) => {
-            // Fetch invoices from lease start to current date
+            // Fetch ALL invoices for this lease (no date filter to show history)
             const invoicesResponse = await fetch(
-              `/api/invoices?leaseId=${leaseData.id}&from=${leaseData.lease_start_date}&to=${today}`
+              `/api/invoices?leaseId=${leaseData.id}&to=${today}`
             )
             const invoicesData = await invoicesResponse.json()
             const invoices = Array.isArray(invoicesData) ? invoicesData : []
@@ -404,14 +414,30 @@ return'<div class="s">'+l+'</div>';
       console.log('Fetching invoices from:', url)
       
       const response = await fetch(url)
-      const invoicesData = await response.json()
+      if (!response.ok) {
+        console.error('Error fetching invoices:', response.status, response.statusText)
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error details:', errorData)
+        setInvoices([])
+        setLoadingInvoices(false)
+        return
+      }
       
+      const invoicesData = await response.json()
       console.log('Invoices response:', invoicesData)
       
       const existingInvoices = Array.isArray(invoicesData) ? invoicesData : []
+      if (!Array.isArray(invoicesData)) {
+        console.error('Invoices API returned non-array:', typeof invoicesData, invoicesData)
+      }
+      console.log('Existing invoices from API:', existingInvoices.length, existingInvoices)
       
       // Generate expected invoices for missing periods (up to today only, not future)
+      // Use lease_start_date for generating expected invoices
+      const leaseStart = leaseRow.lease.lease_start_date
+      console.log('Generating expected invoices:', { leaseStart, todayStr, cadence: leaseRow.lease.rent_cadence })
       const expectedInvoices = generateExpectedInvoices(leaseRow.lease, leaseStart, todayStr, existingInvoices)
+      console.log('Generated expected invoices:', expectedInvoices.length, expectedInvoices)
       
       // Merge existing and expected invoices, sorted by due_date
       const allInvoices = [...existingInvoices, ...expectedInvoices].sort((a, b) => {
@@ -542,6 +568,7 @@ return'<div class="s">'+l+'</div>';
         // Continue with normal flow if this fails
       }
       
+      console.log('Final invoices to display:', invoices.length, invoices)
       setInvoicePaymentTotals(paymentTotalsMap)
       setInvoices(invoices)
     } catch (error) {

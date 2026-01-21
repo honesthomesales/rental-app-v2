@@ -107,3 +107,75 @@ export async function GET(
     )
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Invoice ID is required' },
+        { status: 400 }
+      )
+    }
+
+    console.log('Deleting invoice with ID:', id)
+
+    // Check if invoice has payments linked to it
+    const { data: payments, error: paymentsError } = await supabaseServer
+      .from('RENT_payments')
+      .select('id, amount')
+      .eq('invoice_id', id)
+
+    if (paymentsError) {
+      console.error('Error checking payments:', paymentsError)
+      return NextResponse.json(
+        { error: 'Failed to check invoice payments', details: paymentsError.message },
+        { status: 500 }
+      )
+    }
+
+    if (payments && payments.length > 0) {
+      return NextResponse.json(
+        { 
+          error: 'Cannot delete invoice with linked payments', 
+          details: `This invoice has ${payments.length} payment(s) linked to it. Please remove payments first.` 
+        },
+        { status: 400 }
+      )
+    }
+
+    // Delete the invoice
+    const { error: deleteError } = await supabaseServer
+      .from('RENT_invoices')
+      .delete()
+      .eq('id', id)
+
+    if (deleteError) {
+      console.error('Error deleting invoice:', deleteError)
+      return NextResponse.json(
+        { error: 'Failed to delete invoice', details: deleteError.message },
+        { status: 500 }
+      )
+    }
+
+    console.log('Invoice deleted successfully:', id)
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Invoice deleted successfully'
+    })
+  } catch (error) {
+    console.error('Error in invoice DELETE API:', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to delete invoice',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
+  }
+}

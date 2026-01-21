@@ -82,6 +82,9 @@ export default function PaymentsPage() {
   const [editInvoiceAmountPaid, setEditInvoiceAmountPaid] = useState('')
   const [editInvoiceLateFee, setEditInvoiceLateFee] = useState('')
   const [showAllInvoices, setShowAllInvoices] = useState(false)
+  const [showDeleteInvoiceModal, setShowDeleteInvoiceModal] = useState(false)
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null)
+  const [deletingInvoice, setDeletingInvoice] = useState(false)
   const [togglingLateFee, setTogglingLateFee] = useState<string | null>(null)
   const [generatingNotice, setGeneratingNotice] = useState<string | null>(null)
   const [showNoticeModal, setShowNoticeModal] = useState(false)
@@ -1161,6 +1164,37 @@ return'<div class="s">'+l+'</div>';
     return <span className="px-2 py-1 text-xs font-medium bg-red-500 text-white rounded">Unpaid</span>
   }
 
+  const handleDeleteInvoice = async () => {
+    if (!invoiceToDelete || !selectedLease) return
+    
+    setDeletingInvoice(true)
+    try {
+      const response = await fetch(`/api/invoices/${invoiceToDelete.id}`, {
+        method: 'DELETE'
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete invoice')
+      }
+
+      // Refresh invoices list
+      await handleViewInvoices(selectedLease)
+      
+      // Close modal
+      setShowDeleteInvoiceModal(false)
+      setInvoiceToDelete(null)
+      
+      alert('Invoice deleted successfully')
+    } catch (error) {
+      console.error('Error deleting invoice:', error)
+      alert('Failed to delete invoice: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setDeletingInvoice(false)
+    }
+  }
+
   const normalizeCadence = (cadence: string) => {
     if (!cadence) return 'monthly'
     const lower = cadence.toLowerCase()
@@ -1978,7 +2012,11 @@ return'<div class="s">'+l+'</div>';
                               return (
                                 <tr 
                             key={invoice.id} 
-                            className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)} ${isHighlighted ? 'bg-yellow-100 animate-pulse' : ''}`}
+                            className={`hover:bg-gray-50 ${getInvoiceStatusColor(invoice)} ${isHighlighted ? 'bg-yellow-100 animate-pulse' : ''} cursor-pointer`}
+                            onDoubleClick={() => {
+                              setInvoiceToDelete(invoice)
+                              setShowDeleteInvoiceModal(true)
+                            }}
                             ref={(el) => {
                               if (el) {
                                 invoiceRowRefs.current.set(invoice.id, el)
@@ -2375,6 +2413,82 @@ return'<div class="s">'+l+'</div>';
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? 'Updating...' : 'Update Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Invoice Modal */}
+      {showDeleteInvoiceModal && invoiceToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white px-6 py-4 rounded-t-xl">
+              <h2 className="text-xl font-bold">Delete Invoice</h2>
+              <p className="text-sm text-red-100">Invoice: {invoiceToDelete.invoice_no}</p>
+              <p className="text-sm text-red-100">Due: {new Date(invoiceToDelete.due_date + 'T12:00:00').toLocaleDateString()}</p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-800 font-medium mb-2">⚠️ Warning: This action cannot be undone</p>
+                <p className="text-sm text-red-700">
+                  Are you sure you want to delete this invoice? This will permanently remove it from the system.
+                </p>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Invoice Number:</span>
+                    <span className="font-medium">{invoiceToDelete.invoice_no}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Due Date:</span>
+                    <span className="font-medium">{new Date(invoiceToDelete.due_date + 'T12:00:00').toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Amount:</span>
+                    <span className="font-medium">${parseFloat(invoiceToDelete.amount_total as any).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Amount Paid:</span>
+                    <span className="font-medium">${(invoicePaymentTotals.get(invoiceToDelete.id) ?? parseFloat(invoiceToDelete.amount_paid as any)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Balance:</span>
+                    <span className="font-medium">${(parseFloat(invoiceToDelete.amount_total as any) - (invoicePaymentTotals.get(invoiceToDelete.id) ?? parseFloat(invoiceToDelete.amount_paid as any))).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-xs text-yellow-800">
+                  <strong>Note:</strong> This invoice can only be deleted if it has no linked payments. If payments exist, you'll need to remove them first.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 rounded-b-xl flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteInvoiceModal(false)
+                  setInvoiceToDelete(null)
+                }}
+                disabled={deletingInvoice}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteInvoice}
+                disabled={deletingInvoice}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingInvoice ? 'Deleting...' : 'Delete Invoice'}
               </button>
             </div>
           </div>

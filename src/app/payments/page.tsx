@@ -119,39 +119,53 @@ export default function PaymentsPage() {
     const rentDueDay = lease.rent_due_day || 1
     const rentAmount = lease.rent || 0
     
-    // Helper function to check if a period overlaps with any existing invoice
+    // Pre-build lookup structures for O(1) checks instead of O(n) loops
+    // Set of normalized due dates for quick lookup
+    const existingDueDates = new Set<string>()
+    // Array of period ranges for overlap checking (only for real invoices)
+    const existingPeriodRanges: Array<{ start: Date; end: Date }> = []
+    
+    // Build lookup structures once
+    for (const inv of existingInvoices) {
+      // Skip expected invoices (virtual invoices)
+      if (inv.id?.startsWith('expected-')) {
+        continue
+      }
+      
+      // Normalize and add due_date to set
+      const invDueDate = (inv.due_date?.split('T')[0] || inv.due_date) || ''
+      if (invDueDate) {
+        existingDueDates.add(invDueDate)
+      }
+      
+      // Add period range for overlap checking
+      const invPeriodStart = (inv.period_start?.split('T')[0] || inv.period_start) || ''
+      const invPeriodEnd = (inv.period_end?.split('T')[0] || inv.period_end) || ''
+      if (invPeriodStart && invPeriodEnd) {
+        existingPeriodRanges.push({
+          start: new Date(invPeriodStart),
+          end: new Date(invPeriodEnd)
+        })
+      }
+    }
+    
+    // Optimized function to check if a period overlaps with any existing invoice
     const hasInvoiceForPeriod = (periodStart: string, periodEnd: string, dueDate: string): boolean => {
-      // Normalize dates for comparison
-      const periodStartDate = new Date(periodStart)
-      const periodEndDate = new Date(periodEnd)
       const dueDateNormalized = dueDate.split('T')[0]
       
-      // Check if any existing invoice covers this period
-      for (const inv of existingInvoices) {
-        // Skip expected invoices (virtual invoices)
-        if (inv.id?.startsWith('expected-')) {
-          continue
-        }
-        
-        // Normalize existing invoice dates
-        const invDueDate = (inv.due_date?.split('T')[0] || inv.due_date) || ''
-        const invPeriodStart = (inv.period_start?.split('T')[0] || inv.period_start) || ''
-        const invPeriodEnd = (inv.period_end?.split('T')[0] || inv.period_end) || ''
-        
-        // Check exact due_date match first (most common case)
-        if (invDueDate === dueDateNormalized) {
+      // Quick check: exact due_date match (most common case)
+      if (existingDueDates.has(dueDateNormalized)) {
+        return true
+      }
+      
+      // Check period overlap only if due_date doesn't match
+      const periodStartDate = new Date(periodStart)
+      const periodEndDate = new Date(periodEnd)
+      
+      // Check if any existing period overlaps: start1 <= end2 && start2 <= end1
+      for (const range of existingPeriodRanges) {
+        if (periodStartDate <= range.end && range.start <= periodEndDate) {
           return true
-        }
-        
-        // Check if periods overlap (if period dates exist)
-        if (invPeriodStart && invPeriodEnd) {
-          const invStartDate = new Date(invPeriodStart)
-          const invEndDate = new Date(invPeriodEnd)
-          
-          // Check if periods overlap: start1 <= end2 && start2 <= end1
-          if (periodStartDate <= invEndDate && invStartDate <= periodEndDate) {
-            return true
-          }
         }
       }
       

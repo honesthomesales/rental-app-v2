@@ -180,11 +180,18 @@ export default function PaymentsPage() {
     
     if (cadence === 'weekly') {
       // Generate weekly invoices: every 7 days from lease start
+      // Limit to last 6 months to prevent performance issues with very old leases
       const start = new Date(fromDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(toDate)
       end.setHours(0, 0, 0, 0)
-      const current = new Date(start)
+      
+      // Limit start date to 6 months before today to prevent excessive iterations
+      const sixMonthsAgo = new Date(end)
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+      const effectiveStart = start > sixMonthsAgo ? start : sixMonthsAgo
+      
+      const current = new Date(effectiveStart)
       
       while (current <= end) {
         const dueDate = current.toISOString().split('T')[0]

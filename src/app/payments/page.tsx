@@ -313,7 +313,7 @@ export default function PaymentsPage() {
           const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
           
           // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate)) {
+          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'monthly')) {
             // Move to next month
             current.setMonth(current.getMonth() + 1)
             continue // Skip - real invoice exists for this period

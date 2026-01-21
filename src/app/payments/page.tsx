@@ -150,15 +150,21 @@ export default function PaymentsPage() {
     }
     
     // Optimized function to check if a period overlaps with any existing invoice
-    const hasInvoiceForPeriod = (periodStart: string, periodEnd: string, dueDate: string): boolean => {
+    const hasInvoiceForPeriod = (periodStart: string, periodEnd: string, dueDate: string, cadenceType: string): boolean => {
       const dueDateNormalized = dueDate.split('T')[0]
       
-      // Quick check: exact due_date match (most common case)
+      // Quick check: exact due_date match (most common case, and sufficient for weekly/biweekly)
       if (existingDueDates.has(dueDateNormalized)) {
         return true
       }
       
-      // Check period overlap only if due_date doesn't match
+      // For weekly and biweekly, due_date match is sufficient - no need for period overlap check
+      // Period overlap check is only needed for monthly invoices where due_date might differ slightly
+      if (cadenceType === 'weekly' || cadenceType === 'biweekly') {
+        return false // If due_date doesn't match, no invoice exists
+      }
+      
+      // For monthly: Check period overlap only if due_date doesn't match
       const periodStartDate = new Date(periodStart)
       const periodEndDate = new Date(periodEnd)
       
@@ -195,7 +201,8 @@ export default function PaymentsPage() {
           const periodEnd = periodEndDate.toISOString().split('T')[0]
           
           // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate)) {
+          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'weekly')) {
+            current.setDate(current.getDate() + 7) // Move to next week
             continue // Skip - real invoice exists for this period
           }
           
@@ -227,11 +234,18 @@ export default function PaymentsPage() {
       }
     } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
       // Generate biweekly invoices: every 14 days from lease start
+      // Limit to last 6 months to prevent performance issues with very old leases
       const start = new Date(fromDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(toDate)
       end.setHours(0, 0, 0, 0)
-      const current = new Date(start)
+      
+      // Limit start date to 6 months before today to prevent excessive iterations
+      const sixMonthsAgo = new Date(end)
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+      const effectiveStart = start > sixMonthsAgo ? start : sixMonthsAgo
+      
+      const current = new Date(effectiveStart)
       
       while (current <= end) {
         const dueDate = current.toISOString().split('T')[0]
@@ -244,7 +258,8 @@ export default function PaymentsPage() {
           const periodEnd = periodEndDate.toISOString().split('T')[0]
           
           // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate)) {
+          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'weekly')) {
+            current.setDate(current.getDate() + 7) // Move to next week
             continue // Skip - real invoice exists for this period
           }
           

@@ -514,35 +514,42 @@ return'<div class="s">'+l+'</div>';
       const invoices = allInvoices
       
       // Fetch actual payment totals for all invoices in parallel
+      // Skip expected invoices (virtual invoices) - they can't have payments
       const paymentTotalsMap = new Map<string, number>()
       
+      // Pre-populate map with invoice amount_paid as fallback
+      invoices.forEach((invoice: Invoice) => {
+        paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+      })
+      
       await Promise.all(
-        invoices.map(async (invoice: Invoice) => {
-          try {
-            const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
-            if (paymentsResponse.ok) {
-              const paymentsData = await paymentsResponse.json()
-              if (Array.isArray(paymentsData) && paymentsData.length > 0) {
-                // IMPORTANT: Only sum payments that are actually linked to this invoice
-                // The API may return unlinked payments for display, but we only count linked ones for calculation
-                const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
-                const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
-                paymentTotalsMap.set(invoice.id, actualPaid)
-                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
+        invoices
+          .filter((invoice: Invoice) => !invoice.id?.startsWith('expected-')) // Skip expected invoices
+          .map(async (invoice: Invoice) => {
+            try {
+              const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+              if (paymentsResponse.ok) {
+                const paymentsData = await paymentsResponse.json()
+                if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                  // IMPORTANT: Only sum payments that are actually linked to this invoice
+                  // The API may return unlinked payments for display, but we only count linked ones for calculation
+                  const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                  const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                  paymentTotalsMap.set(invoice.id, actualPaid)
+                  console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
+                } else {
+                  // No payments found, keep the fallback value (already set above)
+                  console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): No payments found, using invoice amount_paid = $${invoice.amount_paid}`)
+                }
               } else {
-                // No payments found, use invoice amount_paid
-                paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                // API error, keep the fallback value (already set above)
+                console.warn(`Invoice ${invoice.id} (${invoice.invoice_no}): Payment API error ${paymentsResponse.status}, using invoice amount_paid`)
               }
-            } else {
-              // API error, fall back to invoice amount_paid
-              paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+            } catch (error) {
+              console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+              // On error, keep the fallback value (already set above)
             }
-          } catch (error) {
-            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
-            // On error, fall back to invoice amount_paid
-            paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
-          }
-        })
+          })
       )
       
       console.log('Payment totals map:', Array.from(paymentTotalsMap.entries()))

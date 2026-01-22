@@ -92,6 +92,9 @@ export default function PaymentsPage() {
   const [noticeTitle, setNoticeTitle] = useState('')
   const [showMiscIncomeModal, setShowMiscIncomeModal] = useState(false)
   const [properties, setProperties] = useState<Property[]>([])
+  const [showPastInvoiceApprovalModal, setShowPastInvoiceApprovalModal] = useState(false)
+  const [pastInvoicesToApprove, setPastInvoicesToApprove] = useState<any[]>([])
+  const [approvedPastInvoices, setApprovedPastInvoices] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     fetchLeases()
@@ -569,8 +572,16 @@ return'<div class="s">'+l+'</div>';
           const generateData = await generateResponse.json()
           console.log('Generated missing invoices:', generateData)
           
-          // If invoices were created, refetch to get the updated list
-          if (generateData.created > 0) {
+          // Check if past invoices require approval
+          if (generateData.requiresApproval && generateData.pastInvoices && generateData.pastInvoices.length > 0) {
+            setPastInvoicesToApprove(generateData.pastInvoices)
+            setShowPastInvoiceApprovalModal(true)
+            setApprovedPastInvoices(new Set())
+            // Continue loading invoices - we'll refresh after approval
+          }
+          
+          // If future invoices were created, refetch to get the updated list
+          if (generateData.futureCreated > 0 || generateData.created > 0) {
             const refreshResponse = await fetch(url)
             if (refreshResponse.ok) {
               const refreshData = await refreshResponse.json()
@@ -615,7 +626,10 @@ return'<div class="s">'+l+'</div>';
               setInvoicePaymentTotals(paymentTotalsMap)
               setInvoices(allInvoices)
               setLoadingInvoices(false)
-              return
+              // Don't return if approval is needed - we'll refresh after approval
+              if (!generateData.requiresApproval) {
+                return
+              }
             }
           }
         } else {
@@ -1485,7 +1499,6 @@ return'<div class="s">'+l+'</div>';
       setShowDeleteInvoiceModal(false)
       setInvoiceToDelete(null)
       
-      alert('Invoice deleted successfully')
     } catch (error) {
       console.error('Error deleting invoice:', error)
       alert('Failed to delete invoice: ' + (error instanceof Error ? error.message : 'Unknown error'))
@@ -2794,6 +2807,151 @@ return'<div class="s">'+l+'</div>';
               >
                 {deletingInvoice ? 'Deleting...' : 'Delete Invoice'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Past Invoice Approval Modal */}
+      {showPastInvoiceApprovalModal && pastInvoicesToApprove.length > 0 && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-yellow-600 to-orange-600 text-white px-6 py-4">
+              <h2 className="text-xl font-bold">Approve Past-Dated Invoices</h2>
+              <p className="text-sm text-yellow-100">
+                {pastInvoicesToApprove.length} past-dated invoice(s) require approval before creation
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-yellow-800 font-medium mb-2">⚠️ Approval Required</p>
+                <p className="text-sm text-yellow-700">
+                  The following invoices have due dates in the past. Please review and approve each one individually before they are created.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {pastInvoicesToApprove.map((invoice, index) => {
+                  const invoiceKey = `${invoice.due_date}-${index}`
+                  const isApproved = approvedPastInvoices.has(invoiceKey)
+                  
+                  return (
+                    <div
+                      key={invoiceKey}
+                      className={`border rounded-lg p-4 ${
+                        isApproved
+                          ? 'bg-green-50 border-green-300'
+                          : 'bg-white border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <input
+                              type="checkbox"
+                              checked={isApproved}
+                              onChange={(e) => {
+                                const newApproved = new Set(approvedPastInvoices)
+                                if (e.target.checked) {
+                                  newApproved.add(invoiceKey)
+                                } else {
+                                  newApproved.delete(invoiceKey)
+                                }
+                                setApprovedPastInvoices(newApproved)
+                              }}
+                              className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                            />
+                            <div>
+                              <div className="font-medium text-gray-900">
+                                Due Date: {new Date(invoice.due_date + 'T12:00:00').toLocaleDateString()}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                Period: {new Date(invoice.period_start + 'T12:00:00').toLocaleDateString()} - {new Date(invoice.period_end + 'T12:00:00').toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-700 ml-8">
+                            Amount: <span className="font-semibold">${invoice.amount_total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                        {isApproved && (
+                          <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">
+                            Approved
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-between items-center">
+              <div className="text-sm text-gray-600">
+                {approvedPastInvoices.size} of {pastInvoicesToApprove.length} approved
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowPastInvoiceApprovalModal(false)
+                    setPastInvoicesToApprove([])
+                    setApprovedPastInvoices(new Set())
+                    setLoadingInvoices(false)
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (approvedPastInvoices.size === 0) {
+                      alert('Please approve at least one invoice to create')
+                      return
+                    }
+
+                    // Get approved invoices
+                    const approvedInvoices = pastInvoicesToApprove.filter((invoice, index) => {
+                      const invoiceKey = `${invoice.due_date}-${index}`
+                      return approvedPastInvoices.has(invoiceKey)
+                    })
+
+                    try {
+                      const response = await fetch('/api/invoices/create-approved', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ invoices: approvedInvoices })
+                      })
+
+                      const data = await response.json()
+
+                      if (!response.ok) {
+                        throw new Error(data.error || 'Failed to create approved invoices')
+                      }
+
+                      // Refresh invoices
+                      if (selectedLease) {
+                        await handleViewInvoices(selectedLease)
+                      }
+
+                      // Close modal
+                      setShowPastInvoiceApprovalModal(false)
+                      setPastInvoicesToApprove([])
+                      setApprovedPastInvoices(new Set())
+                    } catch (error) {
+                      console.error('Error creating approved invoices:', error)
+                      alert('Failed to create approved invoices: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                    }
+                  }}
+                  disabled={approvedPastInvoices.size === 0}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create {approvedPastInvoices.size} Approved Invoice(s)
+                </button>
+              </div>
             </div>
           </div>
         </div>

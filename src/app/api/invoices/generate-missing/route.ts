@@ -91,19 +91,24 @@ export async function POST(request: Request) {
     )
 
     const invoicesToCreate: any[] = []
+    const pastInvoicesToApprove: any[] = []
+
+    // Separate invoices into past (need approval) and future (auto-create)
+    const todayDate = new Date(today)
+    todayDate.setHours(0, 0, 0, 0)
 
     if (cadence === 'weekly') {
       // Generate weekly invoices: every 7 days from lease start up to 3 months ahead
       const start = new Date(leaseStartDate)
       start.setHours(0, 0, 0, 0)
-      const end = new Date(threeMonthsAhead)
-      end.setHours(23, 59, 59, 999)
+      const endDateObj = new Date(endDate)
+      endDateObj.setHours(23, 59, 59, 999)
       const current = new Date(start)
       
       while (current <= end) {
         const dueDate = current.toISOString().split('T')[0]
         
-        // Only create invoice if due date is on/after lease start and up to 3 months ahead
+        // Only create invoice if due date is on/after lease start and up to end date
         if (dueDate >= leaseStartDate && dueDate <= endDate && !existingDueDates.has(dueDate)) {
           // Calculate period: 7 days (period_start to period_start + 6 days)
           const periodStart = dueDate
@@ -111,7 +116,7 @@ export async function POST(request: Request) {
           periodEndDate.setDate(periodEndDate.getDate() + 6)
           const periodEnd = periodEndDate.toISOString().split('T')[0]
           
-          invoicesToCreate.push({
+          const invoiceData = {
             lease_id: lease.id,
             property_id: lease.property_id,
             tenant_id: lease.tenant_id,
@@ -125,7 +130,16 @@ export async function POST(request: Request) {
             amount_paid: 0,
             balance_due: rentAmount,
             status: 'OPEN'
-          })
+          }
+          
+          // Check if due date is in the past
+          const dueDateObj = new Date(dueDate)
+          dueDateObj.setHours(0, 0, 0, 0)
+          if (dueDateObj < todayDate) {
+            pastInvoicesToApprove.push(invoiceData)
+          } else {
+            invoicesToCreate.push(invoiceData)
+          }
         }
         
         // Move to next week (7 days later)
@@ -135,8 +149,8 @@ export async function POST(request: Request) {
       // Generate biweekly invoices: every 14 days from lease start up to 3 months ahead
       const start = new Date(leaseStartDate)
       start.setHours(0, 0, 0, 0)
-      const end = new Date(threeMonthsAhead)
-      end.setHours(23, 59, 59, 999)
+      const endDateObj = new Date(endDate)
+      endDateObj.setHours(23, 59, 59, 999)
       const current = new Date(start)
       
       while (current <= end) {
@@ -149,7 +163,7 @@ export async function POST(request: Request) {
           periodEndDate.setDate(periodEndDate.getDate() + 13)
           const periodEnd = periodEndDate.toISOString().split('T')[0]
           
-          invoicesToCreate.push({
+          const invoiceData = {
             lease_id: lease.id,
             property_id: lease.property_id,
             tenant_id: lease.tenant_id,
@@ -163,7 +177,16 @@ export async function POST(request: Request) {
             amount_paid: 0,
             balance_due: rentAmount,
             status: 'OPEN'
-          })
+          }
+          
+          // Check if due date is in the past
+          const dueDateObj = new Date(dueDate)
+          dueDateObj.setHours(0, 0, 0, 0)
+          if (dueDateObj < todayDate) {
+            pastInvoicesToApprove.push(invoiceData)
+          } else {
+            invoicesToCreate.push(invoiceData)
+          }
         }
         
         // Move to next biweekly period (14 days later)
@@ -173,21 +196,21 @@ export async function POST(request: Request) {
       // Generate monthly invoices: each month from lease start up to 3 months ahead
       const start = new Date(leaseStartDate)
       const current = new Date(start.getFullYear(), start.getMonth(), 1)
-      const end = new Date(threeMonthsAhead)
+      const endDateObj = new Date(endDate)
 
-      while (current <= end) {
+      while (current <= endDateObj) {
         const year = current.getFullYear()
         const month = current.getMonth()
         const daysInMonth = new Date(year, month + 1, 0).getDate()
         const dueDay = Math.min(rentDueDay, daysInMonth)
         const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
         
-        // Only create invoice if due date is on/after lease start and up to 3 months ahead
+        // Only create invoice if due date is on/after lease start and up to end date
         if (dueDate >= leaseStartDate && dueDate <= endDate && !existingDueDates.has(dueDate)) {
           const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
           const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
           
-          invoicesToCreate.push({
+          const invoiceData = {
             lease_id: lease.id,
             property_id: lease.property_id,
             tenant_id: lease.tenant_id,
@@ -201,7 +224,16 @@ export async function POST(request: Request) {
             amount_paid: 0,
             balance_due: rentAmount,
             status: 'OPEN'
-          })
+          }
+          
+          // Check if due date is in the past
+          const dueDateObj = new Date(dueDate)
+          dueDateObj.setHours(0, 0, 0, 0)
+          if (dueDateObj < todayDate) {
+            pastInvoicesToApprove.push(invoiceData)
+          } else {
+            invoicesToCreate.push(invoiceData)
+          }
         }
 
         // Move to next month
@@ -214,7 +246,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Insert all new invoices (database constraint will prevent duplicates)
+    // Create future invoices automatically (no approval needed)
+    let futureCreated = 0
     if (invoicesToCreate.length > 0) {
       const { data: createdInvoices, error: insertError } = await supabaseServer
         .from('RENT_invoices')
@@ -225,34 +258,36 @@ export async function POST(request: Request) {
         // If error is due to unique constraint violation, that's okay - invoice already exists
         if (insertError.code === '23505') {
           console.log('Some invoices already exist (unique constraint), skipping duplicates')
-          return NextResponse.json({
-            success: true,
-            message: 'Invoices already exist or were created',
-            created: 0,
-            skipped: invoicesToCreate.length
-          })
+        } else {
+          console.error('Error creating future invoices:', insertError)
+          return NextResponse.json(
+            { error: 'Failed to create future invoices', details: insertError.message },
+            { status: 500 }
+          )
         }
-        
-        console.error('Error creating invoices:', insertError)
-        return NextResponse.json(
-          { error: 'Failed to create invoices', details: insertError.message },
-          { status: 500 }
-        )
+      } else {
+        futureCreated = createdInvoices?.length || 0
+        console.log(`Created ${futureCreated} future invoices for lease ${leaseId} (${cadence} cadence)`)
       }
+    }
 
-      console.log(`Created ${createdInvoices?.length || 0} new invoices for lease ${leaseId} (${cadence} cadence)`)
-      
+    // If there are past invoices that need approval, return them for user approval
+    if (pastInvoicesToApprove.length > 0) {
       return NextResponse.json({
         success: true,
-        message: `Created ${createdInvoices?.length || 0} new invoices`,
-        created: createdInvoices?.length || 0
+        requiresApproval: true,
+        pastInvoices: pastInvoicesToApprove,
+        futureCreated: futureCreated,
+        message: `${pastInvoicesToApprove.length} past-dated invoice(s) require approval`
       })
     }
 
+    // No past invoices, return success
     return NextResponse.json({
       success: true,
-      message: 'No missing invoices found',
-      created: 0
+      requiresApproval: false,
+      created: futureCreated,
+      message: futureCreated > 0 ? `Created ${futureCreated} new invoice(s)` : 'No missing invoices found'
     })
   } catch (error) {
     console.error('Error in generate-missing invoices API:', error)

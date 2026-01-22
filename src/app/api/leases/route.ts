@@ -216,20 +216,32 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
   }
   
   const invoicesToCreate: any[] = []
+  const todayDate = new Date(today)
+  todayDate.setHours(0, 0, 0, 0)
 
   if (cadence === 'weekly') {
     // Generate weekly invoices: every 7 days from lease start up to 3 months ahead
     const start = new Date(startDate)
     start.setHours(0, 0, 0, 0)
-    const end = new Date(threeMonthsAhead)
-    end.setHours(23, 59, 59, 999)
+    const endDateObj = new Date(endDate)
+    endDateObj.setHours(23, 59, 59, 999)
     const current = new Date(start)
     
-    while (current <= end) {
+    while (current <= endDateObj) {
       const dueDate = current.toISOString().split('T')[0]
       
-      // Only create invoice if due date is on/after lease start and up to 3 months ahead
+      // Only create invoice if due date is on/after lease start and up to end date
+      // Skip past invoices - they require approval via generate-missing endpoint
       if (dueDate >= startDate && dueDate <= endDate) {
+        const dueDateObj = new Date(dueDate)
+        dueDateObj.setHours(0, 0, 0, 0)
+        
+        // Skip past invoices - they will be handled via approval flow when viewing invoices
+        if (dueDateObj < todayDate) {
+          current.setDate(current.getDate() + 7)
+          continue
+        }
+        
         // Calculate period: 7 days (period_start to period_start + 6 days)
         const periodStart = dueDate
         const periodEndDate = new Date(current)
@@ -270,14 +282,23 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
     // Generate biweekly invoices: every 14 days from lease start up to 3 months ahead
     const start = new Date(startDate)
     start.setHours(0, 0, 0, 0)
-    const end = new Date(threeMonthsAhead)
-    end.setHours(23, 59, 59, 999)
+    const endDateObj = new Date(endDate)
+    endDateObj.setHours(23, 59, 59, 999)
     const current = new Date(start)
     
-    while (current <= end) {
+    while (current <= endDateObj) {
       const dueDate = current.toISOString().split('T')[0]
       
       if (dueDate >= startDate && dueDate <= endDate) {
+        const dueDateObj = new Date(dueDate)
+        dueDateObj.setHours(0, 0, 0, 0)
+        
+        // Skip past invoices - they will be handled via approval flow when viewing invoices
+        if (dueDateObj < todayDate) {
+          current.setDate(current.getDate() + 14)
+          continue
+        }
+        
         // Calculate period: 14 days (period_start to period_start + 13 days)
         const periodStart = dueDate
         const periodEndDate = new Date(current)
@@ -318,17 +339,27 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
     // Generate monthly invoices: each month from lease start up to 3 months ahead
     const start = new Date(startDate)
     const current = new Date(start.getFullYear(), start.getMonth(), 1)
-    const end = new Date(threeMonthsAhead)
+    const endDateObj = new Date(endDate)
 
-    while (current <= end) {
+    while (current <= endDateObj) {
       const year = current.getFullYear()
       const month = current.getMonth()
       const daysInMonth = new Date(year, month + 1, 0).getDate()
       const dueDay = Math.min(rentDueDay, daysInMonth)
       const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
       
-      // Only create invoice if due date is on/after lease start and up to 3 months ahead
+      // Only create invoice if due date is on/after lease start and up to end date
+      // Skip past invoices - they require approval via generate-missing endpoint
       if (dueDate >= startDate && dueDate <= endDate) {
+        const dueDateObj = new Date(dueDate)
+        dueDateObj.setHours(0, 0, 0, 0)
+        
+        // Skip past invoices - they will be handled via approval flow when viewing invoices
+        if (dueDateObj < todayDate) {
+          current.setMonth(current.getMonth() + 1)
+          continue
+        }
+        
         const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
         const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
         

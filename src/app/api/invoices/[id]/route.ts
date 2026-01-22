@@ -176,8 +176,7 @@ export async function DELETE(
     console.log('Invoice deleted successfully:', id)
 
     return NextResponse.json({ 
-      success: true,
-      message: 'Invoice deleted successfully'
+      success: true
     })
   } catch (error) {
     console.error('Error in invoice DELETE API:', error)

@@ -439,25 +439,62 @@ return'<div class="s">'+l+'</div>';
             const invoicesData = await invoicesResponse.json()
             const invoices = Array.isArray(invoicesData) ? invoicesData : []
             
-            // Generate expected invoices for missing periods (same logic as invoice modal)
-            // This ensures consistency between payments page and invoice modal
-            const expectedInvoices = generateExpectedInvoices(
-              leaseData,
-              leaseData.lease_start_date,
-              today,
-              invoices
-            )
+            // Automatically generate missing invoices up to 3 months ahead
+            // This ensures invoices always exist without needing virtual invoices
+            try {
+              const generateResponse = await fetch('/api/invoices/generate-missing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leaseId: leaseData.id })
+              })
+              
+              if (generateResponse.ok) {
+                const generateData = await generateResponse.json()
+                // If invoices were created, refetch to get updated list
+                if (generateData.created > 0) {
+                  const refreshResponse = await fetch(`/api/invoices?leaseId=${leaseData.id}&to=${today}`)
+                  if (refreshResponse.ok) {
+                    const refreshData = await refreshResponse.json()
+                    const refreshedInvoices = Array.isArray(refreshData) ? refreshData : []
+                    // Use refreshed invoices
+                    const allInvoices = refreshedInvoices
+                    
+                    // Filter unpaid invoices (only real invoices now)
+                    // Only count invoices with status='OPEN' and balance_due > 0
+                    const unpaidInvoices = allInvoices.filter((inv: Invoice) => 
+                      inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
+                    )
+                    
+                    // Calculate total owed from unpaid invoices
+                    const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
+                      sum + parseFloat(inv.balance_due as any), 0
+                    )
+                    
+                    const totalUnpaidCount = unpaidInvoices.length
+
+                    return {
+                      lease: leaseData,
+                      property: leaseData.RENT_properties || {},
+                      tenant: leaseData.RENT_tenants || {},
+                      unpaidInvoicesCount: totalUnpaidCount,
+                      totalOwed
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error generating missing invoices in fetchLeases:', error)
+              // Continue with existing invoices if generation fails
+            }
             
-            // Combine real and expected invoices
-            const allInvoices = [...invoices, ...expectedInvoices]
-            
-            // Filter unpaid invoices (both real and expected)
+            // Use existing invoices (no virtual invoices - all are real database records)
+            // Filter unpaid invoices
             // Only count invoices with status='OPEN' and balance_due > 0
-            const unpaidInvoices = allInvoices.filter((inv: Invoice) => 
+            const unpaidInvoices = invoices.filter((inv: Invoice) => 
               inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
             )
             
-            // Calculate total owed from unpaid invoices (real + expected)
+            // Calculate total owed from unpaid invoices
             const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
               sum + parseFloat(inv.balance_due as any), 0
             )
@@ -519,24 +556,84 @@ return'<div class="s">'+l+'</div>';
       }
       console.log('Existing invoices from API:', existingInvoices.length, existingInvoices)
       
-      // Generate expected invoices for missing periods (up to today only, not future)
-      // Use lease_start_date for generating expected invoices
-      const leaseStart = leaseRow.lease.lease_start_date
-      console.log('Generating expected invoices:', { leaseStart, todayStr, cadence: leaseRow.lease.rent_cadence })
-      const expectedInvoices = generateExpectedInvoices(leaseRow.lease, leaseStart, todayStr, existingInvoices)
-      console.log('Generated expected invoices:', expectedInvoices.length, expectedInvoices)
+      // Automatically generate missing invoices up to 3 months ahead
+      // This ensures invoices always exist without needing virtual invoices
+      try {
+        const generateResponse = await fetch('/api/invoices/generate-missing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leaseId: leaseRow.lease.id })
+        })
+        
+        if (generateResponse.ok) {
+          const generateData = await generateResponse.json()
+          console.log('Generated missing invoices:', generateData)
+          
+          // If invoices were created, refetch to get the updated list
+          if (generateData.created > 0) {
+            const refreshResponse = await fetch(url)
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json()
+              const refreshedInvoices = Array.isArray(refreshData) ? refreshData : []
+              console.log('Refreshed invoices after generation:', refreshedInvoices.length)
+              // Use refreshed invoices
+              const invoices = refreshedInvoices.sort((a, b) => {
+                const dateA = new Date(a.due_date).getTime()
+                const dateB = new Date(b.due_date).getTime()
+                return dateB - dateA // Newest first
+              })
+              
+              // Continue with refreshed invoices - set invoices and fetch payments
+              const allInvoices = invoices
+              
+              // Fetch actual payment totals for all invoices in parallel
+              const paymentTotalsMap = new Map<string, number>()
+              
+              // Pre-populate map with invoice amount_paid as fallback
+              allInvoices.forEach((invoice: Invoice) => {
+                paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+              })
+              
+              await Promise.all(
+                allInvoices.map(async (invoice: Invoice) => {
+                  try {
+                    const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+                    if (paymentsResponse.ok) {
+                      const paymentsData = await paymentsResponse.json()
+                      if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                        const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                        const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                        paymentTotalsMap.set(invoice.id, actualPaid)
+                      }
+                    }
+                  } catch (error) {
+                    console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+                  }
+                })
+              )
+              
+              setInvoicePaymentTotals(paymentTotalsMap)
+              setInvoices(allInvoices)
+              setLoadingInvoices(false)
+              return
+            }
+          }
+        } else {
+          console.warn('Failed to generate missing invoices:', await generateResponse.json().catch(() => ({})))
+        }
+      } catch (error) {
+        console.error('Error generating missing invoices:', error)
+        // Continue with existing invoices if generation fails
+      }
       
-      // Merge existing and expected invoices, sorted by due_date
-      const allInvoices = [...existingInvoices, ...expectedInvoices].sort((a, b) => {
+      // Use existing invoices (no virtual invoices - all are real database records)
+      const invoices = existingInvoices.sort((a, b) => {
         const dateA = new Date(a.due_date).getTime()
         const dateB = new Date(b.due_date).getTime()
         return dateB - dateA // Newest first
       })
       
-      const invoices = allInvoices
-      
       // Fetch actual payment totals for all invoices in parallel
-      // Skip expected invoices (virtual invoices) - they can't have payments
       const paymentTotalsMap = new Map<string, number>()
       
       // Pre-populate map with invoice amount_paid as fallback
@@ -545,33 +642,26 @@ return'<div class="s">'+l+'</div>';
       })
       
       await Promise.all(
-        invoices
-          .filter((invoice: Invoice) => !invoice.id?.startsWith('expected-')) // Skip expected invoices
-          .map(async (invoice: Invoice) => {
-            try {
-              const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
-              if (paymentsResponse.ok) {
-                const paymentsData = await paymentsResponse.json()
-                if (Array.isArray(paymentsData) && paymentsData.length > 0) {
-                  // IMPORTANT: Only sum payments that are actually linked to this invoice
-                  // The API may return unlinked payments for display, but we only count linked ones for calculation
-                  const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
-                  const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
-                  paymentTotalsMap.set(invoice.id, actualPaid)
-                  console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
-                } else {
-                  // No payments found, keep the fallback value (already set above)
-                  console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): No payments found, using invoice amount_paid = $${invoice.amount_paid}`)
-                }
+        invoices.map(async (invoice: Invoice) => {
+          try {
+            const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+            if (paymentsResponse.ok) {
+              const paymentsData = await paymentsResponse.json()
+              if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                paymentTotalsMap.set(invoice.id, actualPaid)
+                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
               } else {
-                // API error, keep the fallback value (already set above)
-                console.warn(`Invoice ${invoice.id} (${invoice.invoice_no}): Payment API error ${paymentsResponse.status}, using invoice amount_paid`)
+                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): No payments found, using invoice amount_paid = $${invoice.amount_paid}`)
               }
-            } catch (error) {
-              console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
-              // On error, keep the fallback value (already set above)
+            } else {
+              console.warn(`Invoice ${invoice.id} (${invoice.invoice_no}): Payment API error ${paymentsResponse.status}, using invoice amount_paid`)
             }
-          })
+          } catch (error) {
+            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+          }
+        })
       )
       
       console.log('Payment totals map:', Array.from(paymentTotalsMap.entries()))

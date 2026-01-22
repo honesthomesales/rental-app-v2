@@ -195,22 +195,29 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
   const rentAmount = lease.rent || 0
   
   const today = new Date()
+  today.setHours(0, 0, 0, 0)
   const todayStr = today.toISOString().split('T')[0]
+  
+  // Generate invoices up to 3 months ahead
+  const threeMonthsAhead = new Date(today)
+  threeMonthsAhead.setMonth(today.getMonth() + 3)
+  const endDate = threeMonthsAhead.toISOString().split('T')[0]
+  
   const invoicesToCreate: any[] = []
 
   if (cadence === 'weekly') {
-    // Generate weekly invoices: every 7 days from lease start
+    // Generate weekly invoices: every 7 days from lease start up to 3 months ahead
     const start = new Date(startDate)
     start.setHours(0, 0, 0, 0)
-    const end = new Date(today)
+    const end = new Date(threeMonthsAhead)
     end.setHours(23, 59, 59, 999)
     const current = new Date(start)
     
     while (current <= end) {
       const dueDate = current.toISOString().split('T')[0]
       
-      // Only create invoice if due date is on/after lease start and on/before today
-      if (dueDate >= startDate && dueDate <= todayStr) {
+      // Only create invoice if due date is on/after lease start and up to 3 months ahead
+      if (dueDate >= startDate && dueDate <= endDate) {
         // Calculate period: 7 days (period_start to period_start + 6 days)
         const periodStart = dueDate
         const periodEndDate = new Date(current)
@@ -248,17 +255,17 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
       current.setDate(current.getDate() + 7)
     }
   } else if (cadence === 'biweekly') {
-    // Generate biweekly invoices: every 14 days from lease start
+    // Generate biweekly invoices: every 14 days from lease start up to 3 months ahead
     const start = new Date(startDate)
     start.setHours(0, 0, 0, 0)
-    const end = new Date(today)
+    const end = new Date(threeMonthsAhead)
     end.setHours(23, 59, 59, 999)
     const current = new Date(start)
     
     while (current <= end) {
       const dueDate = current.toISOString().split('T')[0]
       
-      if (dueDate >= startDate && dueDate <= todayStr) {
+      if (dueDate >= startDate && dueDate <= endDate) {
         // Calculate period: 14 days (period_start to period_start + 13 days)
         const periodStart = dueDate
         const periodEndDate = new Date(current)
@@ -296,10 +303,10 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
       current.setDate(current.getDate() + 14)
     }
   } else if (cadence === 'monthly') {
-    // Generate monthly invoices: each month from lease start to today
+    // Generate monthly invoices: each month from lease start up to 3 months ahead
     const start = new Date(startDate)
     const current = new Date(start.getFullYear(), start.getMonth(), 1)
-    const end = new Date(today)
+    const end = new Date(threeMonthsAhead)
 
     while (current <= end) {
       const year = current.getFullYear()
@@ -308,8 +315,8 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
       const dueDay = Math.min(rentDueDay, daysInMonth)
       const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
       
-      // Only create invoice if due date is on/after lease start
-      if (dueDate >= startDate && dueDate <= todayStr) {
+      // Only create invoice if due date is on/after lease start and up to 3 months ahead
+      if (dueDate >= startDate && dueDate <= endDate) {
         const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
         const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
         

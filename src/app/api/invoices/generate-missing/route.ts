@@ -52,21 +52,20 @@ export async function POST(request: Request) {
     today.setHours(0, 0, 0, 0)
     const todayStr = today.toISOString().split('T')[0]
     
-    // Generate invoices up to 3 months ahead, or until lease_end_date if sooner
-    // For active leases, always generate up to 3 months ahead regardless of lease_end_date
-    const threeMonthsAhead = new Date(today)
-    threeMonthsAhead.setMonth(today.getMonth() + 3)
-    
-    // If lease has an end date in the future, use the earlier of end_date or 3 months ahead
-    // If lease_end_date is null or in the past, use 3 months ahead (month-to-month)
+    // Generate invoices for the full active period of the lease
+    // If lease has an end date, generate up to that date
+    // If no end date (month-to-month), generate up to 3 months ahead (continuously maintained)
     let endDate: string
     if (lease.lease_end_date) {
       const leaseEnd = new Date(lease.lease_end_date)
       leaseEnd.setHours(0, 0, 0, 0)
-      // Use the earlier of lease_end_date or 3 months ahead
-      endDate = leaseEnd < threeMonthsAhead ? lease.lease_end_date : threeMonthsAhead.toISOString().split('T')[0]
+      // Generate invoices up to lease_end_date (full active period)
+      endDate = lease.lease_end_date
     } else {
       // No end date (month-to-month) - generate up to 3 months ahead
+      // This will be continuously maintained as invoices are viewed
+      const threeMonthsAhead = new Date(today)
+      threeMonthsAhead.setMonth(today.getMonth() + 3)
       endDate = threeMonthsAhead.toISOString().split('T')[0]
     }
 

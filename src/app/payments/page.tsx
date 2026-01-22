@@ -95,6 +95,10 @@ export default function PaymentsPage() {
   const [showPastInvoiceApprovalModal, setShowPastInvoiceApprovalModal] = useState(false)
   const [pastInvoicesToApprove, setPastInvoicesToApprove] = useState<any[]>([])
   const [approvedPastInvoices, setApprovedPastInvoices] = useState<Set<string>>(new Set())
+  const [showAddInvoiceModal, setShowAddInvoiceModal] = useState(false)
+  const [newInvoiceDueDate, setNewInvoiceDueDate] = useState('')
+  const [newInvoiceAmount, setNewInvoiceAmount] = useState('')
+  const [creatingInvoice, setCreatingInvoice] = useState(false)
 
   useEffect(() => {
     fetchLeases()
@@ -1848,6 +1852,20 @@ return'<div class="s">'+l+'</div>';
               </div>
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => {
+                    if (!selectedLease) return
+                    // Set default due date to today
+                    setNewInvoiceDueDate(new Date().toISOString().split('T')[0])
+                    // Set default amount to lease rent
+                    setNewInvoiceAmount(selectedLease.lease.rent?.toString() || '0')
+                    setShowAddInvoiceModal(true)
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                  title="Add a single invoice"
+                >
+                  + Add Invoice
+                </button>
+                <button
                   onClick={async () => {
                     if (!selectedLease) return
                     // Show all invoices when Next Invoice button is clicked
@@ -2952,6 +2970,157 @@ return'<div class="s">'+l+'</div>';
                   Create {approvedPastInvoices.size} Approved Invoice(s)
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Invoice Modal */}
+      {showAddInvoiceModal && selectedLease && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 rounded-t-xl">
+              <h2 className="text-xl font-bold">Add Invoice</h2>
+              <p className="text-sm text-green-100">
+                {selectedLease.property?.name} - {selectedLease.tenant?.full_name}
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Due Date *
+                </label>
+                <input
+                  type="date"
+                  value={newInvoiceDueDate}
+                  onChange={(e) => setNewInvoiceDueDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={newInvoiceAmount}
+                  onChange={(e) => setNewInvoiceAmount(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  placeholder="0.00"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Default rent: ${selectedLease.lease.rent?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <span className="font-medium">Note:</span> The system will automatically calculate the period dates based on the lease cadence and due date.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 rounded-b-xl flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowAddInvoiceModal(false)
+                  setNewInvoiceDueDate('')
+                  setNewInvoiceAmount('')
+                }}
+                disabled={creatingInvoice}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!selectedLease || !newInvoiceDueDate || !newInvoiceAmount) {
+                    alert('Please fill in all required fields')
+                    return
+                  }
+
+                  setCreatingInvoice(true)
+                  try {
+                    // Calculate period dates based on lease cadence
+                    const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || 'monthly'
+                    const dueDate = new Date(newInvoiceDueDate + 'T12:00:00')
+                    let periodStart = ''
+                    let periodEnd = ''
+
+                    if (cadence === 'weekly') {
+                      periodStart = newInvoiceDueDate
+                      const periodEndDate = new Date(dueDate)
+                      periodEndDate.setDate(periodEndDate.getDate() + 6)
+                      periodEnd = periodEndDate.toISOString().split('T')[0]
+                    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
+                      periodStart = newInvoiceDueDate
+                      const periodEndDate = new Date(dueDate)
+                      periodEndDate.setDate(periodEndDate.getDate() + 13)
+                      periodEnd = periodEndDate.toISOString().split('T')[0]
+                    } else {
+                      // Monthly
+                      const year = dueDate.getFullYear()
+                      const month = dueDate.getMonth()
+                      periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
+                      const daysInMonth = new Date(year, month + 1, 0).getDate()
+                      periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+                    }
+
+                    const invoiceData = {
+                      lease_id: selectedLease.lease.id,
+                      property_id: selectedLease.property.id,
+                      tenant_id: selectedLease.tenant.id,
+                      due_date: newInvoiceDueDate,
+                      period_start: periodStart,
+                      period_end: periodEnd,
+                      amount_rent: parseFloat(newInvoiceAmount) || selectedLease.lease.rent || 0,
+                      amount_late: 0,
+                      amount_other: 0,
+                      amount_total: parseFloat(newInvoiceAmount) || selectedLease.lease.rent || 0,
+                      amount_paid: 0,
+                      balance_due: parseFloat(newInvoiceAmount) || selectedLease.lease.rent || 0,
+                      status: 'OPEN'
+                    }
+
+                    const response = await fetch('/api/invoices', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(invoiceData)
+                    })
+
+                    const data = await response.json()
+
+                    if (!response.ok) {
+                      throw new Error(data.error || 'Failed to create invoice')
+                    }
+
+                    // Refresh invoices list
+                    await handleViewInvoices(selectedLease)
+
+                    // Close modal
+                    setShowAddInvoiceModal(false)
+                    setNewInvoiceDueDate('')
+                    setNewInvoiceAmount('')
+                  } catch (error) {
+                    console.error('Error creating invoice:', error)
+                    alert('Failed to create invoice: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                  } finally {
+                    setCreatingInvoice(false)
+                  }
+                }}
+                disabled={creatingInvoice || !newInvoiceDueDate || !newInvoiceAmount}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creatingInvoice ? 'Creating...' : 'Create Invoice'}
+              </button>
             </div>
           </div>
         </div>

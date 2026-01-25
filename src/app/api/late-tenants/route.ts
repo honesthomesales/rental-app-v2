@@ -82,6 +82,8 @@ export async function GET(request: Request) {
     // Group invoices and payments by lease_id for efficient lookup
     const invoicesByLease = new Map<string, any[]>()
     const paymentsByLease = new Map<string, any[]>()
+    // Group payments by invoice_id to calculate actual paid amounts (matching payments page logic)
+    const paymentsByInvoice = new Map<string, any[]>()
     
     allInvoices?.forEach(invoice => {
       const leaseId = invoice.lease_id
@@ -97,6 +99,14 @@ export async function GET(request: Request) {
         paymentsByLease.set(leaseId, [])
       }
       paymentsByLease.get(leaseId)!.push(payment)
+      
+      // Also group by invoice_id to calculate actual paid amounts (matching payments page logic)
+      if (payment.invoice_id) {
+        if (!paymentsByInvoice.has(payment.invoice_id)) {
+          paymentsByInvoice.set(payment.invoice_id, [])
+        }
+        paymentsByInvoice.get(payment.invoice_id)!.push(payment)
+      }
     })
 
     // Process each lease to identify late tenants using the same logic as payments page
@@ -113,15 +123,37 @@ export async function GET(request: Request) {
         !leaseStartDate || invoice.due_date >= leaseStartDate
       )
 
+      // Recalculate balance_due using actual payment totals (EXACT same as payments page)
+      // The payments page uses actual payment totals, not invoice.amount_paid
+      const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
+        // Get actual payments linked to this invoice
+        const linkedPayments = paymentsByInvoice.get(invoice.id) || []
+        const actualPaid = linkedPayments.reduce((sum, payment) => 
+          sum + parseFloat(payment.amount || 0), 0
+        )
+        
+        // Recalculate balance_due using actual paid amount (matching payments page logic)
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const recalculatedBalanceDue = amountTotal - actualPaid
+        
+        return {
+          ...invoice,
+          actualPaid,
+          balance_due: recalculatedBalanceDue // Use recalculated balance
+        }
+      })
+
       // Find all unpaid invoices - EXACT same logic as payments page
       // Only count invoices with status='OPEN' and balance_due > 0 (matching payments page logic)
-      const allUnpaidInvoices = validInvoices.filter(invoice => 
+      // Use recalculated balance_due
+      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => 
         invoice.status === 'OPEN' && parseFloat(invoice.balance_due as any || 0) > 0
       )
 
       // Find late invoices (due before today and not fully paid) - EXACT same logic as payments page
       // Must also check status='OPEN' to match payments page logic
-      const lateInvoices = validInvoices.filter(invoice => {
+      // Use recalculated balance_due
+      const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
         // Use same date normalization as payments page
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
@@ -132,7 +164,7 @@ export async function GET(request: Request) {
       })
 
       // Add to total all owed - EXACT same calculation as payments page
-      // Calculate total owed from unpaid invoices (matching payments page logic)
+      // Calculate total owed from unpaid invoices using recalculated balance_due (matching payments page logic)
       totalAllOwed += allUnpaidInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.balance_due as any || 0), 0
       )
@@ -151,6 +183,7 @@ export async function GET(request: Request) {
       const daysLate = Math.floor((todayDate.getTime() - new Date(oldestLateInvoice.due_date).getTime()) / (1000 * 60 * 60 * 24))
       
       // Calculate totals using EXACT same logic as payments page
+      // Use recalculated balance_due (from actual payment totals)
       const totalLateAmount = lateInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.balance_due as any || 0), 0
       )
@@ -161,6 +194,7 @@ export async function GET(request: Request) {
 
       // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as payments page
       // This matches the payments page "Total Owed" calculation
+      // Use recalculated balance_due (from actual payment totals)
       const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.balance_due as any || 0), 0
       )
@@ -194,8 +228,8 @@ export async function GET(request: Request) {
           period_start: invoice.period_start,
           period_end: invoice.period_end,
           amount_total: parseFloat(invoice.amount_total || 0),
-          amount_paid: parseFloat(invoice.amount_paid || 0),
-          balance_due: parseFloat(invoice.balance_due || 0),
+          amount_paid: invoice.actualPaid || parseFloat(invoice.amount_paid || 0), // Use actual paid amount
+          balance_due: parseFloat(invoice.balance_due || 0), // Use recalculated balance_due
           amount_late: parseFloat(invoice.amount_late || 0),
           status: invoice.status,
           days_late: Math.floor((todayDate.getTime() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24))

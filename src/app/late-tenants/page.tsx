@@ -532,9 +532,9 @@ export default function LateTenantsPage() {
                       <p className="text-lg font-semibold text-gray-900">{tenant.totalLatePeriods || 0}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-500">Total Owed (Late)</p>
+                      <p className="text-sm text-gray-500">Total Owed</p>
                       <p className="text-lg font-semibold text-gray-900">
-                        ${tenant.totalOwedLate.toLocaleString()}
+                        ${(tenant.totalAllOwed || tenant.totalOwedLate || 0).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -676,7 +676,7 @@ export default function LateTenantsPage() {
                       onClick={() => handleSort('totalOwedLate')}
                     >
                       <div className="flex items-center">
-                        Total Late Amount
+                        Total Owed
                         {sortField === 'totalOwedLate' && (
                           <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
@@ -743,7 +743,7 @@ export default function LateTenantsPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          ${tenant.totalOwedLate.toLocaleString()}
+                          ${(tenant.totalAllOwed || tenant.totalOwedLate || 0).toLocaleString()}
                         </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -811,9 +811,9 @@ export default function LateTenantsPage() {
                   </div>
 
                   <div className="mb-3">
-                    <div className="text-xs text-gray-500">Total Late Amount</div>
+                    <div className="text-xs text-gray-500">Total Owed</div>
                     <div className="text-lg font-semibold text-gray-900">
-                      ${tenant.totalOwedLate.toLocaleString()}
+                      ${(tenant.totalAllOwed || tenant.totalOwedLate || 0).toLocaleString()}
                     </div>
                   </div>
 

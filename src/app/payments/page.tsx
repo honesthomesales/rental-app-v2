@@ -579,6 +579,18 @@ return'<div class="s">'+l+'</div>';
             
             const totalUnpaidCount = unpaidInvoices.length
 
+            // Debug logging to compare with late tenants API
+            if (totalOwed > 0 && (leaseData.RENT_properties?.address?.toLowerCase().includes('5667') || leaseData.RENT_properties?.address?.toLowerCase().includes('main'))) {
+              console.log(`Payments Page - Lease ${leaseData.id} (${leaseData.RENT_properties?.address}): totalOwed=${totalOwed}, unpaidCount=${totalUnpaidCount}, validInvoices=${validInvoices.length}, invoicesWithRecalc=${invoicesWithRecalculatedBalance.length}`)
+              console.log(`Payments Page - Unpaid invoices:`, unpaidInvoices.map(inv => ({
+                id: inv.id,
+                due_date: inv.due_date,
+                amount_total: inv.amount_total,
+                balance_due: inv.balance_due,
+                status: inv.status
+              })))
+            }
+
             return {
               lease: leaseData,
               property: leaseData.RENT_properties || {},

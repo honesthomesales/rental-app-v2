@@ -201,7 +201,18 @@ export async function GET(request: Request) {
       
       // Debug logging to compare with payments page
       if (totalAllOwedForLease > 0) {
-        console.log(`Lease ${lease.id} (${lease.RENT_properties?.address || 'unknown'}): totalAllOwed=${totalAllOwedForLease}, unpaidCount=${allUnpaidInvoices.length}, lateCount=${lateInvoices.length}`)
+        const address = lease.RENT_properties?.address || 'unknown'
+        console.log(`Late Tenants API - Lease ${lease.id} (${address}): totalAllOwed=${totalAllOwedForLease}, unpaidCount=${allUnpaidInvoices.length}, lateCount=${lateInvoices.length}, validInvoices=${validInvoices.length}`)
+        if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
+          console.log(`Late Tenants API - Unpaid invoices for ${address}:`, allUnpaidInvoices.map(inv => ({
+            id: inv.id,
+            due_date: inv.due_date,
+            amount_total: parseFloat(inv.amount_total || 0),
+            balance_due: parseFloat(inv.balance_due || 0),
+            actualPaid: inv.actualPaid || 0,
+            status: inv.status
+          })))
+        }
       }
 
       // Get payments for this lease (already fetched in batch)

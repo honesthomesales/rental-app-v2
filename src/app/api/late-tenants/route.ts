@@ -212,6 +212,9 @@ export async function GET(request: Request) {
             actualPaid: inv.actualPaid || 0,
             status: inv.status
           })))
+          console.log(`Late Tenants API - ALL valid invoices for ${address} (before filtering):`, validInvoices.length)
+          console.log(`Late Tenants API - Invoices with recalculated balance for ${address}:`, invoicesWithRecalculatedBalance.length)
+          console.log(`Late Tenants API - Invoice IDs being counted:`, allUnpaidInvoices.map(inv => inv.id).join(', '))
         }
       }
 

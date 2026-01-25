@@ -589,6 +589,8 @@ return'<div class="s">'+l+'</div>';
                 balance_due: inv.balance_due,
                 status: inv.status
               })))
+              console.log(`Payments Page - Invoice IDs being counted:`, unpaidInvoices.map(inv => inv.id).join(', '))
+              console.log(`Payments Page - ALL invoices fetched (before filtering):`, invoices.length)
             }
 
             return {

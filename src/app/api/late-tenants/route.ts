@@ -241,6 +241,8 @@ export async function GET(request: Request) {
         totalAllOwed: totalAllOwedForLease, // Sum of ALL unpaid invoices (matches payments page)
         totalLateFees,
         totalLatePeriods,
+        unpaidInvoiceIds: allUnpaidInvoices.map(inv => inv.id), // Debug: invoice IDs being counted
+        unpaidInvoiceCount: allUnpaidInvoices.length, // Debug: count of unpaid invoices
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

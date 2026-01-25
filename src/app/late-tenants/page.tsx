@@ -77,8 +77,11 @@ export default function LateTenantsPage() {
           totalAllOwed: mainStTenant.totalAllOwed,
           totalOwedLate: mainStTenant.totalOwedLate,
           unpaidCount: mainStTenant.lateInvoices?.length || 0,
+          unpaidInvoiceCount: mainStTenant.unpaidInvoiceCount,
+          unpaidInvoiceIds: mainStTenant.unpaidInvoiceIds,
           address: mainStTenant.property?.address
         })
+        console.log('🔍 Late Tenants API - Invoice IDs being counted:', mainStTenant.unpaidInvoiceIds?.join(', ') || 'none')
       }
       
       setAllLateTenants(data?.rows || [])

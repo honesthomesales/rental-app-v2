@@ -47,7 +47,14 @@ export default function LateTenantsPage() {
   const fetchLateTenants = async () => {
     try {
       console.log('Fetching late tenants...')
-      const response = await fetch('/api/late-tenants')
+      // Add cache-busting timestamp to ensure fresh data
+      const timestamp = new Date().getTime()
+      const response = await fetch(`/api/late-tenants?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      })
       console.log('Late tenants response status:', response.status)
       
       if (!response.ok) {
@@ -59,6 +66,21 @@ export default function LateTenantsPage() {
       const data = await response.json()
       console.log('📥 API Response:', data?.rows?.length, 'tenants loaded')
       console.log('📥 Sample tenant:', data?.rows?.[0])
+      
+      // Find and log the specific tenant for debugging
+      const mainStTenant = data?.rows?.find((t: any) => 
+        t.property?.address?.toLowerCase().includes('5667') || 
+        t.property?.address?.toLowerCase().includes('main')
+      )
+      if (mainStTenant) {
+        console.log('🔍 5667 N Main St tenant data:', {
+          totalAllOwed: mainStTenant.totalAllOwed,
+          totalOwedLate: mainStTenant.totalOwedLate,
+          unpaidCount: mainStTenant.lateInvoices?.length || 0,
+          address: mainStTenant.property?.address
+        })
+      }
+      
       setAllLateTenants(data?.rows || [])
       setSummary(data?.summary || {
         lateLeases: 0,

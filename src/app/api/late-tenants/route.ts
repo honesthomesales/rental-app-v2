@@ -274,10 +274,30 @@ export async function GET(request: Request) {
 
     console.log('Late tenants summary:', summary)
     console.log('Late tenants rows:', lateTenantsRows.length)
+    
+    // Log specific tenant for debugging
+    const mainStRow = lateTenantsRows.find(row => 
+      row.property?.address?.toLowerCase().includes('5667') || 
+      row.property?.address?.toLowerCase().includes('main')
+    )
+    if (mainStRow) {
+      console.log('🔍 5667 N Main St in API response:', {
+        totalAllOwed: mainStRow.totalAllOwed,
+        totalOwedLate: mainStRow.totalOwedLate,
+        unpaidCount: mainStRow.lateInvoices?.length || 0,
+        address: mainStRow.property?.address
+      })
+    }
 
     return NextResponse.json({
       summary,
       rows: lateTenantsRows
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     })
   } catch (error) {
     console.error('Error in late tenants API:', error)

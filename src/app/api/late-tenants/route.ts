@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 
-// Cache this route for 30 seconds to improve performance
-export const revalidate = 30
+// Cache this route for 0 seconds to ensure fresh data (disable caching for debugging)
+export const revalidate = 0
 
 /**
  * Late Tenants API
@@ -198,6 +198,11 @@ export async function GET(request: Request) {
       const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.balance_due as any || 0), 0
       )
+      
+      // Debug logging to compare with payments page
+      if (totalAllOwedForLease > 0) {
+        console.log(`Lease ${lease.id} (${lease.RENT_properties?.address || 'unknown'}): totalAllOwed=${totalAllOwedForLease}, unpaidCount=${allUnpaidInvoices.length}, lateCount=${lateInvoices.length}`)
+      }
 
       // Get payments for this lease (already fetched in batch)
       const payments = paymentsByLease.get(lease.id) || []

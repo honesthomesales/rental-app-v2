@@ -4,8 +4,8 @@
 -- First, find the lease for "5667 N Main St"
 WITH property_lease AS (
   SELECT l.id as lease_id, l.lease_start_date, l.property_id, p.address
-  FROM RENT_leases l
-  JOIN RENT_properties p ON l.property_id = p.id
+  FROM "RENT_leases" l
+  JOIN "RENT_properties" p ON l.property_id = p.id
   WHERE (LOWER(p.address) LIKE '%5667%' OR LOWER(p.address) LIKE '%main%')
     AND l.status = 'active'
   LIMIT 1
@@ -22,7 +22,7 @@ all_invoices AS (
     i.amount_paid as original_amount_paid,
     pl.lease_start_date,
     pl.address
-  FROM RENT_invoices i
+  FROM "RENT_invoices" i
   JOIN property_lease pl ON i.lease_id = pl.lease_id
   WHERE i.due_date <= CURRENT_DATE
 ),
@@ -33,7 +33,7 @@ invoices_with_actual_payments AS (
     COALESCE(SUM(p.amount), 0) as actual_paid_from_payments,
     ai.amount_total - COALESCE(SUM(p.amount), 0) as recalculated_balance_due
   FROM all_invoices ai
-  LEFT JOIN RENT_payments p ON p.invoice_id = ai.invoice_id
+  LEFT JOIN "RENT_payments" p ON p.invoice_id = ai.invoice_id
   GROUP BY ai.invoice_id, ai.lease_id, ai.due_date, ai.status, ai.amount_total, 
            ai.original_balance_due, ai.original_amount_paid, ai.lease_start_date, ai.address
 ),

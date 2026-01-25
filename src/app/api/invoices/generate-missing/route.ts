@@ -105,7 +105,7 @@ export async function POST(request: Request) {
       endDateObj.setHours(23, 59, 59, 999)
       const current = new Date(start)
       
-      while (current <= end) {
+      while (current <= endDateObj) {
         const dueDate = current.toISOString().split('T')[0]
         
         // Only create invoice if due date is on/after lease start and up to end date
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
       endDateObj.setHours(23, 59, 59, 999)
       const current = new Date(start)
       
-      while (current <= end) {
+      while (current <= endDateObj) {
         const dueDate = current.toISOString().split('T')[0]
         
         if (dueDate >= leaseStartDate && dueDate <= endDate && !existingDueDates.has(dueDate)) {

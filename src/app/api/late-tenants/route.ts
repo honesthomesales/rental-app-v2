@@ -163,15 +163,22 @@ export async function GET(request: Request) {
         return isPastDue && hasBalance && isOpen
       })
 
-      // Add to total all owed - EXACT same calculation as payments page
-      // Calculate total owed from unpaid invoices using recalculated balance_due (matching payments page logic)
-      totalAllOwed += allUnpaidInvoices.reduce((sum, invoice) => 
+      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as payments page
+      // This matches the payments page "Total Owed" calculation
+      // Use recalculated balance_due (from actual payment totals)
+      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.balance_due as any || 0), 0
       )
 
       if (lateInvoices.length === 0) {
-        continue // Skip if no late invoices
+        // Even if no late invoices, we still want to track totalAllOwed for the summary
+        // But don't create a row if there are no late invoices
+        totalAllOwed += totalAllOwedForLease
+        continue // Skip creating row if no late invoices
       }
+      
+      // Add to total all owed summary - EXACT same calculation as payments page
+      totalAllOwed += totalAllOwedForLease
 
       // Calculate days late for the oldest late invoice
       const oldestLateInvoice = lateInvoices.reduce((oldest, current) => {
@@ -191,13 +198,6 @@ export async function GET(request: Request) {
         sum + parseFloat(invoice.amount_late || 0), 0
       )
       const totalLatePeriods = lateInvoices.length
-
-      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as payments page
-      // This matches the payments page "Total Owed" calculation
-      // Use recalculated balance_due (from actual payment totals)
-      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.balance_due as any || 0), 0
-      )
       
       // Debug logging to compare with payments page
       if (totalAllOwedForLease > 0) {

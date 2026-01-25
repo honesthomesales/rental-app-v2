@@ -387,8 +387,17 @@ export async function GET(request: Request) {
         totalAllOwed: mainStRow.totalAllOwed,
         totalOwedLate: mainStRow.totalOwedLate,
         unpaidCount: mainStRow.lateInvoices?.length || 0,
-        address: mainStRow.property?.address
+        unpaidInvoiceCount: mainStRow.unpaidInvoiceCount,
+        unpaidInvoiceIdsUniqueCount: mainStRow.unpaidInvoiceIdsUniqueCount,
+        address: mainStRow.property?.address,
+        invoiceIds: mainStRow.unpaidInvoiceIds,
+        uniqueInvoiceIds: mainStRow.unpaidInvoiceIdsUnique
       })
+      
+      // Check if there are duplicates
+      if (mainStRow.unpaidInvoiceCount !== mainStRow.unpaidInvoiceIdsUniqueCount) {
+        console.error(`⚠️ DUPLICATE DETECTED: unpaidInvoiceCount=${mainStRow.unpaidInvoiceCount}, uniqueCount=${mainStRow.unpaidInvoiceIdsUniqueCount}`)
+      }
     }
 
     return NextResponse.json({

@@ -159,6 +159,12 @@ export async function GET(request: Request) {
       )
       const totalLatePeriods = lateInvoices.length
 
+      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as payments page
+      // This matches the payments page "Total Owed" calculation
+      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
+        sum + parseFloat(invoice.balance_due as any || 0), 0
+      )
+
       // Get payments for this lease (already fetched in batch)
       const payments = paymentsByLease.get(lease.id) || []
 
@@ -178,7 +184,8 @@ export async function GET(request: Request) {
           late_fee_amount: lease.late_fee_amount
         },
         daysLate,
-        totalOwedLate: totalLateAmount,
+        totalOwedLate: totalLateAmount, // Sum of late invoices only
+        totalAllOwed: totalAllOwedForLease, // Sum of ALL unpaid invoices (matches payments page)
         totalLateFees,
         totalLatePeriods,
         lateInvoices: lateInvoices.map(invoice => ({

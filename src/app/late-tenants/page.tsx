@@ -950,7 +950,7 @@ export default function LateTenantsPage() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <div className="text-red-600 font-medium">Amount Owed</div>
-                        <div className="text-gray-900">${selectedTenantInfo?.totalOwedLate?.toLocaleString() || '0'}</div>
+                        <div className="text-gray-900">${selectedTenantInfo?.totalAllOwed?.toLocaleString() || selectedTenantInfo?.totalOwedLate?.toLocaleString() || '0'}</div>
                       </div>
                       <div>
                         <div className="text-red-600 font-medium">Date Owed</div>

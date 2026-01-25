@@ -504,14 +504,15 @@ return'<div class="s">'+l+'</div>';
                       }
                     })
                     
-                    // Filter unpaid invoices using recalculated balance_due (matching late tenants API logic)
+                    // Filter unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
+                    // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants API logic)
                     const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-                      inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
+                      inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
                     )
                     
-                    // Calculate total owed from unpaid invoices using recalculated balance_due
+                    // Calculate total owed from unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
                     const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
-                      sum + parseFloat(inv.balance_due as any), 0
+                      sum + parseFloat(inv.balance_due as any || 0), 0
                     )
                     
                     const totalUnpaidCount = unpaidInvoices.length
@@ -565,15 +566,15 @@ return'<div class="s">'+l+'</div>';
               }
             })
             
-            // Filter unpaid invoices using recalculated balance_due (matching late tenants API logic)
-            // Only count invoices with status='OPEN' and balance_due > 0
+            // Filter unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
+            // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants API logic)
             const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-              inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
+              inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
             )
             
-            // Calculate total owed from unpaid invoices using recalculated balance_due
+            // Calculate total owed from unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
             const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
-              sum + parseFloat(inv.balance_due as any), 0
+              sum + parseFloat(inv.balance_due as any || 0), 0
             )
             
             const totalUnpaidCount = unpaidInvoices.length

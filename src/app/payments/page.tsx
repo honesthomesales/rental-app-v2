@@ -446,6 +446,12 @@ return'<div class="s">'+l+'</div>';
             const invoicesData = await invoicesResponse.json()
             const invoices = Array.isArray(invoicesData) ? invoicesData : []
             
+            // Filter invoices within lease start date range (matching late tenants logic)
+            const leaseStartDate = leaseData.lease_start_date
+            const validInvoices = invoices.filter((invoice: Invoice) => 
+              !leaseStartDate || invoice.due_date >= leaseStartDate
+            )
+            
             // Automatically generate missing invoices up to 3 months ahead
             // This ensures invoices always exist without needing virtual invoices
             try {
@@ -463,12 +469,14 @@ return'<div class="s">'+l+'</div>';
                   if (refreshResponse.ok) {
                     const refreshData = await refreshResponse.json()
                     const refreshedInvoices = Array.isArray(refreshData) ? refreshData : []
-                    // Use refreshed invoices
-                    const allInvoices = refreshedInvoices
+                    // Filter by lease_start_date (matching late tenants logic)
+                    const refreshedValidInvoices = refreshedInvoices.filter((invoice: Invoice) => 
+                      !leaseStartDate || invoice.due_date >= leaseStartDate
+                    )
                     
                     // Filter unpaid invoices (only real invoices now)
-                    // Only count invoices with status='OPEN' and balance_due > 0
-                    const unpaidInvoices = allInvoices.filter((inv: Invoice) => 
+                    // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants logic)
+                    const unpaidInvoices = refreshedValidInvoices.filter((inv: Invoice) => 
                       inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
                     )
                     
@@ -496,8 +504,8 @@ return'<div class="s">'+l+'</div>';
             
             // Use existing invoices (no virtual invoices - all are real database records)
             // Filter unpaid invoices
-            // Only count invoices with status='OPEN' and balance_due > 0
-            const unpaidInvoices = invoices.filter((inv: Invoice) => 
+            // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants logic)
+            const unpaidInvoices = validInvoices.filter((inv: Invoice) => 
               inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
             )
             

@@ -82,9 +82,10 @@ export async function GET(request: Request) {
         console.log('Successfully fetched', payments?.length || 0, 'payments')
         
         if (payments && payments.length > 0) {
-          // Sum all payments as rent collected
+          // Sum all payments as rent collected - EXACT same calculation as payments page
+          // Only payments with invoice_id are included (matching payments page logic)
           rentCollected = payments.reduce((sum, payment: any) => {
-            return sum + (Number(payment.amount) || 0)
+            return sum + (parseFloat(payment.amount) || 0)
           }, 0)
         }
       }
@@ -282,7 +283,8 @@ export async function GET(request: Request) {
           const paymentsByPropertyMap = new Map<string, number>()
           paymentsByProperty?.forEach((p: any) => {
             const propId = p.property_id || 'no-property'
-            paymentsByPropertyMap.set(propId, (paymentsByPropertyMap.get(propId) || 0) + (Number(p.amount) || 0))
+            // Use parseFloat to match payments page calculation exactly
+            paymentsByPropertyMap.set(propId, (paymentsByPropertyMap.get(propId) || 0) + (parseFloat(p.amount) || 0))
           })
           
           const invoicesByPropertyMap = new Map<string, number>()
@@ -388,7 +390,8 @@ export async function GET(request: Request) {
           .gte('payment_date', pastStartOfMonth)
           .lte('payment_date', pastEndOfMonth)
         
-        const pastRentCollected = pastPayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0
+        // Use parseFloat to match payments page calculation exactly
+        const pastRentCollected = pastPayments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0
         
         // Fetch misc income for that month
         const { data: pastMiscIncome } = await supabaseServer

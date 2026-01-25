@@ -16,7 +16,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const todayParam = searchParams.get('today')
     const today = todayParam || new Date().toISOString().split('T')[0]
-    const todayDate = new Date(today)
+    const todayDate = new Date(today + 'T12:00:00')
+    todayDate.setHours(0, 0, 0, 0)
     
     console.log('Fetching late tenants for date:', today)
     
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     }
 
     // OPTIMIZED: Batch fetch all invoices for all active leases in a single query
+    // EXACT same filtering as payments page: invoices up to today
     const leaseIds = leases.map(lease => lease.id)
     const leaseStartDates = new Map(leases.map(lease => [lease.id, lease.lease_start_date]))
     
@@ -57,7 +59,7 @@ export async function GET(request: Request) {
       .from('RENT_invoices')
       .select('*')
       .in('lease_id', leaseIds)
-      .lte('due_date', today)
+      .lte('due_date', today)  // Same as payments page: /api/invoices?leaseId=...&to=${today}
       .order('due_date', { ascending: false })
 
     if (invoicesError) {
@@ -111,22 +113,28 @@ export async function GET(request: Request) {
         !leaseStartDate || invoice.due_date >= leaseStartDate
       )
 
-      // Find all unpaid invoices (like dashboard) - status = 'OPEN' AND balance_due > 0
+      // Find all unpaid invoices - EXACT same logic as payments page
+      // Only count invoices with status='OPEN' and balance_due > 0 (matching payments page logic)
       const allUnpaidInvoices = validInvoices.filter(invoice => 
-        invoice.status === 'OPEN' && parseFloat(invoice.balance_due || 0) > 0
+        invoice.status === 'OPEN' && parseFloat(invoice.balance_due as any || 0) > 0
       )
 
-      // Find late invoices (due before today and not fully paid) - same logic as payments page
+      // Find late invoices (due before today and not fully paid) - EXACT same logic as payments page
+      // Must also check status='OPEN' to match payments page logic
       const lateInvoices = validInvoices.filter(invoice => {
-        const dueDate = new Date(invoice.due_date)
+        // Use same date normalization as payments page
+        const dueDate = new Date(invoice.due_date + 'T12:00:00')
+        dueDate.setHours(0, 0, 0, 0)
         const isPastDue = dueDate < todayDate
-        const hasBalance = parseFloat(invoice.balance_due || 0) > 0
-        return isPastDue && hasBalance
+        const hasBalance = parseFloat(invoice.balance_due as any || 0) > 0
+        const isOpen = invoice.status === 'OPEN'
+        return isPastDue && hasBalance && isOpen
       })
 
-      // Add to total all owed (like dashboard)
+      // Add to total all owed - EXACT same calculation as payments page
+      // Calculate total owed from unpaid invoices (matching payments page logic)
       totalAllOwed += allUnpaidInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.balance_due || 0), 0
+        sum + parseFloat(invoice.balance_due as any || 0), 0
       )
 
       if (lateInvoices.length === 0) {
@@ -142,9 +150,9 @@ export async function GET(request: Request) {
       
       const daysLate = Math.floor((todayDate.getTime() - new Date(oldestLateInvoice.due_date).getTime()) / (1000 * 60 * 60 * 24))
       
-      // Calculate totals using the same logic as payments page
+      // Calculate totals using EXACT same logic as payments page
       const totalLateAmount = lateInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.balance_due || 0), 0
+        sum + parseFloat(invoice.balance_due as any || 0), 0
       )
       const totalLateFees = lateInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.amount_late || 0), 0

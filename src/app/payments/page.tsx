@@ -474,13 +474,42 @@ return'<div class="s">'+l+'</div>';
                       !leaseStartDate || invoice.due_date >= leaseStartDate
                     )
                     
-                    // Filter unpaid invoices (only real invoices now)
-                    // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants logic)
-                    const unpaidInvoices = refreshedValidInvoices.filter((inv: Invoice) => 
+                    // Fetch payments for this lease to recalculate balance_due (matching late tenants API logic)
+                    const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseData.id}`)
+                    const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
+                    const payments = Array.isArray(paymentsData) ? paymentsData : []
+                    
+                    // Group payments by invoice_id to calculate actual paid amounts
+                    const paymentsByInvoice = new Map<string, any[]>()
+                    payments.forEach((payment: any) => {
+                      if (payment.invoice_id) {
+                        if (!paymentsByInvoice.has(payment.invoice_id)) {
+                          paymentsByInvoice.set(payment.invoice_id, [])
+                        }
+                        paymentsByInvoice.get(payment.invoice_id)!.push(payment)
+                      }
+                    })
+                    
+                    // Recalculate balance_due using actual payment totals (EXACT same as late tenants API)
+                    const invoicesWithRecalculatedBalance = refreshedValidInvoices.map((invoice: Invoice) => {
+                      const linkedPayments = paymentsByInvoice.get(invoice.id) || []
+                      const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
+                        sum + parseFloat(payment.amount || 0), 0
+                      )
+                      const amountTotal = parseFloat(invoice.amount_total as any || 0)
+                      const recalculatedBalanceDue = amountTotal - actualPaid
+                      return {
+                        ...invoice,
+                        balance_due: recalculatedBalanceDue
+                      }
+                    })
+                    
+                    // Filter unpaid invoices using recalculated balance_due (matching late tenants API logic)
+                    const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
                       inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
                     )
                     
-                    // Calculate total owed from unpaid invoices
+                    // Calculate total owed from unpaid invoices using recalculated balance_due
                     const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
                       sum + parseFloat(inv.balance_due as any), 0
                     )
@@ -502,14 +531,47 @@ return'<div class="s">'+l+'</div>';
               // Continue with existing invoices if generation fails
             }
             
-            // Use existing invoices (no virtual invoices - all are real database records)
-            // Filter unpaid invoices
-            // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants logic)
-            const unpaidInvoices = validInvoices.filter((inv: Invoice) => 
+            // Fetch payments for this lease to recalculate balance_due (matching late tenants API logic)
+            const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseData.id}`)
+            const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
+            const payments = Array.isArray(paymentsData) ? paymentsData : []
+            
+            // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)
+            const paymentsByInvoice = new Map<string, any[]>()
+            payments.forEach((payment: any) => {
+              if (payment.invoice_id) {
+                if (!paymentsByInvoice.has(payment.invoice_id)) {
+                  paymentsByInvoice.set(payment.invoice_id, [])
+                }
+                paymentsByInvoice.get(payment.invoice_id)!.push(payment)
+              }
+            })
+            
+            // Recalculate balance_due using actual payment totals (EXACT same as late tenants API)
+            const invoicesWithRecalculatedBalance = validInvoices.map((invoice: Invoice) => {
+              // Get actual payments linked to this invoice
+              const linkedPayments = paymentsByInvoice.get(invoice.id) || []
+              const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
+                sum + parseFloat(payment.amount || 0), 0
+              )
+              
+              // Recalculate balance_due using actual paid amount (matching late tenants API logic)
+              const amountTotal = parseFloat(invoice.amount_total as any || 0)
+              const recalculatedBalanceDue = amountTotal - actualPaid
+              
+              return {
+                ...invoice,
+                balance_due: recalculatedBalanceDue // Use recalculated balance
+              }
+            })
+            
+            // Filter unpaid invoices using recalculated balance_due (matching late tenants API logic)
+            // Only count invoices with status='OPEN' and balance_due > 0
+            const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
               inv.status === 'OPEN' && parseFloat(inv.balance_due as any) > 0
             )
             
-            // Calculate total owed from unpaid invoices
+            // Calculate total owed from unpaid invoices using recalculated balance_due
             const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
               sum + parseFloat(inv.balance_due as any), 0
             )

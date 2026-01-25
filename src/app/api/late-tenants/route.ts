@@ -36,6 +36,30 @@ export async function GET(request: Request) {
     }
 
     console.log('Found active leases:', leases?.length || 0)
+    
+    // Check for multiple leases per property (could cause double counting)
+    const leasesByProperty = new Map<string, any[]>()
+    leases?.forEach(lease => {
+      const propertyId = lease.property_id
+      if (!leasesByProperty.has(propertyId)) {
+        leasesByProperty.set(propertyId, [])
+      }
+      leasesByProperty.get(propertyId)!.push(lease)
+    })
+    
+    // Log properties with multiple leases
+    const propertiesWithMultipleLeases = Array.from(leasesByProperty.entries())
+      .filter(([propertyId, leaseList]) => leaseList.length > 1)
+      .map(([propertyId, leaseList]) => ({
+        propertyId,
+        leaseCount: leaseList.length,
+        leaseIds: leaseList.map(l => l.id),
+        address: leaseList[0]?.RENT_properties?.address
+      }))
+    
+    if (propertiesWithMultipleLeases.length > 0) {
+      console.log('⚠️ PROPERTIES WITH MULTIPLE ACTIVE LEASES:', propertiesWithMultipleLeases)
+    }
 
     if (!leases || leases.length === 0) {
       return NextResponse.json({
@@ -85,6 +109,22 @@ export async function GET(request: Request) {
     // Group payments by invoice_id to calculate actual paid amounts (matching payments page logic)
     const paymentsByInvoice = new Map<string, any[]>()
     
+    // Check for duplicate invoice IDs in the raw query result
+    const invoiceIdCounts = new Map<string, number>()
+    allInvoices?.forEach(invoice => {
+      const count = invoiceIdCounts.get(invoice.id) || 0
+      invoiceIdCounts.set(invoice.id, count + 1)
+    })
+    
+    // Log any duplicate invoice IDs found
+    const duplicateInvoiceIds = Array.from(invoiceIdCounts.entries())
+      .filter(([id, count]) => count > 1)
+      .map(([id, count]) => ({ id, count }))
+    
+    if (duplicateInvoiceIds.length > 0) {
+      console.error('⚠️ DUPLICATE INVOICE IDs FOUND IN QUERY RESULT:', duplicateInvoiceIds)
+    }
+    
     allInvoices?.forEach(invoice => {
       const leaseId = invoice.lease_id
       if (!invoicesByLease.has(leaseId)) {
@@ -92,6 +132,28 @@ export async function GET(request: Request) {
       }
       invoicesByLease.get(leaseId)!.push(invoice)
     })
+    
+    // Log invoice grouping for debugging
+    console.log(`Grouped ${allInvoices?.length || 0} invoices across ${invoicesByLease.size} leases`)
+    
+    // Check if any invoice ID appears in multiple lease groups (shouldn't happen)
+    const invoiceIdToLeaseIds = new Map<string, string[]>()
+    invoicesByLease.forEach((invoiceList, leaseId) => {
+      invoiceList.forEach(invoice => {
+        if (!invoiceIdToLeaseIds.has(invoice.id)) {
+          invoiceIdToLeaseIds.set(invoice.id, [])
+        }
+        invoiceIdToLeaseIds.get(invoice.id)!.push(leaseId)
+      })
+    })
+    
+    const invoicesInMultipleLeases = Array.from(invoiceIdToLeaseIds.entries())
+      .filter(([invoiceId, leaseIds]) => leaseIds.length > 1)
+      .map(([invoiceId, leaseIds]) => ({ invoiceId, leaseIds }))
+    
+    if (invoicesInMultipleLeases.length > 0) {
+      console.error('⚠️ INVOICES APPEARING IN MULTIPLE LEASE GROUPS:', invoicesInMultipleLeases)
+    }
 
     allPayments?.forEach(payment => {
       const leaseId = payment.lease_id
@@ -116,6 +178,16 @@ export async function GET(request: Request) {
     for (const lease of leases) {
       // Get invoices for this lease (already filtered by date range)
       const invoices = invoicesByLease.get(lease.id) || []
+      
+      // Verify all invoices belong to this lease (safety check)
+      const invoicesWithWrongLease = invoices.filter(inv => inv.lease_id !== lease.id)
+      if (invoicesWithWrongLease.length > 0) {
+        console.error(`⚠️ INVOICES WITH MISMATCHED lease_id for lease ${lease.id}:`, invoicesWithWrongLease.map(inv => ({
+          invoice_id: inv.id,
+          invoice_lease_id: inv.lease_id,
+          expected_lease_id: lease.id
+        })))
+      }
       
       // Filter invoices within lease start date range
       const leaseStartDate = leaseStartDates.get(lease.id)
@@ -204,7 +276,24 @@ export async function GET(request: Request) {
         const address = lease.RENT_properties?.address || 'unknown'
         console.log(`Late Tenants API - Lease ${lease.id} (${address}): totalAllOwed=${totalAllOwedForLease}, unpaidCount=${allUnpaidInvoices.length}, lateCount=${lateInvoices.length}, validInvoices=${validInvoices.length}`)
         if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
-          console.log(`Late Tenants API - Unpaid invoices for ${address}:`, allUnpaidInvoices.map(inv => ({
+          console.log(`🔍 Late Tenants API - DETAILED DEBUG for ${address}:`)
+          console.log(`  - Lease ID: ${lease.id}`)
+          console.log(`  - Property ID: ${lease.property_id}`)
+          console.log(`  - Total invoices fetched for lease: ${invoices.length}`)
+          console.log(`  - Valid invoices (after lease_start_date filter): ${validInvoices.length}`)
+          console.log(`  - Invoices with recalculated balance: ${invoicesWithRecalculatedBalance.length}`)
+          console.log(`  - All unpaid invoices (status=OPEN && balance_due>0): ${allUnpaidInvoices.length}`)
+          
+          // Check for duplicate invoice IDs in unpaid invoices
+          const unpaidInvoiceIds = allUnpaidInvoices.map(inv => inv.id)
+          const uniqueUnpaidIds = new Set(unpaidInvoiceIds)
+          if (unpaidInvoiceIds.length !== uniqueUnpaidIds.size) {
+            console.error(`  ⚠️ DUPLICATE INVOICE IDs IN UNPAID INVOICES! Total: ${unpaidInvoiceIds.length}, Unique: ${uniqueUnpaidIds.size}`)
+            const duplicateIds = unpaidInvoiceIds.filter((id, index) => unpaidInvoiceIds.indexOf(id) !== index)
+            console.error(`  - Duplicate IDs: ${duplicateIds.join(', ')}`)
+          }
+          
+          console.log(`  - Unpaid invoice details:`, allUnpaidInvoices.map(inv => ({
             id: inv.id,
             due_date: inv.due_date,
             amount_total: parseFloat(inv.amount_total || 0),
@@ -212,8 +301,13 @@ export async function GET(request: Request) {
             actualPaid: inv.actualPaid || 0,
             status: inv.status
           })))
-          console.log(`Late Tenants API - ALL valid invoices for ${address} (before filtering):`, validInvoices.length)
-          console.log(`Late Tenants API - Invoices with recalculated balance for ${address}:`, invoicesWithRecalculatedBalance.length)
+          console.log(`  - ALL valid invoices (before status/balance filter):`, validInvoices.map(inv => ({
+            id: inv.id,
+            due_date: inv.due_date,
+            status: inv.status,
+            balance_due_before_recalc: parseFloat(inv.balance_due || 0),
+            amount_total: parseFloat(inv.amount_total || 0)
+          })))
           console.log(`Late Tenants API - Invoice IDs being counted:`, allUnpaidInvoices.map(inv => inv.id).join(', '))
         }
       }
@@ -243,6 +337,9 @@ export async function GET(request: Request) {
         totalLatePeriods,
         unpaidInvoiceIds: allUnpaidInvoices.map(inv => inv.id), // Debug: invoice IDs being counted
         unpaidInvoiceCount: allUnpaidInvoices.length, // Debug: count of unpaid invoices
+        // Verify no duplicates in unpaidInvoiceIds
+        unpaidInvoiceIdsUnique: Array.from(new Set(allUnpaidInvoices.map(inv => inv.id))), // Unique IDs only
+        unpaidInvoiceIdsUniqueCount: new Set(allUnpaidInvoices.map(inv => inv.id)).size, // Unique count
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

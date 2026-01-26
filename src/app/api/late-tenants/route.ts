@@ -339,7 +339,16 @@ export async function GET(request: Request) {
         }))
         
         // Show all invoice IDs from invoices
-        allInvoiceIdsData = validInvoices.map((inv, idx) => ({
+        // CRITICAL: Only include invoices with due_date <= today (validation check)
+        const validInvoicesForDebug = validInvoices.filter(inv => {
+          const invDueDate = inv.due_date
+          const isFuture = invDueDate > today
+          if (isFuture) {
+            console.error(`  ⚠️ DEBUG: Excluding future invoice from debug output: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
+          }
+          return !isFuture
+        })
+        allInvoiceIdsData = validInvoicesForDebug.map((inv, idx) => ({
           index: idx + 1,
           invoice_id: inv.id,
           invoice_id_short: inv.id.substring(0, 8),
@@ -409,9 +418,20 @@ export async function GET(request: Request) {
         console.log(`  - First 10 invoice IDs that match payment invoice_ids: ${matchingPaymentIds.length} (${matchingPaymentIds.map(id => id.substring(0, 8)).join(', ')})`)
       }
       
+      // CRITICAL: Final check - ensure no future invoices before processing
+      // This is a safety check after the validation above
+      const finalValidInvoices = validInvoices.filter(inv => {
+        const invDueDate = inv.due_date
+        const isFuture = invDueDate > today
+        if (isFuture) {
+          console.error(`  ⚠️ FINAL CHECK: Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
+        }
+        return !isFuture
+      })
+      
       // Recalculate balance_due using actual payment totals - EXACT COPY from payments page
       // Payments page lines 551-567: Simple lookup by invoice_id, no allocation logic
-      const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
+      const invoicesWithRecalculatedBalance = finalValidInvoices.map(invoice => {
         // EXACT copy from payments page line 554
         const linkedPayments = paymentsByInvoice.get(invoice.id) || []
         // EXACT copy from payments page line 555-557

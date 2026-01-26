@@ -217,9 +217,20 @@ export async function GET(request: Request) {
 
       // Find all unpaid invoices - EXACT same logic as diagnostic endpoint line 94-96
       // Diagnostic endpoint: inv.status === 'OPEN' && parseFloat(inv.recalculatedBalanceDue as any || 0) > 0
-      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => 
-        invoice.status === 'OPEN' && parseFloat(invoice.recalculatedBalanceDue as any || 0) > 0
-      )
+      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
+        const recalcBalance = invoice.recalculatedBalanceDue
+        const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(recalcBalance as any || 0)
+        const isOpen = invoice.status === 'OPEN'
+        const hasBalance = balanceValue > 0
+        
+        // Debug for 5667 N Main St
+        const address = lease.RENT_properties?.address || ''
+        if ((address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) && isOpen) {
+          console.log(`  FILTER CHECK: Invoice ${invoice.id}, status=${invoice.status}, recalcBalance=${recalcBalance}, balanceValue=${balanceValue}, isOpen=${isOpen}, hasBalance=${hasBalance}, INCLUDED=${isOpen && hasBalance}`)
+        }
+        
+        return isOpen && hasBalance
+      })
 
       // Find late invoices (due before today and not fully paid)
       const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {

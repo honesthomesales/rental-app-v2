@@ -22,7 +22,17 @@ export async function GET(request: Request) {
     const todayDate = new Date(today + 'T12:00:00')
     todayDate.setHours(0, 0, 0, 0)
     
-    console.log('Fetching late tenants for date:', today)
+    console.log('🔍 ========== TODAY VALUE DEBUG ==========')
+    console.log(`  today param from URL: "${todayParam}"`)
+    console.log(`  today value used: "${today}"`)
+    console.log(`  today type: ${typeof today}`)
+    console.log(`  today length: ${today.length}`)
+    console.log(`  today char codes: ${Array.from(today).map(c => c.charCodeAt(0)).join(',')}`)
+    console.log(`  Current date (new Date().toISOString().split('T')[0]): "${new Date().toISOString().split('T')[0]}"`)
+    console.log(`  Comparison test: "2026-01-14" > "${today}" = ${"2026-01-14" > today}`)
+    console.log(`  Comparison test: "2025-12-17" > "${today}" = ${"2025-12-17" > today}`)
+    console.log(`  Comparison test: "2025-01-15" > "${today}" = ${"2025-01-15" > today}`)
+    console.log('🔍 ========== END TODAY VALUE DEBUG ==========')
     
     // Fetch active leases with property and tenant data
     const { data: leases, error: leasesError } = await supabaseServer
@@ -273,6 +283,28 @@ export async function GET(request: Request) {
       // 
       // IMPORTANT: The Payments page ONLY processes invoices returned by the API
       // which already filters due_date <= today. We must do the same here.
+      
+      // CRITICAL DEBUG: Log ALL invoice due dates and comparisons for this lease
+      if (isMainStProperty) {
+        console.log(`\n🔍 ========== INVOICE FILTER DEBUG FOR ${address} ==========`)
+        console.log(`  today="${today}" (type: ${typeof today}, length: ${today.length})`)
+        console.log(`  leaseStartDate="${leaseStartDate}"`)
+        console.log(`  Total invoices before filter: ${invoices.length}`)
+        console.log(`  Invoices with due dates:`)
+        invoices.forEach((inv, idx) => {
+          const rawDueDate = inv.due_date
+          const normalizedDueDate = String(rawDueDate || '').split('T')[0]
+          const isFuture = normalizedDueDate > today
+          const beforeLeaseStart = leaseStartDate && normalizedDueDate < leaseStartDate
+          console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
+          console.log(`        due_date raw: "${rawDueDate}" (type: ${typeof rawDueDate})`)
+          console.log(`        due_date normalized: "${normalizedDueDate}"`)
+          console.log(`        comparison: "${normalizedDueDate}" > "${today}" = ${isFuture}`)
+          console.log(`        before lease start: ${beforeLeaseStart}`)
+          console.log(`        will be ${isFuture || beforeLeaseStart ? 'EXCLUDED' : 'INCLUDED'}`)
+        })
+      }
+      
       const validInvoices = invoices.filter(invoice => {
         // CRITICAL: Normalize due_date to YYYY-MM-DD format for comparison
         const invoiceDueDate = String(invoice.due_date || '').split('T')[0]
@@ -295,6 +327,11 @@ export async function GET(request: Request) {
         
         return true
       })
+      
+      if (isMainStProperty) {
+        console.log(`  Total invoices after filter: ${validInvoices.length}`)
+        console.log(`🔍 ========== END INVOICE FILTER DEBUG ==========\n`)
+      }
       
       // CRITICAL VALIDATION: Ensure no future invoices passed the filter
       // This is a safety check - the filter above should have already excluded them

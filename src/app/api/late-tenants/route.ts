@@ -682,7 +682,7 @@ export async function GET(request: Request) {
         console.log(`  - Lease Start Date: ${lease.lease_start_date}`)
         console.log(`  - Total invoices fetched for this lease: ${invoices.length}`)
         console.log(`  - Valid invoices (after lease_start_date filter): ${validInvoices.length}`)
-        console.log(`  - Invoices with recalculated balance: ${invoicesWithRecalculatedBalance.length}`)
+        console.log(`  - Final valid invoices (after future date filter): ${finalValidInvoices.length}`)
         console.log(`  - All unpaid invoices (status=OPEN && recalculatedBalanceDue>0): ${allUnpaidInvoices.length}`)
         console.log(`  - Total All Owed for this lease: $${totalAllOwedForLease}`)
         
@@ -696,16 +696,16 @@ export async function GET(request: Request) {
         }
         
         // Show ALL invoices with their filter results
-        console.log(`\n  📋 ALL INVOICES FOR THIS LEASE (${validInvoices.length} total):`)
-        invoicesWithRecalculatedBalance.forEach((inv, idx) => {
+        console.log(`\n  📋 ALL INVOICES FOR THIS LEASE (${finalValidInvoices.length} total):`)
+        finalValidInvoices.forEach((inv: Invoice, idx: number) => {
           const balanceValue = parseFloat(inv.balance_due as any || 0)
           const isOpen = inv.status === 'OPEN'
           const hasBalance = balanceValue > 0
           const isIncluded = isOpen && hasBalance
           
           console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
-          console.log(`        Due: ${inv.due_date}, Status: ${inv.status}, Amount: $${parseFloat(inv.amount_total || 0)}`)
-          console.log(`        Recalculated Balance: $${balanceValue}, Is Open: ${isOpen}, Has Balance: ${hasBalance}`)
+          console.log(`        Due: ${inv.due_date}, Status: ${inv.status}, Amount: $${parseFloat(String(inv.amount_total || 0))}`)
+          console.log(`        Balance: $${balanceValue}, Is Open: ${isOpen}, Has Balance: ${hasBalance}`)
           console.log(`        ${isIncluded ? '✅ INCLUDED' : '❌ EXCLUDED'} in unpaid count`)
         })
         
@@ -753,8 +753,8 @@ export async function GET(request: Request) {
           due_date: invoice.due_date,
           period_start: invoice.period_start,
           period_end: invoice.period_end,
-          amount_total: parseFloat(invoice.amount_total || 0),
-          amount_paid: invoice.actualPaid || parseFloat(invoice.amount_paid || 0), // Use actual paid amount
+          amount_total: parseFloat(String(invoice.amount_total || 0)),
+          amount_paid: invoice.actualPaid || parseFloat(String(invoice.amount_paid || 0)), // Use actual paid amount
           balance_due: parseFloat(invoice.balance_due as any || 0), // Use balance_due - EXACT same as payments page
           amount_late: parseFloat(invoice.amount_late || 0),
           status: invoice.status,

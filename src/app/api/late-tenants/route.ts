@@ -198,6 +198,11 @@ export async function GET(request: Request) {
         !leaseStartDate || invoice.due_date >= leaseStartDate
       )
 
+      // Debug logging for 5667 N Main St - collect filter results for console output
+      const address = lease.RENT_properties?.address || 'unknown'
+      const filterCheckResults: any[] = []
+      const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
+
       // Recalculate balance_due using actual payment totals - EXACT same as diagnostic endpoint
       // Diagnostic endpoint line 81-91: uses recalculatedBalanceDue property (which we know works)
       const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
@@ -306,11 +311,7 @@ export async function GET(request: Request) {
       )
       const totalLatePeriods = lateInvoices.length
       
-      // Debug logging for 5667 N Main St - collect filter results for console output
-      const address = lease.RENT_properties?.address || 'unknown'
-      const filterCheckResults: any[] = []
-      const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
-      
+      // Debug logging for 5667 N Main St
       if (isMainStProperty) {
         console.log(`\n🔍 ========== DETAILED DEBUG for ${address} ==========`)
         console.log(`  - Lease ID: ${lease.id}`)

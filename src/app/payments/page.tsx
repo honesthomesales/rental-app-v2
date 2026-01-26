@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { XMarkIcon } from '@heroicons/react/24/outline'
+import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 
 interface Lease {
   id: string
@@ -49,6 +51,7 @@ interface LeaseRow {
   tenant: Tenant
   unpaidInvoicesCount: number
   totalOwed: number
+  lastPaidDate?: string | null
 }
 
 export default function PaymentsPage() {
@@ -99,6 +102,16 @@ export default function PaymentsPage() {
   const [newInvoiceDueDate, setNewInvoiceDueDate] = useState('')
   const [newInvoiceAmount, setNewInvoiceAmount] = useState('')
   const [creatingInvoice, setCreatingInvoice] = useState(false)
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
+  const [selectedTenantForGenerate, setSelectedTenantForGenerate] = useState<string>('')
+  const [selectedCounty, setSelectedCounty] = useState<string>('')
+  const [generatingForm, setGeneratingForm] = useState(false)
+  const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
+  const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
+  const [violationDescription, setViolationDescription] = useState('')
+  const [generatedForms, setGeneratedForms] = useState<any>(null)
+  const [showFormsModal, setShowFormsModal] = useState(false)
+  const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
 
   useEffect(() => {
     fetchLeases()
@@ -517,12 +530,24 @@ return'<div class="s">'+l+'</div>';
                     
                     const totalUnpaidCount = unpaidInvoices.length
 
+                    // Calculate last paid date from payments
+                    let lastPaidDate: string | null = null
+                    if (payments.length > 0) {
+                      const sortedPayments = [...payments].sort((a: any, b: any) => {
+                        const dateA = new Date(a.payment_date || 0).getTime()
+                        const dateB = new Date(b.payment_date || 0).getTime()
+                        return dateB - dateA // Sort descending (most recent first)
+                      })
+                      lastPaidDate = sortedPayments[0]?.payment_date || null
+                    }
+                    
                     return {
                       lease: leaseData,
                       property: leaseData.RENT_properties || {},
                       tenant: leaseData.RENT_tenants || {},
                       unpaidInvoicesCount: totalUnpaidCount,
-                      totalOwed
+                      totalOwed,
+                      lastPaidDate
                     }
                   }
                 }
@@ -536,6 +561,17 @@ return'<div class="s">'+l+'</div>';
             const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseData.id}`)
             const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
             const payments = Array.isArray(paymentsData) ? paymentsData : []
+            
+            // Calculate last paid date from payments
+            let lastPaidDate: string | null = null
+            if (payments.length > 0) {
+              const sortedPayments = [...payments].sort((a: any, b: any) => {
+                const dateA = new Date(a.payment_date || 0).getTime()
+                const dateB = new Date(b.payment_date || 0).getTime()
+                return dateB - dateA // Sort descending (most recent first)
+              })
+              lastPaidDate = sortedPayments[0]?.payment_date || null
+            }
             
             // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)
             const paymentsByInvoice = new Map<string, any[]>()
@@ -598,7 +634,8 @@ return'<div class="s">'+l+'</div>';
               property: leaseData.RENT_properties || {},
               tenant: leaseData.RENT_tenants || {},
               unpaidInvoicesCount: totalUnpaidCount,
-              totalOwed
+              totalOwed,
+              lastPaidDate
             }
           })
       )
@@ -1740,9 +1777,17 @@ return'<div class="s">'+l+'</div>';
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
-              <p className="text-gray-600">Track and manage rental payments</p>
+            <div className="flex items-center space-x-4">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
+                <p className="text-gray-600">Track and manage rental payments</p>
+              </div>
+              <button
+                onClick={() => setShowGenerateModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Generate Forms
+              </button>
             </div>
             <button
               onClick={() => setShowMiscIncomeModal(true)}
@@ -1801,7 +1846,7 @@ return'<div class="s">'+l+'</div>';
                 <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
                   <tr>
                     <th 
-                      className="px-6 py-4 text-left text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      className="px-4 py-4 text-left text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
                       onClick={() => handleSort('property')}
                     >
                       <div className="flex items-center space-x-2">
@@ -1810,7 +1855,7 @@ return'<div class="s">'+l+'</div>';
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-4 text-left text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      className="px-4 py-4 text-left text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
                       onClick={() => handleSort('tenant')}
                     >
                       <div className="flex items-center space-x-2">
@@ -1819,7 +1864,7 @@ return'<div class="s">'+l+'</div>';
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      className="px-4 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
                       onClick={() => handleSort('cadence')}
                     >
                       <div className="flex items-center justify-center space-x-2">
@@ -1827,20 +1872,23 @@ return'<div class="s">'+l+'</div>';
                         {getSortIcon('cadence')}
                       </div>
                     </th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold">
+                    <th className="px-4 py-4 text-center text-sm font-semibold">
                       Day Due
                     </th>
+                    <th className="px-3 py-4 text-center text-sm font-semibold">
+                      Last Paid
+                    </th>
                     <th 
-                      className="px-6 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      className="px-4 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
                       onClick={() => handleSort('unpaidInvoices')}
                     >
                       <div className="flex items-center justify-center space-x-2">
-                        <span>Unpaid Invoices</span>
+                        <span>Unpaid</span>
                         {getSortIcon('unpaidInvoices')}
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-4 text-right text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      className="px-4 py-4 text-right text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
                       onClick={() => handleSort('totalOwed')}
                     >
                       <div className="flex items-center justify-end space-x-2">
@@ -1848,7 +1896,7 @@ return'<div class="s">'+l+'</div>';
                         {getSortIcon('totalOwed')}
                       </div>
                     </th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold">Actions</th>
+                    <th className="px-4 py-4 text-center text-sm font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1859,24 +1907,31 @@ return'<div class="s">'+l+'</div>';
                         index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                       }`}
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4">
                         <div className="font-medium text-gray-900">{row.property?.name || 'Unknown'}</div>
                         <div className="text-sm text-gray-500">{row.property?.address}</div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4">
                         <div className="text-gray-900">{row.tenant?.full_name || `${row.tenant?.first_name} ${row.tenant?.last_name}`}</div>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-4 py-4 text-center">
                         <span className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
                           {normalizeCadence(row.lease.rent_cadence)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-4 py-4 text-center">
                         <span className="px-3 py-1 text-sm font-medium bg-gray-100 text-gray-800 rounded-full">
                           {row.lease.rent_due_day || 1}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-3 py-4 text-center">
+                        <span className="text-xs text-gray-600">
+                          {row.lastPaidDate 
+                            ? new Date(row.lastPaidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                            : 'Never'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-center">
                         <span className={`px-3 py-1 text-sm font-bold rounded-full ${
                           row.unpaidInvoicesCount > 0 
                             ? 'bg-red-100 text-red-800' 
@@ -1885,14 +1940,14 @@ return'<div class="s">'+l+'</div>';
                           {row.unpaidInvoicesCount}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 py-4 text-right">
                         <span className={`text-lg font-bold ${
                           row.totalOwed > 0 ? 'text-red-600' : 'text-green-600'
                         }`}>
                           ${row.totalOwed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-4 py-4 text-center">
                         <div className="flex justify-center space-x-2">
                           <button
                             onClick={() => handleViewInvoices(row)}
@@ -2985,10 +3040,352 @@ return'<div class="s">'+l+'</div>';
                             Approved
                           </span>
                         )}
-                      </div>
+      </div>
+
+      {/* Generate Forms Modal */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Generate Legal Forms</h2>
+              <button
+                onClick={() => {
+                  setShowGenerateModal(false)
+                  setSelectedTenantForGenerate('')
+                  setSelectedCounty('')
+                  setFormType('notice')
+                  setEjectmentReason('nonpayment')
+                  setViolationDescription('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Property / Tenant
+                </label>
+                <select
+                  value={selectedTenantForGenerate}
+                  onChange={(e) => setSelectedTenantForGenerate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select a property/tenant...</option>
+                  {leases.filter((row) => row.totalOwed > 0).map((row) => (
+                    <option key={row.lease.id} value={`${row.property.name} - ${row.tenant.full_name || `${row.tenant.first_name} ${row.tenant.last_name}`}`}>
+                      {row.property.name} - {row.tenant.full_name || `${row.tenant.first_name} ${row.tenant.last_name}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  County
+                </label>
+                <select
+                  value={selectedCounty}
+                  onChange={(e) => setSelectedCounty(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select county...</option>
+                  <option value="Spartanburg">Spartanburg</option>
+                  <option value="Greenville">Greenville</option>
+                  <option value="Anderson">Anderson</option>
+                  <option value="Cherokee">Cherokee</option>
+                  <option value="Union">Union</option>
+                  <option value="Saluda">Saluda</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Form Type
+                </label>
+                <select
+                  value={formType}
+                  onChange={(e) => setFormType(e.target.value as 'notice' | 'ejectment' | 'both')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="notice">7-Day Notice</option>
+                  <option value="ejectment">Application for Ejectment</option>
+                  <option value="both">Both (Notice + Ejectment)</option>
+                </select>
+              </div>
+
+              {(formType === 'ejectment' || formType === 'both') && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Reason for Ejectment
+                    </label>
+                    <select
+                      value={ejectmentReason}
+                      onChange={(e) => setEjectmentReason(e.target.value as 'nonpayment' | 'endtenancy' | 'violation')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="nonpayment">Tenant fails or refuses to pay rent when due</option>
+                      <option value="endtenancy">Term of tenancy or occupancy has ended</option>
+                      <option value="violation">Terms or conditions of the lease have been violated</option>
+                    </select>
+                  </div>
+
+                  {ejectmentReason === 'violation' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Description of Violation
+                      </label>
+                      <textarea
+                        value={violationDescription}
+                        onChange={(e) => setViolationDescription(e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Describe the lease violation..."
+                      />
                     </div>
-                  )
-                })}
+                  )}
+                </>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Download Format
+                </label>
+                <select
+                  value={downloadFormat}
+                  onChange={(e) => setDownloadFormat(e.target.value as 'pdf' | 'docx')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="pdf">PDF</option>
+                  <option value="docx">Word (DOCX)</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-gray-200 flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowGenerateModal(false)
+                    setSelectedTenantForGenerate('')
+                    setSelectedCounty('')
+                    setFormType('notice')
+                    setEjectmentReason('nonpayment')
+                    setViolationDescription('')
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!selectedTenantForGenerate || !selectedCounty) {
+                      alert('Please select a property/tenant and county')
+                      return
+                    }
+
+                    const tenant = leases.find((row) => 
+                      `${row.property.name} - ${row.tenant.full_name || `${row.tenant.first_name} ${row.tenant.last_name}`}` === selectedTenantForGenerate
+                    )
+                    if (!tenant) {
+                      alert('Selected tenant not found')
+                      return
+                    }
+
+                    if (formType === 'ejectment' || formType === 'both') {
+                      if (ejectmentReason === 'nonpayment' && !tenant.totalOwed) {
+                        alert('No amount owed found for this tenant')
+                        return
+                      }
+                      if (ejectmentReason === 'violation' && !violationDescription.trim()) {
+                        alert('Please provide a description of the lease violation')
+                        return
+                      }
+                    }
+
+                    try {
+                      setGeneratingForm(true)
+
+                      const response = await fetch('/api/generate-ejectment-forms', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          tenantId: selectedTenantForGenerate,
+                          county: selectedCounty,
+                          formType,
+                          ejectmentReason,
+                          violationDescription,
+                          leaseId: tenant.lease.id,
+                        }),
+                      })
+
+                      if (response.ok) {
+                        const forms = await response.json()
+                        setGeneratedForms(forms)
+                        setShowGenerateModal(false)
+                        setShowFormsModal(true)
+                      } else {
+                        const errorData = await response.json()
+                        alert(`Error generating forms: ${errorData.error || 'Unknown error'}`)
+                      }
+                    } catch (error) {
+                      console.error('Error generating forms:', error)
+                      alert('Failed to generate forms. Please try again.')
+                    } finally {
+                      setGeneratingForm(false)
+                    }
+                  }}
+                  disabled={generatingForm || !selectedTenantForGenerate || !selectedCounty}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {generatingForm ? 'Generating...' : 'Generate Forms'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generated Forms Display Modal */}
+      {showFormsModal && generatedForms && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Generated Forms</h2>
+              <button
+                onClick={() => {
+                  setShowFormsModal(false)
+                  setGeneratedForms(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-6">
+              {generatedForms.notice && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">7-Day Notice</h3>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.notice}</pre>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => {
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf')
+                        } else {
+                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx')
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download Notice ({downloadFormat.toUpperCase()})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {generatedForms.ejectment && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Application for Ejectment (SCCA/732)</h3>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
+                  </div>
+                  <div className="mt-3 flex justify-end space-x-2">
+                    {generatedForms.ejectmentHTML && (
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([generatedForms.ejectmentHTML], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Application-for-Ejectment.html'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View HTML
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.ejectment, 'Application-for-Ejectment.pdf', generatedForms.ejectmentHTML)
+                        } else {
+                          downloadAsWord(generatedForms.ejectment, 'Application-for-Ejectment.docx')
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download ({downloadFormat.toUpperCase()})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {generatedForms.affidavit && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Affidavit of Item of Account (SCCA/716)</h3>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.affidavit}</pre>
+                  </div>
+                  <div className="mt-3 flex justify-end space-x-2">
+                    {generatedForms.affidavitHTML && (
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([generatedForms.affidavitHTML], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Affidavit-of-Item-of-Account.html'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View HTML
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.pdf', generatedForms.affidavitHTML)
+                        } else {
+                          downloadAsWord(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.docx')
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download ({downloadFormat.toUpperCase()})
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowFormsModal(false)
+                  setGeneratedForms(null)
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})}
               </div>
             </div>
 

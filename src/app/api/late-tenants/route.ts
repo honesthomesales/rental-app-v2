@@ -737,8 +737,11 @@ export async function GET(request: Request) {
       version: API_VERSION,
       debug: {
         today,
+        todayType: typeof today,
         totalInvoicesFetched: allInvoices?.length || 0,
-        totalLeases: leases.length
+        totalInvoicesRaw: allInvoicesRaw?.length || 0,
+        totalLeases: leases.length,
+        currentDate: new Date().toISOString().split('T')[0]
       },
       summary,
       rows: lateTenantsRows

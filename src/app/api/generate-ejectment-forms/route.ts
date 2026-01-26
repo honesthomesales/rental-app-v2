@@ -183,21 +183,13 @@ Please contact us by text at 864-322-3432. We will respond by phone shortly.
 You must choose ONE of the following options:
 
 1) Voluntary Move-Out Agreement
-Sign paperwork agreeing to move out and surrender possession of the property, including turning over all keys.
-
-This option includes an agreement not to pursue collections and not to file a judgment,
-
-Provided the property is left in good condition.
+Sign paperwork agreeing to move out and surrender possession of the property, including turning over all keys. This option includes an agreement not to pursue collections and not to file a judgment, provided the property is left in good condition.
 
 2) Payment in Full
 Make payment in full to bring your rent account current.
 
 3) Eviction Proceedings
-If neither option above is completed, we will proceed with eviction.
-
-You will be responsible for all rent owed, court costs, and legal fees.
-
-We reserve the right to pursue any unpaid balance through a judgment.
+If neither option above is completed, we will proceed with eviction. You will be responsible for all rent owed, court costs, and legal fees. We reserve the right to pursue any unpaid balance through a judgment.
 
 **LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester

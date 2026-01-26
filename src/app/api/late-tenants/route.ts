@@ -212,6 +212,37 @@ export async function GET(request: Request) {
           sum + parseFloat(payment.amount || 0), 0
         )
         
+        // Debug for 5667 N Main St - show payment linking
+        if (isMainStProperty) {
+          console.log(`\n💰 PAYMENT CHECK for Invoice ${invoice.id.substring(0, 8)}...`)
+          console.log(`  - Invoice ID: ${invoice.id}`)
+          console.log(`  - Amount Total: $${parseFloat(invoice.amount_total || 0)}`)
+          console.log(`  - Linked Payments Count: ${linkedPayments.length}`)
+          if (linkedPayments.length > 0) {
+            console.log(`  - Payment Details:`, linkedPayments.map(p => ({
+              payment_id: p.id,
+              amount: p.amount,
+              invoice_id: p.invoice_id,
+              payment_date: p.payment_date
+            })))
+          } else {
+            // Check if payments exist but aren't linked
+            const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+            const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === invoice.id)
+            console.log(`  - ⚠️ NO PAYMENTS FOUND in paymentsByInvoice map`)
+            console.log(`  - Total payments for this lease: ${allPaymentsForLease.length}`)
+            console.log(`  - Payments with invoice_id=${invoice.id}: ${paymentsWithThisInvoiceId.length}`)
+            if (paymentsWithThisInvoiceId.length > 0) {
+              console.log(`  - ⚠️ PAYMENTS EXIST but not in map!`, paymentsWithThisInvoiceId.map(p => ({
+                payment_id: p.id,
+                amount: p.amount,
+                invoice_id: p.invoice_id
+              })))
+            }
+          }
+          console.log(`  - Actual Paid: $${actualPaid}`)
+        }
+        
         // Recalculate balance_due using actual paid amount (EXACT same as diagnostic endpoint line 83-84)
         const amountTotal = parseFloat(invoice.amount_total || 0)
         const recalculatedBalanceDue = amountTotal - actualPaid

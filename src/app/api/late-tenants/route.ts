@@ -343,9 +343,13 @@ export async function GET(request: Request) {
         // String comparison works for ISO date strings (YYYY-MM-DD format)
         // Example: "2026-01-14" > "2025-01-15" = true (correctly excludes future dates)
         // This MUST match the Payments page filter exactly
-        if (invoiceDueDate > today) {
+        const isFuture = invoiceDueDate > today
+        if (isFuture) {
           if (isMainStProperty) {
             console.error(`  ⚠️ FILTER: Excluding future invoice: ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > today="${today}"`)
+            console.error(`    Comparison: "${invoiceDueDate}" > "${today}" = ${isFuture}`)
+            console.error(`    invoiceDueDate type: ${typeof invoiceDueDate}, length: ${invoiceDueDate.length}`)
+            console.error(`    today type: ${typeof today}, length: ${today.length}`)
           }
           return false // Skip future invoices - they're not due yet
         }

@@ -129,6 +129,20 @@ export default function LateTenantsPage() {
           console.log(JSON.stringify(mainStTenant.paymentsMapData, null, 2))
           console.log('🗺️ ========== END PAYMENTS MAP ==========\n')
         }
+        
+        // Log invoice filter debug data - CRITICAL for understanding why filter isn't working
+        if (mainStTenant.invoiceFilterDebug) {
+          console.log('\n🔍 ========== INVOICE FILTER DEBUG (COPY THIS) ==========')
+          console.log(JSON.stringify(mainStTenant.invoiceFilterDebug, null, 2))
+          console.log('🔍 ========== END INVOICE FILTER DEBUG ==========\n')
+        }
+        
+        // Log API debug info
+        if (data?.debug) {
+          console.log('\n🔍 ========== API DEBUG INFO (COPY THIS) ==========')
+          console.log(JSON.stringify(data.debug, null, 2))
+          console.log('🔍 ========== END API DEBUG INFO ==========\n')
+        }
       }
       
       setAllLateTenants(data?.rows || [])

@@ -256,7 +256,21 @@ export async function GET(request: Request) {
 
     for (const lease of leases) {
       // Get invoices for this lease (already filtered by date range)
-      const invoices = invoicesByLease.get(lease.id) || []
+      let invoices = invoicesByLease.get(lease.id) || []
+      
+      // CRITICAL FIX: Filter out future invoices IMMEDIATELY before any processing
+      // This is a safety check to ensure no future invoices make it through
+      const currentDate = new Date().toISOString().split('T')[0]
+      const invoicesBeforeFutureFilter = invoices.length
+      invoices = invoices.filter(inv => {
+        const invDueDate = String(inv.due_date || '').split('T')[0]
+        const isFuture = invDueDate > currentDate
+        return !isFuture
+      })
+      if (invoicesBeforeFutureFilter !== invoices.length) {
+        console.error(`⚠️ CRITICAL: Filtered out ${invoicesBeforeFutureFilter - invoices.length} future invoices from lease ${lease.id} before processing`)
+        console.error(`  currentDate="${currentDate}", today="${today}"`)
+      }
       
       // Verify all invoices belong to this lease (safety check)
       const invoicesWithWrongLease = invoices.filter(inv => inv.lease_id !== lease.id)

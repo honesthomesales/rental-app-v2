@@ -208,11 +208,27 @@ export async function GET(request: Request) {
         })))
       }
       
-      // Filter invoices within lease start date range
+      // Filter invoices EXACTLY as Payments page does (lines 451-453):
+      // 1. Filter by due_date >= leaseStartDate
+      // 2. Only process invoices with due_date <= today (matching /api/invoices?to=${today})
       const leaseStartDate = leaseStartDates.get(lease.id)
-      const validInvoices = invoices.filter(invoice => 
-        !leaseStartDate || invoice.due_date >= leaseStartDate
-      )
+      const validInvoices = invoices.filter(invoice => {
+        const invoiceDueDate = invoice.due_date
+        
+        // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
+        // The Payments page fetches with /api/invoices?to=${today} which filters due_date <= today
+        // We must do the same filter here to match exactly
+        if (invoiceDueDate > today) {
+          return false // Skip future invoices - they're not due yet
+        }
+        
+        // Filter by due_date >= leaseStartDate (matching Payments page line 451-453)
+        if (leaseStartDate && invoiceDueDate < leaseStartDate) {
+          return false
+        }
+        
+        return true
+      })
 
       // Debug logging for 5667 N Main St - collect filter results for console output
       const address = lease.RENT_properties?.address || 'unknown'

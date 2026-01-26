@@ -273,24 +273,47 @@ export async function GET(request: Request) {
         })
       }
 
-      // Recalculate balance_due using actual payment totals - EXACT same as diagnostic endpoint
-      // Diagnostic endpoint line 81-91: uses recalculatedBalanceDue property (which we know works)
-      const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
-        // Get actual payments linked to this invoice
-        const linkedPayments = paymentsByInvoice.get(invoice.id) || []
-        const actualPaid = linkedPayments.reduce((sum, payment) => 
-          sum + parseFloat(payment.amount || 0), 0
-        )
+      // CRITICAL DEBUG: Verify paymentsByInvoice map before processing
+      if (isMainStProperty) {
+        console.log(`\n🔍 VERIFYING paymentsByInvoice MAP BEFORE PROCESSING:`)
+        console.log(`  - Total invoices to process: ${validInvoices.length}`)
+        console.log(`  - Total invoice IDs in paymentsByInvoice map: ${paymentsByInvoice.size}`)
+        const first10InvoiceIds = validInvoices.slice(0, 10).map(inv => inv.id)
+        console.log(`  - First 10 invoice IDs to check:`, first10InvoiceIds)
+        first10InvoiceIds.forEach(invId => {
+          const payments = paymentsByInvoice.get(invId) || []
+          console.log(`    - Invoice ${invId.substring(0, 8)}...: ${payments.length} payment(s) in map`)
+        })
+        // Check if any payments have invoice_ids that match these invoices
+        const allPaymentInvoiceIds = new Set<string>()
+        const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+        allPaymentsForLease.forEach(p => {
+          if (p.invoice_id) allPaymentInvoiceIds.add(p.invoice_id)
+        })
+        console.log(`  - All payment invoice_ids for this lease:`, Array.from(allPaymentInvoiceIds))
+        const matchingPaymentIds = first10InvoiceIds.filter(id => allPaymentInvoiceIds.has(id))
+        console.log(`  - First 10 invoice IDs that match payment invoice_ids: ${matchingPaymentIds.length} (${matchingPaymentIds.map(id => id.substring(0, 8)).join(', ')})`)
+      }
+      
+      // Recalculate balance_due using actual payment totals - EXACT COPY from diagnostic endpoint
+      // Diagnostic endpoint lines 80-91: This is the WORKING logic that shows 7 invoices correctly
+      const invoicesWithRecalculatedBalance = validInvoices.map(inv => {
+        // EXACT copy from diagnostic endpoint line 82-83
+        const linkedPayments = paymentsByInvoice.get(inv.id) || []
+        const actualPaid = linkedPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0)
+        
+        // EXACT copy from diagnostic endpoint line 84
+        const recalculatedBalanceDue = parseFloat(inv.amount_total || 0) - actualPaid
         
         // Debug for 5667 N Main St - show payment linking and collect for console
         if (isMainStProperty) {
           const allPaymentsForLease = paymentsByLease.get(lease.id) || []
-          const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === invoice.id)
+          const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === inv.id)
           
           const paymentCheck = {
-            invoiceId: invoice.id,
-            invoiceId_short: invoice.id.substring(0, 8) + '...',
-            amountTotal: parseFloat(invoice.amount_total || 0),
+            invoiceId: inv.id,
+            invoiceId_short: inv.id.substring(0, 8) + '...',
+            amountTotal: parseFloat(inv.amount_total || 0),
             linkedPaymentsCount: linkedPayments.length,
             actualPaid: actualPaid,
             paymentsInMap: linkedPayments.map(p => ({
@@ -306,47 +329,16 @@ export async function GET(request: Request) {
               amount: p.amount,
               invoice_id: p.invoice_id,
               invoice_id_type: typeof p.invoice_id,
-              invoice_id_matches: p.invoice_id === invoice.id,
-              invoice_id_strict_eq: p.invoice_id === invoice.id
+              invoice_id_matches: p.invoice_id === inv.id,
+              invoice_id_strict_eq: p.invoice_id === inv.id
             })) : []
           }
           paymentCheckResults.push(paymentCheck)
-          
-          console.log(`\n💰 PAYMENT CHECK for Invoice ${invoice.id.substring(0, 8)}...`)
-          console.log(`  - Invoice ID: ${invoice.id}`)
-          console.log(`  - Amount Total: $${parseFloat(invoice.amount_total || 0)}`)
-          console.log(`  - Linked Payments Count: ${linkedPayments.length}`)
-          if (linkedPayments.length > 0) {
-            console.log(`  - Payment Details:`, linkedPayments.map(p => ({
-              payment_id: p.id,
-              amount: p.amount,
-              invoice_id: p.invoice_id,
-              payment_date: p.payment_date
-            })))
-          } else {
-            console.log(`  - ⚠️ NO PAYMENTS FOUND in paymentsByInvoice map`)
-            console.log(`  - Total payments for this lease: ${allPaymentsForLease.length}`)
-            console.log(`  - Payments with invoice_id=${invoice.id}: ${paymentsWithThisInvoiceId.length}`)
-            if (paymentsWithThisInvoiceId.length > 0) {
-              console.log(`  - ⚠️ PAYMENTS EXIST but not in map!`, paymentsWithThisInvoiceId.map(p => ({
-                payment_id: p.id,
-                amount: p.amount,
-                invoice_id: p.invoice_id,
-                invoice_id_type: typeof p.invoice_id,
-                invoice_id_matches: p.invoice_id === invoice.id
-              })))
-            }
-          }
-          console.log(`  - Actual Paid: $${actualPaid}`)
         }
         
-        // Recalculate balance_due using actual paid amount (EXACT same as diagnostic endpoint line 83-84)
-        const amountTotal = parseFloat(invoice.amount_total || 0)
-        const recalculatedBalanceDue = amountTotal - actualPaid
-        
-        // EXACT same as diagnostic endpoint line 86-90: use recalculatedBalanceDue property
+        // EXACT copy from diagnostic endpoint lines 86-90
         const result = {
-          ...invoice,
+          ...inv,
           actualPaid,
           recalculatedBalanceDue
         }

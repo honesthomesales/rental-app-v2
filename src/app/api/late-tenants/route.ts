@@ -5,8 +5,8 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 // Cache this route for 0 seconds to ensure fresh data (disable caching for debugging)
 export const revalidate = 0
 
-// Version number to track code deployments
-const API_VERSION = 'v3.0-diagnostic-match'
+// Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
+const API_VERSION = 'v4.0-shared-calculation'
 
 /**
  * Late Tenants API
@@ -20,10 +20,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     // CRITICAL: Use the EXACT same date calculation as Payments page (line 436)
     // Payments page: const today = new Date().toISOString().split('T')[0]
-    const todayParam = searchParams.get('today')
-    const today = todayParam || new Date().toISOString().split('T')[0]
-    // Ensure today is always the actual current date (not a parameter that might be wrong)
+    // NEVER use a parameter - always calculate the actual current date
+    // This ensures we match Payments page exactly
     const actualToday = new Date().toISOString().split('T')[0]
+    const today = actualToday // Use actual current date, ignore any parameter
     const todayDate = new Date(today + 'T12:00:00')
     todayDate.setHours(0, 0, 0, 0)
     

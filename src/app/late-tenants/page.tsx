@@ -47,9 +47,12 @@ export default function LateTenantsPage() {
   const fetchLateTenants = async () => {
     try {
       console.log('Fetching late tenants...')
+      // CRITICAL: Calculate today the EXACT same way as Payments page (line 436)
+      // Payments page: const today = new Date().toISOString().split('T')[0]
+      const today = new Date().toISOString().split('T')[0]
       // Add cache-busting timestamp to ensure fresh data
       const timestamp = new Date().getTime()
-      const response = await fetch(`/api/late-tenants?t=${timestamp}`, {
+      const response = await fetch(`/api/late-tenants?t=${timestamp}&today=${today}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache'

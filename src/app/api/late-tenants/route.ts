@@ -6,7 +6,7 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 export const revalidate = 0
 
 // Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
-const API_VERSION = 'v4.1-date-filter-in-shared-function'
+const API_VERSION = 'v4.2-use-client-date-like-payments-page'
 
 /**
  * Late Tenants API
@@ -20,17 +20,20 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     // CRITICAL: Use the EXACT same date calculation as Payments page (line 436)
     // Payments page: const today = new Date().toISOString().split('T')[0]
-    // NEVER use a parameter - always calculate the actual current date
-    // This ensures we match Payments page exactly
-    const actualToday = new Date().toISOString().split('T')[0]
-    const today = actualToday // Use actual current date, ignore any parameter
+    // The Payments page calculates today on the CLIENT side and passes it to /api/invoices?to=${today}
+    // We MUST use the client's date (from the 'today' parameter) to match exactly
+    const todayParam = searchParams.get('today')
+    // If today parameter is provided, use it (matches Payments page client-side calculation)
+    // Otherwise fall back to server date (shouldn't happen if client sends it)
+    const today = todayParam || new Date().toISOString().split('T')[0]
+    const actualToday = today // Use the date from client (same as Payments page)
     const todayDate = new Date(today + 'T12:00:00')
     todayDate.setHours(0, 0, 0, 0)
     
     console.log('🔍 ========== TODAY VALUE DEBUG ==========')
     const todayParamFromURL = searchParams.get('today')
-    console.log(`  today param from URL: "${todayParamFromURL}" (ignored - using actual current date)`)
-    console.log(`  today value used: "${today}" (actual current date)`)
+    console.log(`  today param from URL: "${todayParamFromURL}" (using this - matches Payments page client-side calculation)`)
+    console.log(`  today value used: "${today}" (from client, same as Payments page)`)
     console.log(`  today type: ${typeof today}`)
     console.log(`  today length: ${today.length}`)
     console.log(`  today char codes: ${Array.from(today).map(c => c.charCodeAt(0)).join(',')}`)

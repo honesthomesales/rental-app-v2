@@ -526,3 +526,6 @@ Priority order:
 This is the easiest and highest impact optimization. I can implement it for you if you'd like!
 
 
+
+
+

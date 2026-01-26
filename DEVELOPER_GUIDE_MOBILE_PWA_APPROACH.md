@@ -767,3 +767,4 @@ This approach creates a **native-like mobile app experience** using web technolo
 
 The result is a **cross-platform mobile app** that works on both iPhone and Android without native development or app stores.
 
+

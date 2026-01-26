@@ -195,8 +195,8 @@ export async function GET(request: Request) {
         !leaseStartDate || invoice.due_date >= leaseStartDate
       )
 
-      // Recalculate balance_due using actual payment totals - EXACT same as diagnostic endpoint
-      // Diagnostic endpoint line 81-91: uses recalculatedBalanceDue property
+      // Recalculate balance_due using actual payment totals - EXACT same as payments page
+      // Payments page line 552-567: overwrites balance_due directly
       const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
         // Get actual payments linked to this invoice
         const linkedPayments = paymentsByInvoice.get(invoice.id) || []
@@ -204,49 +204,47 @@ export async function GET(request: Request) {
           sum + parseFloat(payment.amount || 0), 0
         )
         
-        // Recalculate balance_due using actual paid amount
-        const recalculatedBalanceDue = parseFloat(invoice.amount_total || 0) - actualPaid
+        // Recalculate balance_due using actual paid amount (EXACT same as payments page line 560-561)
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const recalculatedBalanceDue = amountTotal - actualPaid
         
-        // EXACT same as diagnostic endpoint line 86-90
+        // EXACT same as payments page line 563-566: overwrite balance_due directly
         return {
           ...invoice,
-          actualPaid,
-          recalculatedBalanceDue
+          balance_due: recalculatedBalanceDue // Use recalculated balance - overwrite original
         }
       })
 
-      // Find all unpaid invoices - EXACT same logic as diagnostic endpoint line 94-96
-      // Diagnostic endpoint: inv.status === 'OPEN' && parseFloat(inv.recalculatedBalanceDue as any || 0) > 0
+      // Find all unpaid invoices - EXACT same logic as payments page line 571-573
+      // Payments page: inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
       const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
-        const recalcBalance = invoice.recalculatedBalanceDue
-        const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(recalcBalance as any || 0)
-        const isOpen = invoice.status === 'OPEN'
-        const hasBalance = balanceValue > 0
-        
+        const balanceDue = parseFloat(invoice.balance_due as any || 0); // Use the overwritten balance_due
+        const isOpen = invoice.status === 'OPEN';
+        const hasBalance = balanceDue > 0;
+
         // Debug for 5667 N Main St
         const address = lease.RENT_properties?.address || ''
-        if ((address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) && isOpen) {
-          console.log(`  FILTER CHECK: Invoice ${invoice.id}, status=${invoice.status}, recalcBalance=${recalcBalance}, balanceValue=${balanceValue}, isOpen=${isOpen}, hasBalance=${hasBalance}, INCLUDED=${isOpen && hasBalance}`)
+        if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
+          console.log(`FILTER CHECK: Invoice ${invoice.id} - Status: ${invoice.status}, Recalculated Balance: ${balanceDue}, Is Open: ${isOpen}, Has Balance: ${hasBalance}, Result: ${isOpen && hasBalance}`);
         }
         
         return isOpen && hasBalance
       })
 
-      // Find late invoices (due before today and not fully paid)
+      // Find late invoices (due before today and not fully paid) - EXACT same logic as payments page
       const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
-        // Use same date normalization
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
         const isPastDue = dueDate < todayDate
-        const hasBalance = parseFloat(invoice.recalculatedBalanceDue as any || 0) > 0
+        const hasBalance = parseFloat(invoice.balance_due as any || 0) > 0 // Use the overwritten balance_due
         const isOpen = invoice.status === 'OPEN'
         return isPastDue && hasBalance && isOpen
       })
 
-      // Calculate total of ALL unpaid invoices - EXACT same as diagnostic endpoint line 135-137
-      // Diagnostic endpoint: unpaidInvoices.reduce((sum, inv) => sum + parseFloat(inv.recalculatedBalanceDue as any || 0), 0)
+      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as payments page line 576-578
+      // Payments page: unpaidInvoices.reduce((sum, inv) => sum + parseFloat(inv.balance_due as any || 0), 0)
       const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.recalculatedBalanceDue as any || 0), 0
+        sum + parseFloat(invoice.balance_due as any || 0), 0 // Use the overwritten balance_due
       )
 
       if (lateInvoices.length === 0) {
@@ -268,9 +266,9 @@ export async function GET(request: Request) {
       
       const daysLate = Math.floor((todayDate.getTime() - new Date(oldestLateInvoice.due_date).getTime()) / (1000 * 60 * 60 * 24))
       
-      // Calculate totals using recalculatedBalanceDue
+      // Calculate totals using recalculated balance_due - EXACT same as payments page
       const totalLateAmount = lateInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.recalculatedBalanceDue as any || 0), 0
+        sum + parseFloat(invoice.balance_due as any || 0), 0 // Use the overwritten balance_due
       )
       const totalLateFees = lateInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.amount_late || 0), 0
@@ -299,22 +297,22 @@ export async function GET(request: Request) {
             console.error(`  - Duplicate IDs: ${duplicateIds.join(', ')}`)
           }
           
-          // Show invoices that were EXCLUDED (status=OPEN but recalculatedBalanceDue <= 0)
+          // Show invoices that were EXCLUDED (status=OPEN but balance_due <= 0)
           const excludedInvoices = invoicesWithRecalculatedBalance.filter(inv => 
-            inv.status === 'OPEN' && parseFloat(inv.recalculatedBalanceDue as any || 0) <= 0
+            inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) <= 0
           )
           
           console.log(`  - Unpaid invoice details (${allUnpaidInvoices.length} invoices):`, allUnpaidInvoices.map(inv => ({
             id: inv.id,
             due_date: inv.due_date,
             amount_total: parseFloat(inv.amount_total || 0),
-            recalculatedBalanceDue: parseFloat(inv.recalculatedBalanceDue as any || 0),
+            balance_due: parseFloat(inv.balance_due as any || 0), // Use the overwritten balance_due
             status: inv.status
           })))
-          console.log(`  - EXCLUDED invoices (status=OPEN but recalculatedBalanceDue <= 0): ${excludedInvoices.length}`, excludedInvoices.map(inv => ({
+          console.log(`  - EXCLUDED invoices (status=OPEN but balance_due <= 0): ${excludedInvoices.length}`, excludedInvoices.map(inv => ({
             id: inv.id,
             due_date: inv.due_date,
-            recalculatedBalanceDue: parseFloat(inv.recalculatedBalanceDue as any || 0),
+            balance_due: parseFloat(inv.balance_due as any || 0), // Use the overwritten balance_due
             amount_total: parseFloat(inv.amount_total || 0),
             status: inv.status
           })))
@@ -363,8 +361,8 @@ export async function GET(request: Request) {
           period_start: invoice.period_start,
           period_end: invoice.period_end,
           amount_total: parseFloat(invoice.amount_total || 0),
-          amount_paid: invoice.actualPaid || parseFloat(invoice.amount_paid || 0), // Use actual paid amount
-          balance_due: parseFloat(invoice.balance_due || 0), // Use recalculated balance_due
+          amount_paid: parseFloat(invoice.amount_paid || 0), // Original amount_paid from invoice
+          balance_due: parseFloat(invoice.balance_due || 0), // Use recalculated balance_due (overwritten)
           amount_late: parseFloat(invoice.amount_late || 0),
           status: invoice.status,
           days_late: Math.floor((todayDate.getTime() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24))

@@ -73,3 +73,6 @@ After fixes:
 - [ ] Display always shows payment records total (never invoice.amount_paid)
 - [ ] No invoices show amount_paid > 0 without payment records
 
+
+
+

@@ -173,3 +173,6 @@ WHERE i.amount_paid = (
 )
 AND i.amount_paid > 0;
 
+
+
+

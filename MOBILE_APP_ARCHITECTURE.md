@@ -442,3 +442,5 @@ This app uses a **Progressive Web App (PWA)** architecture built on **Next.js 15
 
 The result is a fully functional mobile app that works on both iPhone and Android without requiring native development or app store distribution.
 
+
+

@@ -176,7 +176,18 @@ export async function GET(request: Request) {
       console.error('⚠️ DUPLICATE INVOICE IDs FOUND IN QUERY RESULT:', duplicateInvoiceIds)
     }
     
-    allInvoices?.forEach(invoice => {
+    // CRITICAL: Filter out future invoices AGAIN before grouping by lease
+    // This is a safety check to ensure no future invoices make it into invoicesByLease
+    const allInvoicesFiltered = (allInvoices || []).filter(inv => {
+      const invDueDate = String(inv.due_date || '').split('T')[0]
+      const isFuture = invDueDate > today
+      if (isFuture) {
+        console.error(`  ⚠️ PRE-GROUPING FILTER: Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
+      }
+      return !isFuture
+    })
+    
+    allInvoicesFiltered.forEach(invoice => {
       const leaseId = invoice.lease_id
       if (!invoicesByLease.has(leaseId)) {
         invoicesByLease.set(leaseId, [])

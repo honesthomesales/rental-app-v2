@@ -1700,6 +1700,18 @@ return'<div class="s">'+l+'</div>';
           aValue = normalizeCadence(a.lease.rent_cadence)
           bValue = normalizeCadence(b.lease.rent_cadence)
           break
+        case 'dayDue':
+          aValue = a.lease.rent_due_day || 0
+          bValue = b.lease.rent_due_day || 0
+          break
+        case 'lastPaid':
+          // Sort by date - null/undefined dates go to the end
+          if (!a.lastPaidDate && !b.lastPaidDate) return 0
+          if (!a.lastPaidDate) return 1
+          if (!b.lastPaidDate) return -1
+          aValue = new Date(a.lastPaidDate).getTime()
+          bValue = new Date(b.lastPaidDate).getTime()
+          break
         case 'unpaidInvoices':
           aValue = a.unpaidInvoicesCount
           bValue = b.unpaidInvoicesCount
@@ -1872,11 +1884,23 @@ return'<div class="s">'+l+'</div>';
                         {getSortIcon('cadence')}
                       </div>
                     </th>
-                    <th className="px-4 py-4 text-center text-sm font-semibold">
-                      Day Due
+                    <th 
+                      className="px-4 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      onClick={() => handleSort('dayDue')}
+                    >
+                      <div className="flex items-center justify-center space-x-2">
+                        <span>Day Due</span>
+                        {getSortIcon('dayDue')}
+                      </div>
                     </th>
-                    <th className="px-3 py-4 text-center text-sm font-semibold">
-                      Last Paid
+                    <th 
+                      className="px-3 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
+                      onClick={() => handleSort('lastPaid')}
+                    >
+                      <div className="flex items-center justify-center space-x-2">
+                        <span>Last Paid</span>
+                        {getSortIcon('lastPaid')}
+                      </div>
                     </th>
                     <th 
                       className="px-4 py-4 text-center text-sm font-semibold cursor-pointer hover:bg-blue-700 select-none"
@@ -1927,7 +1951,13 @@ return'<div class="s">'+l+'</div>';
                       <td className="px-3 py-4 text-center">
                         <span className="text-xs text-gray-600">
                           {row.lastPaidDate 
-                            ? new Date(row.lastPaidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                            ? (() => {
+                                const date = new Date(row.lastPaidDate)
+                                const month = String(date.getMonth() + 1).padStart(2, '0')
+                                const day = String(date.getDate()).padStart(2, '0')
+                                const year = String(date.getFullYear()).slice(-2)
+                                return `${month}/${day}/${year}`
+                              })()
                             : 'Never'}
                         </span>
                       </td>
@@ -3213,7 +3243,7 @@ return'<div class="s">'+l+'</div>';
                           'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                          tenantId: selectedTenantForGenerate,
+                          tenantId: tenant.tenant.id || tenant.lease.tenant_id,
                           county: selectedCounty,
                           formType,
                           ejectmentReason,

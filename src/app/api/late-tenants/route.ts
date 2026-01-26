@@ -286,66 +286,45 @@ export async function GET(request: Request) {
       )
       const totalLatePeriods = lateInvoices.length
       
-      // Debug logging to compare with payments page
-      if (totalAllOwedForLease > 0) {
-        const address = lease.RENT_properties?.address || 'unknown'
-        console.log(`Late Tenants API - Lease ${lease.id} (${address}): totalAllOwed=${totalAllOwedForLease}, unpaidCount=${allUnpaidInvoices.length}, lateCount=${lateInvoices.length}, validInvoices=${validInvoices.length}`)
-        if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
-          console.log(`🔍 Late Tenants API - DETAILED DEBUG for ${address}:`)
-          console.log(`  - Lease ID: ${lease.id}`)
-          console.log(`  - Property ID: ${lease.property_id}`)
-          console.log(`  - Total invoices fetched for lease: ${invoices.length}`)
-          console.log(`  - Valid invoices (after lease_start_date filter): ${validInvoices.length}`)
-          console.log(`  - Invoices with recalculated balance: ${invoicesWithRecalculatedBalance.length}`)
-          console.log(`  - All unpaid invoices (status=OPEN && balance_due>0): ${allUnpaidInvoices.length}`)
-          
-          // Check for duplicate invoice IDs in unpaid invoices
-          const unpaidInvoiceIds = allUnpaidInvoices.map(inv => inv.id)
-          const uniqueUnpaidIds = new Set(unpaidInvoiceIds)
-          if (unpaidInvoiceIds.length !== uniqueUnpaidIds.size) {
-            console.error(`  ⚠️ DUPLICATE INVOICE IDs IN UNPAID INVOICES! Total: ${unpaidInvoiceIds.length}, Unique: ${uniqueUnpaidIds.size}`)
-            const duplicateIds = unpaidInvoiceIds.filter((id, index) => unpaidInvoiceIds.indexOf(id) !== index)
-            console.error(`  - Duplicate IDs: ${duplicateIds.join(', ')}`)
-          }
-          
-          // Show invoices that were EXCLUDED (status=OPEN but recalculatedBalanceDue <= 0)
-          const excludedInvoices = invoicesWithRecalculatedBalance.filter(inv => {
-            const recalcBalance = inv.recalculatedBalanceDue
-            const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-            return inv.status === 'OPEN' && balanceValue <= 0
-          })
-          
-          console.log(`  - Unpaid invoice details (${allUnpaidInvoices.length} invoices):`, allUnpaidInvoices.map(inv => {
-            const recalcBalance = inv.recalculatedBalanceDue
-            const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-            return {
-              id: inv.id,
-              due_date: inv.due_date,
-              amount_total: parseFloat(inv.amount_total || 0),
-              recalculatedBalanceDue: balanceValue,
-              status: inv.status
-            }
-          }))
-          console.log(`  - EXCLUDED invoices (status=OPEN but recalculatedBalanceDue <= 0): ${excludedInvoices.length}`, excludedInvoices.map(inv => {
-            const recalcBalance = inv.recalculatedBalanceDue
-            const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-            return {
-              id: inv.id,
-              due_date: inv.due_date,
-              recalculatedBalanceDue: balanceValue,
-              amount_total: parseFloat(inv.amount_total || 0),
-              status: inv.status
-            }
-          }))
-          console.log(`  - ALL valid invoices (before status/balance filter):`, validInvoices.map(inv => ({
-            id: inv.id,
-            due_date: inv.due_date,
-            status: inv.status,
-            balance_due_before_recalc: parseFloat(inv.balance_due || 0),
-            amount_total: parseFloat(inv.amount_total || 0)
-          })))
-          console.log(`Late Tenants API - Invoice IDs being counted:`, allUnpaidInvoices.map(inv => inv.id).join(', '))
+      // Debug logging for 5667 N Main St
+      const address = lease.RENT_properties?.address || 'unknown'
+      if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
+        console.log(`\n🔍 ========== DETAILED DEBUG for ${address} ==========`)
+        console.log(`  - Lease ID: ${lease.id}`)
+        console.log(`  - Property ID: ${lease.property_id}`)
+        console.log(`  - Lease Start Date: ${lease.lease_start_date}`)
+        console.log(`  - Total invoices fetched for this lease: ${invoices.length}`)
+        console.log(`  - Valid invoices (after lease_start_date filter): ${validInvoices.length}`)
+        console.log(`  - Invoices with recalculated balance: ${invoicesWithRecalculatedBalance.length}`)
+        console.log(`  - All unpaid invoices (status=OPEN && recalculatedBalanceDue>0): ${allUnpaidInvoices.length}`)
+        console.log(`  - Total All Owed for this lease: $${totalAllOwedForLease}`)
+        
+        // Check for duplicate invoice IDs in unpaid invoices
+        const unpaidInvoiceIds = allUnpaidInvoices.map(inv => inv.id)
+        const uniqueUnpaidIds = new Set(unpaidInvoiceIds)
+        if (unpaidInvoiceIds.length !== uniqueUnpaidIds.size) {
+          console.error(`  ⚠️ DUPLICATE INVOICE IDs IN UNPAID INVOICES! Total: ${unpaidInvoiceIds.length}, Unique: ${uniqueUnpaidIds.size}`)
+          const duplicateIds = unpaidInvoiceIds.filter((id, index) => unpaidInvoiceIds.indexOf(id) !== index)
+          console.error(`  - Duplicate IDs: ${duplicateIds.join(', ')}`)
         }
+        
+        // Show ALL invoices with their filter results
+        console.log(`\n  📋 ALL INVOICES FOR THIS LEASE (${validInvoices.length} total):`)
+        invoicesWithRecalculatedBalance.forEach((inv, idx) => {
+          const recalcBalance = inv.recalculatedBalanceDue
+          const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
+          const isOpen = inv.status === 'OPEN'
+          const hasBalance = balanceValue > 0
+          const isIncluded = isOpen && hasBalance
+          
+          console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
+          console.log(`        Due: ${inv.due_date}, Status: ${inv.status}, Amount: $${parseFloat(inv.amount_total || 0)}`)
+          console.log(`        Recalculated Balance: $${balanceValue}, Is Open: ${isOpen}, Has Balance: ${hasBalance}`)
+          console.log(`        ${isIncluded ? '✅ INCLUDED' : '❌ EXCLUDED'} in unpaid count`)
+        })
+        
+        console.log(`\n  ✅ UNPAID INVOICE IDs (${allUnpaidInvoices.length}):`, allUnpaidInvoices.map(inv => inv.id).join(', '))
+        console.log(`🔍 ========== END DEBUG for ${address} ==========\n`)
       }
 
       // Get payments for this lease (already fetched in batch)

@@ -6,7 +6,7 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 export const revalidate = 0
 
 // Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
-const API_VERSION = 'v5.2-only-tenants-with-unpaid-invoices'
+const API_VERSION = 'v5.3-use-server-date-validation'
 
 /**
  * Late Tenants API
@@ -29,16 +29,32 @@ export async function GET(request: Request) {
     // CRITICAL: Use the EXACT same date calculation as Payments page (line 436)
     // Payments page: const today = new Date().toISOString().split('T')[0]
     // The Payments page calculates today on the CLIENT side and passes it to /api/invoices?to=${today}
-    // We MUST use the client's date (from the 'today' parameter) to match exactly
+    // However, we should use the SERVER's actual current date to ensure accuracy
+    // If client date is provided and seems reasonable (within 1 day of server date), use it
+    // Otherwise use server date (more reliable)
     const todayParam = searchParams.get('today')
-    // If today parameter is provided, use it (matches Payments page client-side calculation)
-    // Otherwise fall back to server date (shouldn't happen if client sends it)
-    const today = todayParam || new Date().toISOString().split('T')[0]
+    const serverToday = new Date().toISOString().split('T')[0]
+    
+    // Validate client date: if provided, check if it's within 1 day of server date
+    let today = serverToday // Default to server date (most reliable)
+    if (todayParam) {
+      const clientDate = new Date(todayParam)
+      const serverDate = new Date(serverToday)
+      const diffDays = Math.abs((clientDate.getTime() - serverDate.getTime()) / (1000 * 60 * 60 * 24))
+      
+      // If client date is within 1 day of server date, use it (timezone differences are OK)
+      // Otherwise, use server date (client clock might be wrong)
+      if (diffDays <= 1) {
+        today = todayParam
+      } else {
+        console.warn(`⚠️ Client date "${todayParam}" differs from server date "${serverToday}" by ${diffDays.toFixed(1)} days. Using server date.`)
+      }
+    }
     
     console.log('🔍 ========== TODAY VALUE DEBUG ==========')
-    console.log(`  today param from URL: "${todayParam}" (using this - matches Payments page client-side calculation)`)
-    console.log(`  today value used: "${today}" (from client, same as Payments page)`)
-    console.log(`  Current date (new Date().toISOString().split('T')[0]): "${new Date().toISOString().split('T')[0]}"`)
+    console.log(`  today param from URL: "${todayParam}"`)
+    console.log(`  server date: "${serverToday}"`)
+    console.log(`  today value used: "${today}" (${today === todayParam ? 'from client' : 'from server'})`)
     console.log('🔍 ========== END TODAY VALUE DEBUG ==========')
     
     // Fetch active leases with property and tenant data

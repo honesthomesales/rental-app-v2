@@ -118,6 +118,11 @@ export default function PaymentsPage() {
     fetchProperties()
   }, [])
 
+  // Debug: Log when showGenerateModal changes
+  useEffect(() => {
+    console.log('showGenerateModal changed to:', showGenerateModal)
+  }, [showGenerateModal])
+
   // Handle scrolling to and highlighting newly created/shown invoice
   useEffect(() => {
     if (highlightedInvoiceId) {
@@ -1795,8 +1800,15 @@ return'<div class="s">'+l+'</div>';
                 <p className="text-gray-600">Track and manage rental payments</p>
               </div>
               <button
-                onClick={() => setShowGenerateModal(true)}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('Generate Forms button clicked')
+                  setShowGenerateModal(true)
+                  console.log('showGenerateModal set to true')
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                type="button"
               >
                 Generate Forms
               </button>

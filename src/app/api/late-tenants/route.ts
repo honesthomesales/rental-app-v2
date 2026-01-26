@@ -295,11 +295,56 @@ export async function GET(request: Request) {
         console.log(`  - First 10 invoice IDs that match payment invoice_ids: ${matchingPaymentIds.length} (${matchingPaymentIds.map(id => id.substring(0, 8)).join(', ')})`)
       }
       
-      // Recalculate balance_due using actual payment totals - EXACT COPY from diagnostic endpoint
-      // Diagnostic endpoint lines 80-91: This is the WORKING logic that shows 7 invoices correctly
-      const invoicesWithRecalculatedBalance = validInvoices.map(inv => {
-        // EXACT copy from diagnostic endpoint line 82-83
+      // Recalculate balance_due using actual payment totals
+      // If no payments linked by invoice_id, try to allocate payments by date matching
+      // This handles cases where payments are linked to older invoice IDs but should be allocated to newer invoices
+      const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+      const allocatedPaymentIds = new Set<string>()
+      
+      // First pass: allocate payments that are explicitly linked by invoice_id
+      validInvoices.forEach(inv => {
         const linkedPayments = paymentsByInvoice.get(inv.id) || []
+        linkedPayments.forEach(p => allocatedPaymentIds.add(p.id))
+      })
+      
+      // Second pass: allocate unallocated payments to invoices by date matching
+      const unallocatedPayments = allPaymentsForLease.filter(p => !allocatedPaymentIds.has(p.id))
+      
+      const invoicesWithRecalculatedBalance = validInvoices.map(inv => {
+        // Get payments explicitly linked by invoice_id
+        let linkedPayments = paymentsByInvoice.get(inv.id) || []
+        
+        // If no payments linked by invoice_id, try to allocate by amount and date matching
+        // Match payments that match invoice amount and are within 60 days (before or after) of due date
+        if (linkedPayments.length === 0 && unallocatedPayments.length > 0) {
+          const invoiceAmount = parseFloat(inv.amount_total || 0)
+          const invoiceDueDate = new Date(inv.due_date)
+          
+          // Find payments that match the invoice amount exactly
+          const amountMatchingPayments = unallocatedPayments.filter(p => {
+            const paymentAmount = parseFloat(p.amount || 0)
+            return Math.abs(paymentAmount - invoiceAmount) < 0.01
+          })
+          
+          // Among amount-matching payments, prefer those closest to the due date
+          if (amountMatchingPayments.length > 0) {
+            const paymentWithDates = amountMatchingPayments
+              .map(p => ({
+                payment: p,
+                paymentDate: p.payment_date ? new Date(p.payment_date) : null,
+                daysDiff: p.payment_date ? Math.abs((invoiceDueDate.getTime() - new Date(p.payment_date).getTime()) / (1000 * 60 * 60 * 24)) : Infinity
+              }))
+              .filter(p => p.paymentDate !== null && p.daysDiff <= 60)
+              .sort((a, b) => a.daysDiff - b.daysDiff)
+            
+            if (paymentWithDates.length > 0) {
+              // Allocate the closest matching payment
+              linkedPayments = [paymentWithDates[0].payment]
+              allocatedPaymentIds.add(paymentWithDates[0].payment.id)
+            }
+          }
+        }
+        
         const actualPaid = linkedPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0)
         
         // EXACT copy from diagnostic endpoint line 84
@@ -307,7 +352,6 @@ export async function GET(request: Request) {
         
         // Debug for 5667 N Main St - show payment linking and collect for console
         if (isMainStProperty) {
-          const allPaymentsForLease = paymentsByLease.get(lease.id) || []
           const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === inv.id)
           
           const paymentCheck = {

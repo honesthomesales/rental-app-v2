@@ -218,19 +218,26 @@ export async function GET(request: Request) {
       // Find all unpaid invoices - EXACT same logic as payments page
       // Only count invoices with status='OPEN' and balance_due > 0 (matching payments page logic)
       // Use recalculated balance_due
-      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => 
-        invoice.status === 'OPEN' && parseFloat(invoice.balance_due as any || 0) > 0
-      )
+      // IMPORTANT: Must check recalculated balance_due > 0, not just status='OPEN'
+      // Some invoices have status='OPEN' but are fully paid (balance_due <= 0)
+      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
+        const balanceDue = parseFloat(invoice.balance_due as any || 0)
+        const isOpen = invoice.status === 'OPEN'
+        const hasBalance = balanceDue > 0 // Must be strictly greater than 0
+        return isOpen && hasBalance
+      })
 
       // Find late invoices (due before today and not fully paid) - EXACT same logic as payments page
       // Must also check status='OPEN' to match payments page logic
       // Use recalculated balance_due
+      // IMPORTANT: Must check recalculated balance_due > 0, not just status='OPEN'
       const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
         // Use same date normalization as payments page
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
         const isPastDue = dueDate < todayDate
-        const hasBalance = parseFloat(invoice.balance_due as any || 0) > 0
+        const balanceDue = parseFloat(invoice.balance_due as any || 0)
+        const hasBalance = balanceDue > 0 // Must be strictly greater than 0
         const isOpen = invoice.status === 'OPEN'
         return isPastDue && hasBalance && isOpen
       })
@@ -293,12 +300,26 @@ export async function GET(request: Request) {
             console.error(`  - Duplicate IDs: ${duplicateIds.join(', ')}`)
           }
           
-          console.log(`  - Unpaid invoice details:`, allUnpaidInvoices.map(inv => ({
+          // Show invoices that were EXCLUDED (status=OPEN but balance_due <= 0)
+          const excludedInvoices = invoicesWithRecalculatedBalance.filter(inv => {
+            const balanceDue = parseFloat(inv.balance_due as any || 0)
+            return inv.status === 'OPEN' && balanceDue <= 0
+          })
+          
+          console.log(`  - Unpaid invoice details (${allUnpaidInvoices.length} invoices):`, allUnpaidInvoices.map(inv => ({
             id: inv.id,
             due_date: inv.due_date,
             amount_total: parseFloat(inv.amount_total || 0),
             balance_due: parseFloat(inv.balance_due || 0),
             actualPaid: inv.actualPaid || 0,
+            status: inv.status
+          })))
+          console.log(`  - EXCLUDED invoices (status=OPEN but balance_due <= 0): ${excludedInvoices.length}`, excludedInvoices.map(inv => ({
+            id: inv.id,
+            due_date: inv.due_date,
+            balance_due: parseFloat(inv.balance_due || 0),
+            actualPaid: inv.actualPaid || 0,
+            amount_total: parseFloat(inv.amount_total || 0),
             status: inv.status
           })))
           console.log(`  - ALL valid invoices (before status/balance filter):`, validInvoices.map(inv => ({

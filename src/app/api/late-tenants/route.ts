@@ -304,8 +304,7 @@ export async function GET(request: Request) {
         // Show ALL invoices with their filter results
         console.log(`\n  📋 ALL INVOICES FOR THIS LEASE (${validInvoices.length} total):`)
         invoicesWithRecalculatedBalance.forEach((inv, idx) => {
-          const recalcBalance = inv.recalculatedBalanceDue
-          const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
+          const balanceValue = parseFloat(inv.recalculatedBalanceDue as any || 0)
           const isOpen = inv.status === 'OPEN'
           const hasBalance = balanceValue > 0
           const isIncluded = isOpen && hasBalance

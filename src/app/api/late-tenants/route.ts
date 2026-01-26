@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoice-calculations'
 
 // Cache this route for 0 seconds to ensure fresh data (disable caching for debugging)
 export const revalidate = 0
@@ -318,23 +319,26 @@ export async function GET(request: Request) {
         // Collect debug data for API response
         invoiceFilterDebugData = {
           today: today,
+          actualToday: actualToday,
           todayType: typeof today,
           todayLength: today.length,
           todayCharCodes: Array.from(today).map(c => c.charCodeAt(0)),
+          actualTodayType: typeof actualToday,
+          actualTodayLength: actualToday.length,
           currentDate: new Date().toISOString().split('T')[0],
           leaseStartDate: leaseStartDate,
           totalInvoicesBeforeFilter: invoices.length,
           invoices: invoices.map((inv, idx) => {
             const rawDueDate = inv.due_date
             const normalizedDueDate = String(rawDueDate || '').split('T')[0]
-            const isFuture = normalizedDueDate > today
+            const isFuture = normalizedDueDate > actualToday
             const beforeLeaseStart = leaseStartDate && normalizedDueDate < leaseStartDate
             const willBeExcluded = isFuture || beforeLeaseStart
             
             console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
             console.log(`        due_date raw: "${rawDueDate}" (type: ${typeof rawDueDate})`)
             console.log(`        due_date normalized: "${normalizedDueDate}"`)
-            console.log(`        comparison: "${normalizedDueDate}" > "${today}" = ${isFuture}`)
+            console.log(`        comparison: "${normalizedDueDate}" > "${actualToday}" = ${isFuture}`)
             console.log(`        before lease start: ${beforeLeaseStart}`)
             console.log(`        will be ${willBeExcluded ? 'EXCLUDED' : 'INCLUDED'}`)
             
@@ -345,7 +349,7 @@ export async function GET(request: Request) {
               due_date_raw: rawDueDate,
               due_date_raw_type: typeof rawDueDate,
               due_date_normalized: normalizedDueDate,
-              comparison: `${normalizedDueDate} > ${today}`,
+              comparison: `${normalizedDueDate} > ${actualToday}`,
               comparison_result: isFuture,
               before_lease_start: beforeLeaseStart,
               will_be_excluded: willBeExcluded,
@@ -571,24 +575,42 @@ export async function GET(request: Request) {
         return !isFuture
       })
       
-      // Recalculate balance_due using actual payment totals - EXACT COPY from payments page
-      // Payments page lines 551-567: Simple lookup by invoice_id, no allocation logic
-      const invoicesWithRecalculatedBalance = finalValidInvoices.map(invoice => {
-        // EXACT copy from payments page line 554
-        const linkedPayments = paymentsByInvoice.get(invoice.id) || []
-        // EXACT copy from payments page line 555-557
-        const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
-          sum + parseFloat(payment.amount || 0), 0
-        )
+      // Get payments for this lease
+      const leasePayments = paymentsByLease.get(lease.id) || []
+      
+      // Use shared calculation function - ensures EXACT match with Payments page
+      const { unpaidInvoices: allUnpaidInvoices, totalOwed: totalAllOwedForLease } = calculateUnpaidInvoices(
+        finalValidInvoices as Invoice[],
+        leasePayments as Payment[],
+        leaseStartDate || undefined
+      )
+      
+      // Debug for 5667 N Main St - collect filter results
+      if (isMainStProperty) {
+        allUnpaidInvoices.forEach(inv => {
+          const balanceValue = parseFloat(inv.balance_due as any || 0)
+          const filterResult = {
+            invoiceId: inv.id,
+            status: inv.status,
+            isOpen: inv.status === 'OPEN',
+            balance_due_raw: inv.balance_due,
+            balance_due_type: typeof inv.balance_due,
+            balance_due_parsed: balanceValue,
+            hasBalance: balanceValue > 0,
+            result: true,
+            included: 'YES'
+          }
+          filterCheckResults.push(filterResult)
+        })
         
-        // EXACT copy from payments page line 560-561
-        const amountTotal = parseFloat(invoice.amount_total as any || 0)
-        const recalculatedBalanceDue = amountTotal - actualPaid
-        
-        // Debug for 5667 N Main St - show payment linking and collect for console
-        if (isMainStProperty) {
+        // Collect payment check results
+        finalValidInvoices.forEach(invoice => {
           const allPaymentsForLease = paymentsByLease.get(lease.id) || []
           const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === invoice.id)
+          const linkedPayments = paymentsByInvoice.get(invoice.id) || []
+          const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
+            sum + parseFloat(payment.amount || 0), 0
+          )
           
           const paymentCheck = {
             invoiceId: invoice.id,
@@ -614,39 +636,8 @@ export async function GET(request: Request) {
             })) : []
           }
           paymentCheckResults.push(paymentCheck)
-        }
-        
-        // EXACT copy from payments page line 563-566
-        return {
-          ...invoice,
-          balance_due: recalculatedBalanceDue // Use recalculated balance
-        }
-      })
-
-      // Find all unpaid invoices - EXACT COPY from payments page line 571-573
-      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => {
-        // EXACT copy from payments page line 572
-        const isUnpaid = inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-        
-        // Debug for 5667 N Main St
-        if (isMainStProperty) {
-          const balanceValue = parseFloat(inv.balance_due as any || 0)
-          const filterResult = {
-            invoiceId: inv.id,
-            status: inv.status,
-            isOpen: inv.status === 'OPEN',
-            balance_due_raw: inv.balance_due,
-            balance_due_type: typeof inv.balance_due,
-            balance_due_parsed: balanceValue,
-            hasBalance: balanceValue > 0,
-            result: isUnpaid,
-            included: isUnpaid ? 'YES' : 'NO'
-          }
-          filterCheckResults.push(filterResult)
-        }
-        
-        return isUnpaid
-      })
+        })
+      }
 
       // Find late invoices (due before today and not fully paid)
       const lateInvoices = allUnpaidInvoices.filter(invoice => {
@@ -654,11 +645,6 @@ export async function GET(request: Request) {
         dueDate.setHours(0, 0, 0, 0)
         return dueDate < todayDate
       })
-
-      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT COPY from payments page line 576-578
-      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum: number, inv: Invoice) => 
-        sum + parseFloat(inv.balance_due as any || 0), 0
-      )
 
       if (lateInvoices.length === 0) {
         // Even if no late invoices, we still want to track totalAllOwed for the summary

@@ -91,12 +91,29 @@ export async function GET(request: Request) {
       .order('due_date', { ascending: false })
     
     // Fetch invoices with due_date <= today for processing (matching payments page)
+    // CRITICAL: The Payments page calls /api/invoices?leaseId=...&to=${today}
+    // which uses .lte('due_date', to) - this MUST match exactly
+    console.log(`🔍 Fetching invoices with due_date <= "${today}" for ${leaseIds.length} leases`)
     const { data: allInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
       .in('lease_id', leaseIds)
       .lte('due_date', today)  // Same as payments page: /api/invoices?leaseId=...&to=${today}
       .order('due_date', { ascending: false })
+    
+    // CRITICAL DEBUG: Check if query returned invoices with future dates
+    if (allInvoices && allInvoices.length > 0) {
+      const futureInvoices = allInvoices.filter(inv => inv.due_date > today)
+      if (futureInvoices.length > 0) {
+        console.error(`⚠️ SUPABASE QUERY RETURNED ${futureInvoices.length} INVOICES WITH FUTURE DATES!`)
+        console.error(`  Query used: .lte('due_date', "${today}")`)
+        console.error(`  Future invoices:`, futureInvoices.slice(0, 5).map(inv => ({
+          id: inv.id.substring(0, 8) + '...',
+          due_date: inv.due_date,
+          lease_id: inv.lease_id
+        })))
+      }
+    }
 
     if (invoicesError) {
       console.error('Error fetching invoices:', invoicesError)
@@ -220,6 +237,9 @@ export async function GET(request: Request) {
       // This is the EXACT same filter as Payments page: /api/invoices?to=${today}
       // Payments page line 444: `/api/invoices?leaseId=${leaseData.id}&to=${today}`
       // This filters due_date <= today
+      // 
+      // IMPORTANT: The Payments page ONLY processes invoices returned by the API
+      // which already filters due_date <= today. We must do the same here.
       const validInvoices = invoices.filter(invoice => {
         const invoiceDueDate = invoice.due_date
         
@@ -227,8 +247,7 @@ export async function GET(request: Request) {
         // String comparison works for ISO date strings (YYYY-MM-DD format)
         // Example: "2026-01-14" > "2025-01-15" = true (correctly excludes future dates)
         // This MUST match the Payments page filter exactly
-        const isFuture = invoiceDueDate > today
-        if (isFuture) {
+        if (invoiceDueDate > today) {
           return false // Skip future invoices - they're not due yet
         }
         
@@ -239,6 +258,20 @@ export async function GET(request: Request) {
         
         return true
       })
+      
+      // CRITICAL VALIDATION: Ensure no future invoices passed the filter
+      const futureInvoicesInValid = validInvoices.filter(inv => inv.due_date > today)
+      if (futureInvoicesInValid.length > 0) {
+        console.error(`⚠️ CRITICAL ERROR: ${futureInvoicesInValid.length} future invoices passed the filter!`)
+        console.error(`  today="${today}"`)
+        console.error(`  Future invoices:`, futureInvoicesInValid.map(inv => ({
+          id: inv.id.substring(0, 8) + '...',
+          due_date: inv.due_date,
+          comparison: `${inv.due_date} > ${today} = ${inv.due_date > today}`
+        })))
+        // Remove them explicitly
+        validInvoices.splice(0, validInvoices.length, ...validInvoices.filter(inv => inv.due_date <= today))
+      }
       
       // Debug logging for 5667 N Main St
       if (isMainStProperty) {

@@ -721,6 +721,7 @@ export async function GET(request: Request) {
         allPaymentsData: isMainStProperty ? allPaymentsData : undefined,
         allInvoiceIdsData: isMainStProperty ? allInvoiceIdsData : undefined,
         paymentsMapData: isMainStProperty ? paymentsMapData : undefined,
+        invoiceFilterDebug: isMainStProperty ? invoiceFilterDebugData : undefined,
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

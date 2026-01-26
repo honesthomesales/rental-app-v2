@@ -358,7 +358,14 @@ export async function GET(request: Request) {
         return true
       })
       
-      if (isMainStProperty) {
+      if (isMainStProperty && invoiceFilterDebugData) {
+        invoiceFilterDebugData.totalInvoicesAfterFilter = validInvoices.length
+        invoiceFilterDebugData.validInvoices = validInvoices.map(inv => ({
+          invoice_id: inv.id,
+          invoice_id_short: inv.id.substring(0, 8),
+          due_date: inv.due_date,
+          due_date_normalized: String(inv.due_date || '').split('T')[0]
+        }))
         console.log(`  Total invoices after filter: ${validInvoices.length}`)
         console.log(`🔍 ========== END INVOICE FILTER DEBUG ==========\n`)
       }

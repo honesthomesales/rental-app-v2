@@ -108,6 +108,27 @@ export default function LateTenantsPage() {
           console.log(JSON.stringify(mainStTenant.paymentCheckResults, null, 2))
           console.log('💰 ========== END PAYMENT CHECK RESULTS ==========\n')
         }
+        
+        // Log all payments data
+        if (mainStTenant.allPaymentsData) {
+          console.log('\n💰 ========== ALL PAYMENTS FOR LEASE (COPY THIS) ==========')
+          console.log(JSON.stringify(mainStTenant.allPaymentsData, null, 2))
+          console.log('💰 ========== END ALL PAYMENTS ==========\n')
+        }
+        
+        // Log all invoice IDs
+        if (mainStTenant.allInvoiceIdsData) {
+          console.log('\n📋 ========== ALL INVOICE IDs FOR LEASE (COPY THIS) ==========')
+          console.log(JSON.stringify(mainStTenant.allInvoiceIdsData, null, 2))
+          console.log('📋 ========== END ALL INVOICE IDs ==========\n')
+        }
+        
+        // Log payments map data
+        if (mainStTenant.paymentsMapData) {
+          console.log('\n🗺️ ========== PAYMENTS BY INVOICE MAP (COPY THIS) ==========')
+          console.log(JSON.stringify(mainStTenant.paymentsMapData, null, 2))
+          console.log('🗺️ ========== END PAYMENTS MAP ==========\n')
+        }
       }
       
       setAllLateTenants(data?.rows || [])

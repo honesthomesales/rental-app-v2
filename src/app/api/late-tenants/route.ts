@@ -204,9 +204,55 @@ export async function GET(request: Request) {
       const paymentCheckResults: any[] = []
       const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
       
-      // Log all payments for this lease to see what invoice_ids they have
+      // Log all payments for this lease to see what invoice_ids they have - collect for console output
+      let allPaymentsData: any = null
+      let allInvoiceIdsData: any = null
+      let paymentsMapData: any = null
+      
       if (isMainStProperty) {
         const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+        allPaymentsData = allPaymentsForLease.map((p, idx) => ({
+          index: idx + 1,
+          payment_id: p.id,
+          payment_id_short: p.id?.substring(0, 8) || 'no-id',
+          amount: p.amount,
+          invoice_id: p.invoice_id || null,
+          invoice_id_type: typeof p.invoice_id,
+          invoice_id_is_null: p.invoice_id === null,
+          invoice_id_is_undefined: p.invoice_id === undefined,
+          payment_date: p.payment_date,
+          lease_id: p.lease_id
+        }))
+        
+        // Show all invoice IDs from invoices
+        allInvoiceIdsData = validInvoices.map((inv, idx) => ({
+          index: idx + 1,
+          invoice_id: inv.id,
+          invoice_id_short: inv.id.substring(0, 8),
+          invoice_id_type: typeof inv.id,
+          due_date: inv.due_date,
+          amount_total: inv.amount_total
+        }))
+        
+        // Show paymentsByInvoice map contents
+        const invoiceIdsInMap = Array.from(paymentsByInvoice.keys())
+        paymentsMapData = {
+          total_invoice_ids_in_map: invoiceIdsInMap.length,
+          invoice_ids: invoiceIdsInMap.map(invId => {
+            const payments = paymentsByInvoice.get(invId) || []
+            return {
+              invoice_id: invId,
+              invoice_id_short: invId.substring(0, 8),
+              payment_count: payments.length,
+              payments: payments.map(p => ({
+                payment_id: p.id,
+                amount: p.amount,
+                payment_date: p.payment_date
+              }))
+            }
+          })
+        }
+        
         console.log(`\n💰 ALL PAYMENTS FOR LEASE ${lease.id} (${allPaymentsForLease.length} total):`)
         allPaymentsForLease.forEach((p, idx) => {
           console.log(`  [${idx + 1}] Payment ${p.id?.substring(0, 8) || 'no-id'}...`)
@@ -214,15 +260,12 @@ export async function GET(request: Request) {
           console.log(`      Invoice ID type: ${typeof p.invoice_id}, Invoice ID === null: ${p.invoice_id === null}, Invoice ID === undefined: ${p.invoice_id === undefined}`)
         })
         
-        // Show all invoice IDs from invoices
         console.log(`\n📋 ALL INVOICE IDs FOR THIS LEASE (${validInvoices.length} total):`)
         validInvoices.forEach((inv, idx) => {
           console.log(`  [${idx + 1}] Invoice ${inv.id.substring(0, 8)}... (type: ${typeof inv.id})`)
         })
         
-        // Show paymentsByInvoice map contents
         console.log(`\n🗺️ PAYMENTS BY INVOICE MAP CONTENTS:`)
-        const invoiceIdsInMap = Array.from(paymentsByInvoice.keys())
         console.log(`  Total invoice IDs in map: ${invoiceIdsInMap.length}`)
         invoiceIdsInMap.forEach(invId => {
           const payments = paymentsByInvoice.get(invId) || []
@@ -466,6 +509,9 @@ export async function GET(request: Request) {
         // Debug: filter check results for console output
         filterCheckResults: isMainStProperty ? filterCheckResults : undefined,
         paymentCheckResults: isMainStProperty ? paymentCheckResults : undefined,
+        allPaymentsData: isMainStProperty ? allPaymentsData : undefined,
+        allInvoiceIdsData: isMainStProperty ? allInvoiceIdsData : undefined,
+        paymentsMapData: isMainStProperty ? paymentsMapData : undefined,
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

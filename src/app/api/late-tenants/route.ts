@@ -291,18 +291,45 @@ export async function GET(request: Request) {
         console.log(`  leaseStartDate="${leaseStartDate}"`)
         console.log(`  Total invoices before filter: ${invoices.length}`)
         console.log(`  Invoices with due dates:`)
-        invoices.forEach((inv, idx) => {
-          const rawDueDate = inv.due_date
-          const normalizedDueDate = String(rawDueDate || '').split('T')[0]
-          const isFuture = normalizedDueDate > today
-          const beforeLeaseStart = leaseStartDate && normalizedDueDate < leaseStartDate
-          console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
-          console.log(`        due_date raw: "${rawDueDate}" (type: ${typeof rawDueDate})`)
-          console.log(`        due_date normalized: "${normalizedDueDate}"`)
-          console.log(`        comparison: "${normalizedDueDate}" > "${today}" = ${isFuture}`)
-          console.log(`        before lease start: ${beforeLeaseStart}`)
-          console.log(`        will be ${isFuture || beforeLeaseStart ? 'EXCLUDED' : 'INCLUDED'}`)
-        })
+        
+        // Collect debug data for API response
+        invoiceFilterDebugData = {
+          today: today,
+          todayType: typeof today,
+          todayLength: today.length,
+          todayCharCodes: Array.from(today).map(c => c.charCodeAt(0)),
+          currentDate: new Date().toISOString().split('T')[0],
+          leaseStartDate: leaseStartDate,
+          totalInvoicesBeforeFilter: invoices.length,
+          invoices: invoices.map((inv, idx) => {
+            const rawDueDate = inv.due_date
+            const normalizedDueDate = String(rawDueDate || '').split('T')[0]
+            const isFuture = normalizedDueDate > today
+            const beforeLeaseStart = leaseStartDate && normalizedDueDate < leaseStartDate
+            const willBeExcluded = isFuture || beforeLeaseStart
+            
+            console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
+            console.log(`        due_date raw: "${rawDueDate}" (type: ${typeof rawDueDate})`)
+            console.log(`        due_date normalized: "${normalizedDueDate}"`)
+            console.log(`        comparison: "${normalizedDueDate}" > "${today}" = ${isFuture}`)
+            console.log(`        before lease start: ${beforeLeaseStart}`)
+            console.log(`        will be ${willBeExcluded ? 'EXCLUDED' : 'INCLUDED'}`)
+            
+            return {
+              index: idx + 1,
+              invoice_id: inv.id,
+              invoice_id_short: inv.id.substring(0, 8),
+              due_date_raw: rawDueDate,
+              due_date_raw_type: typeof rawDueDate,
+              due_date_normalized: normalizedDueDate,
+              comparison: `${normalizedDueDate} > ${today}`,
+              comparison_result: isFuture,
+              before_lease_start: beforeLeaseStart,
+              will_be_excluded: willBeExcluded,
+              will_be_included: !willBeExcluded
+            }
+          })
+        }
       }
       
       const validInvoices = invoices.filter(invoice => {
@@ -396,6 +423,7 @@ export async function GET(request: Request) {
       let allPaymentsData: any = null
       let allInvoiceIdsData: any = null
       let paymentsMapData: any = null
+      let invoiceFilterDebugData: any = null
       
       if (isMainStProperty) {
         const allPaymentsForLease = paymentsByLease.get(lease.id) || []

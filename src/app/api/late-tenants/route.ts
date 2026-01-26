@@ -368,52 +368,35 @@ export async function GET(request: Request) {
       })
 
       // Find all unpaid invoices - EXACT COPY from payments page line 571-573
-      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-        inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-      )
-      
-      // Debug version for 5667 N Main St
-      const allUnpaidInvoicesDebug = invoicesWithRecalculatedBalance.filter(invoice => {
-        // EXACT same as payments page line 572
-        const balanceValue = parseFloat(invoice.balance_due as any || 0)
-        const isOpen = invoice.status === 'OPEN'
-        const isUnpaid = isOpen && balanceValue > 0
-
-        // Debug for 5667 N Main St - show EVERYTHING and collect for console output
+      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => {
+        // EXACT copy from payments page line 572
+        const isUnpaid = inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
+        
+        // Debug for 5667 N Main St
         if (isMainStProperty) {
+          const balanceValue = parseFloat(inv.balance_due as any || 0)
           const filterResult = {
-            invoiceId: invoice.id,
-            status: invoice.status,
-            isOpen,
-            recalculatedBalanceDue_raw: recalcBalance,
-            recalculatedBalanceDue_type: typeof recalcBalance,
-            recalculatedBalanceDue_parsed: balanceValue,
+            invoiceId: inv.id,
+            status: inv.status,
+            isOpen: inv.status === 'OPEN',
+            balance_due_raw: inv.balance_due,
+            balance_due_type: typeof inv.balance_due,
+            balance_due_parsed: balanceValue,
             hasBalance: balanceValue > 0,
             result: isUnpaid,
             included: isUnpaid ? 'YES' : 'NO'
           }
           filterCheckResults.push(filterResult)
-          
-          console.log(`FILTER CHECK: Invoice ${invoice.id.substring(0, 8)}...`)
-          console.log(`  - Status: ${invoice.status}, Is Open: ${isOpen}`)
-          console.log(`  - recalculatedBalanceDue (raw): ${recalcBalance} (type: ${typeof recalcBalance})`)
-          console.log(`  - recalculatedBalanceDue (parsed): ${balanceValue}`)
-          console.log(`  - Has Balance (>0): ${balanceValue > 0}`)
-          console.log(`  - Result (isOpen && balanceValue > 0): ${isUnpaid}`)
-          console.log(`  - ${isUnpaid ? '✅ INCLUDED' : '❌ EXCLUDED'}`)
         }
         
         return isUnpaid
       })
 
       // Find late invoices (due before today and not fully paid)
-      const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
+      const lateInvoices = allUnpaidInvoices.filter(invoice => {
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
-        const isPastDue = dueDate < todayDate
-        const hasBalance = parseFloat(invoice.balance_due as any || 0) > 0 // EXACT same as payments page
-        const isOpen = invoice.status === 'OPEN'
-        return isPastDue && hasBalance && isOpen
+        return dueDate < todayDate
       })
 
       // Calculate total of ALL unpaid invoices (not just late ones) - EXACT COPY from payments page line 576-578

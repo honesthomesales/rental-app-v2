@@ -6,7 +6,7 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 export const revalidate = 0
 
 // Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
-const API_VERSION = 'v4.0-shared-calculation'
+const API_VERSION = 'v4.1-date-filter-in-shared-function'
 
 /**
  * Late Tenants API
@@ -580,10 +580,12 @@ export async function GET(request: Request) {
       const leasePayments = paymentsByLease.get(lease.id) || []
       
       // Use shared calculation function - ensures EXACT match with Payments page
+      // Pass actualToday to filter out future invoices (matching Payments page /api/invoices?to=${today})
       const { unpaidInvoices: allUnpaidInvoices, totalOwed: totalAllOwedForLease } = calculateUnpaidInvoices(
         finalValidInvoices as Invoice[],
         leasePayments as Payment[],
-        leaseStartDate || undefined
+        leaseStartDate || undefined,
+        actualToday // Pass actual current date to filter future invoices
       )
       
       // Debug for 5667 N Main St - collect filter results

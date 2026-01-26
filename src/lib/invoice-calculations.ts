@@ -35,26 +35,44 @@ export interface UnpaidInvoiceResult {
  * Calculates unpaid invoices using the EXACT same logic as Payments page
  * 
  * Steps (matching Payments page lines 442-580):
- * 1. Filter invoices by due_date >= leaseStartDate
+ * 1. Filter invoices by due_date >= leaseStartDate AND due_date <= today
  * 2. Group payments by invoice_id
  * 3. Recalculate balance_due = amount_total - actualPaid
  * 4. Filter unpaid: status === 'OPEN' && balance_due > 0
  * 5. Calculate total: sum of balance_due for unpaid invoices
  * 
- * @param invoices - Invoices already filtered by due_date <= today (from /api/invoices?to=${today})
+ * @param invoices - All invoices for the lease (will be filtered by date here)
  * @param payments - All payments for the lease
  * @param leaseStartDate - Lease start date to filter invoices
+ * @param actualToday - Current date in YYYY-MM-DD format (from new Date().toISOString().split('T')[0])
  * @returns Unpaid invoices, total owed, and count
  */
 export function calculateUnpaidInvoices(
   invoices: Invoice[],
   payments: Payment[],
-  leaseStartDate?: string | null
+  leaseStartDate?: string | null,
+  actualToday?: string
 ): UnpaidInvoiceResult {
-  // Step 1: Filter invoices by due_date >= leaseStartDate (Payments page line 451-453)
-  const validInvoices = invoices.filter((invoice: Invoice) => 
-    !leaseStartDate || invoice.due_date >= leaseStartDate
-  )
+  // Step 1: Filter invoices by due_date >= leaseStartDate AND due_date <= today
+  // Payments page line 444: /api/invoices?leaseId=${leaseData.id}&to=${today} (filters due_date <= today)
+  // Payments page line 451-453: invoice.due_date >= leaseStartDate
+  const validInvoices = invoices.filter((invoice: Invoice) => {
+    // Normalize due_date to YYYY-MM-DD format for comparison
+    const invoiceDueDate = String(invoice.due_date || '').split('T')[0]
+    
+    // CRITICAL: Filter out future invoices (due_date > today)
+    // This matches Payments page which calls /api/invoices?to=${today}
+    if (actualToday && invoiceDueDate > actualToday) {
+      return false // Exclude future invoices
+    }
+    
+    // Filter by due_date >= leaseStartDate (Payments page line 451-453)
+    if (leaseStartDate && invoiceDueDate < leaseStartDate) {
+      return false
+    }
+    
+    return true
+  })
 
   // Step 2: Group payments by invoice_id (Payments page lines 541-549)
   const paymentsByInvoice = new Map<string, Payment[]>()
@@ -87,9 +105,15 @@ export function calculateUnpaidInvoices(
   })
 
   // Step 4: Filter unpaid invoices (Payments page lines 571-573)
-  const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-    inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-  )
+  // CRITICAL: Also filter out future invoices here as a safety check
+  const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => {
+    // Normalize due_date for comparison
+    const invDueDate = String(inv.due_date || '').split('T')[0]
+    const isFuture = actualToday && invDueDate > actualToday
+    
+    // Only count invoices with status='OPEN' and balance_due > 0 and due_date <= today
+    return !isFuture && inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
+  })
 
   // Step 5: Calculate total owed (Payments page lines 576-578)
   const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 

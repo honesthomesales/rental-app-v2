@@ -419,9 +419,9 @@ export async function GET(request: Request) {
       
       const daysLate = Math.floor((todayDate.getTime() - new Date(oldestLateInvoice.due_date).getTime()) / (1000 * 60 * 60 * 24))
       
-      // Calculate totals using recalculatedBalanceDue - EXACT same as diagnostic endpoint
+      // Calculate totals using balance_due - EXACT same as payments page
       const totalLateAmount = lateInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.recalculatedBalanceDue as any || 0), 0
+        sum + parseFloat(invoice.balance_due as any || 0), 0
       )
       const totalLateFees = lateInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.amount_late || 0), 0
@@ -452,7 +452,7 @@ export async function GET(request: Request) {
         // Show ALL invoices with their filter results
         console.log(`\n  📋 ALL INVOICES FOR THIS LEASE (${validInvoices.length} total):`)
         invoicesWithRecalculatedBalance.forEach((inv, idx) => {
-          const balanceValue = parseFloat(inv.recalculatedBalanceDue as any || 0)
+          const balanceValue = parseFloat(inv.balance_due as any || 0)
           const isOpen = inv.status === 'OPEN'
           const hasBalance = balanceValue > 0
           const isIncluded = isOpen && hasBalance
@@ -508,7 +508,7 @@ export async function GET(request: Request) {
           period_end: invoice.period_end,
           amount_total: parseFloat(invoice.amount_total || 0),
           amount_paid: invoice.actualPaid || parseFloat(invoice.amount_paid || 0), // Use actual paid amount
-          balance_due: parseFloat(invoice.recalculatedBalanceDue as any || 0), // Use recalculatedBalanceDue - EXACT same as diagnostic endpoint
+          balance_due: parseFloat(invoice.balance_due as any || 0), // Use balance_due - EXACT same as payments page
           amount_late: parseFloat(invoice.amount_late || 0),
           status: invoice.status,
           days_late: Math.floor((todayDate.getTime() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24))

@@ -274,13 +274,17 @@ export async function GET(request: Request) {
       // IMPORTANT: The Payments page ONLY processes invoices returned by the API
       // which already filters due_date <= today. We must do the same here.
       const validInvoices = invoices.filter(invoice => {
-        const invoiceDueDate = invoice.due_date
+        // CRITICAL: Normalize due_date to YYYY-MM-DD format for comparison
+        const invoiceDueDate = String(invoice.due_date || '').split('T')[0]
         
         // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
         // String comparison works for ISO date strings (YYYY-MM-DD format)
         // Example: "2026-01-14" > "2025-01-15" = true (correctly excludes future dates)
         // This MUST match the Payments page filter exactly
         if (invoiceDueDate > today) {
+          if (isMainStProperty) {
+            console.error(`  ⚠️ FILTER: Excluding future invoice: ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > today="${today}"`)
+          }
           return false // Skip future invoices - they're not due yet
         }
         

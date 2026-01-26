@@ -218,13 +218,17 @@ export async function GET(request: Request) {
       // CRITICAL FIX: Filter out invoices with due_date > today FIRST
       // The Supabase query should have done this, but we need to ensure it's applied
       // This is the EXACT same filter as Payments page: /api/invoices?to=${today}
+      // Payments page line 444: `/api/invoices?leaseId=${leaseData.id}&to=${today}`
+      // This filters due_date <= today
       const validInvoices = invoices.filter(invoice => {
         const invoiceDueDate = invoice.due_date
         
         // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
-        // String comparison works for ISO date strings (YYYY-MM-DD)
+        // String comparison works for ISO date strings (YYYY-MM-DD format)
+        // Example: "2026-01-14" > "2025-01-15" = true (correctly excludes future dates)
         // This MUST match the Payments page filter exactly
-        if (invoiceDueDate > today) {
+        const isFuture = invoiceDueDate > today
+        if (isFuture) {
           return false // Skip future invoices - they're not due yet
         }
         
@@ -627,6 +631,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       version: API_VERSION,
+      debug: {
+        today,
+        totalInvoicesFetched: allInvoices?.length || 0,
+        totalLeases: leases.length
+      },
       summary,
       rows: lateTenantsRows
     }, {

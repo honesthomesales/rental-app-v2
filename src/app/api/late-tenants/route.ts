@@ -201,6 +201,7 @@ export async function GET(request: Request) {
       // Debug logging for 5667 N Main St - collect filter results for console output
       const address = lease.RENT_properties?.address || 'unknown'
       const filterCheckResults: any[] = []
+      const paymentCheckResults: any[] = []
       const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
 
       // Recalculate balance_due using actual payment totals - EXACT same as diagnostic endpoint
@@ -212,8 +213,36 @@ export async function GET(request: Request) {
           sum + parseFloat(payment.amount || 0), 0
         )
         
-        // Debug for 5667 N Main St - show payment linking
+        // Debug for 5667 N Main St - show payment linking and collect for console
         if (isMainStProperty) {
+          const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+          const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === invoice.id)
+          
+          const paymentCheck = {
+            invoiceId: invoice.id,
+            invoiceId_short: invoice.id.substring(0, 8) + '...',
+            amountTotal: parseFloat(invoice.amount_total || 0),
+            linkedPaymentsCount: linkedPayments.length,
+            actualPaid: actualPaid,
+            paymentsInMap: linkedPayments.map(p => ({
+              payment_id: p.id,
+              amount: p.amount,
+              invoice_id: p.invoice_id,
+              payment_date: p.payment_date
+            })),
+            totalPaymentsForLease: allPaymentsForLease.length,
+            paymentsWithInvoiceId: paymentsWithThisInvoiceId.length,
+            paymentsNotInMap: paymentsWithThisInvoiceId.length > 0 ? paymentsWithThisInvoiceId.map(p => ({
+              payment_id: p.id,
+              amount: p.amount,
+              invoice_id: p.invoice_id,
+              invoice_id_type: typeof p.invoice_id,
+              invoice_id_matches: p.invoice_id === invoice.id,
+              invoice_id_strict_eq: p.invoice_id === invoice.id
+            })) : []
+          }
+          paymentCheckResults.push(paymentCheck)
+          
           console.log(`\n💰 PAYMENT CHECK for Invoice ${invoice.id.substring(0, 8)}...`)
           console.log(`  - Invoice ID: ${invoice.id}`)
           console.log(`  - Amount Total: $${parseFloat(invoice.amount_total || 0)}`)
@@ -226,9 +255,6 @@ export async function GET(request: Request) {
               payment_date: p.payment_date
             })))
           } else {
-            // Check if payments exist but aren't linked
-            const allPaymentsForLease = paymentsByLease.get(lease.id) || []
-            const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === invoice.id)
             console.log(`  - ⚠️ NO PAYMENTS FOUND in paymentsByInvoice map`)
             console.log(`  - Total payments for this lease: ${allPaymentsForLease.length}`)
             console.log(`  - Payments with invoice_id=${invoice.id}: ${paymentsWithThisInvoiceId.length}`)
@@ -236,7 +262,9 @@ export async function GET(request: Request) {
               console.log(`  - ⚠️ PAYMENTS EXIST but not in map!`, paymentsWithThisInvoiceId.map(p => ({
                 payment_id: p.id,
                 amount: p.amount,
-                invoice_id: p.invoice_id
+                invoice_id: p.invoice_id,
+                invoice_id_type: typeof p.invoice_id,
+                invoice_id_matches: p.invoice_id === invoice.id
               })))
             }
           }
@@ -411,6 +439,7 @@ export async function GET(request: Request) {
         unpaidInvoiceIdsUniqueCount: new Set(allUnpaidInvoices.map(inv => inv.id)).size, // Unique count
         // Debug: filter check results for console output
         filterCheckResults: isMainStProperty ? filterCheckResults : undefined,
+        paymentCheckResults: isMainStProperty ? paymentCheckResults : undefined,
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

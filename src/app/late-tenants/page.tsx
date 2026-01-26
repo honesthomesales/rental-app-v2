@@ -101,6 +101,13 @@ export default function LateTenantsPage() {
             'INCLUDED': r.included
           })))
         }
+        
+        // Log payment check results
+        if (mainStTenant.paymentCheckResults) {
+          console.log('\n💰 ========== PAYMENT CHECK RESULTS (COPY THIS) ==========')
+          console.log(JSON.stringify(mainStTenant.paymentCheckResults, null, 2))
+          console.log('💰 ========== END PAYMENT CHECK RESULTS ==========\n')
+        }
       }
       
       setAllLateTenants(data?.rows || [])

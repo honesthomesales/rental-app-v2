@@ -6,7 +6,7 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 export const revalidate = 0
 
 // Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
-const API_VERSION = 'v5.1-direct-supabase-same-as-api-routes'
+const API_VERSION = 'v5.2-only-tenants-with-unpaid-invoices'
 
 /**
  * Late Tenants API
@@ -140,6 +140,15 @@ export async function GET(request: Request) {
         if (isMainStProperty) {
           console.log(`  Step 4: calculateUnpaidInvoices returned ${unpaidCount} unpaid invoices, totalOwed=${totalOwed}`)
           console.log(`  Unpaid invoice IDs:`, unpaidInvoices.map(inv => inv.id).join(', '))
+        }
+        
+        // CRITICAL: Only include leases with unpaid invoices (matching Late Tenants page expectation)
+        // Skip leases with no unpaid invoices
+        if (unpaidCount === 0 || totalOwed === 0) {
+          if (isMainStProperty) {
+            console.log(`  ⚠️ Skipping lease ${leaseId} - no unpaid invoices (unpaidCount=${unpaidCount}, totalOwed=${totalOwed})`)
+          }
+          continue
         }
         
         totalAllOwed += totalOwed

@@ -102,17 +102,27 @@ export async function downloadAsPDF(content: string, filename: string, htmlConte
     if (line.trim() === '') {
       y += lineHeight * 0.5
     } else {
-      // For lines with special formatting (underscores, aligned text), preserve spacing
-      // Split long lines only if necessary
-      if (line.length > 80) {
-        const wrappedLines = doc.splitTextToSize(line, maxWidth)
-        wrappedLines.forEach((wrappedLine: string) => {
-          doc.text(wrappedLine, margin, y, { maxWidth })
-          y += lineHeight
-        })
+      // Handle OPTIONS header with larger font (+6 points = 16pt)
+      if (line.trim().startsWith('***OPTIONS***')) {
+        doc.setFontSize(16)
+        doc.setFont('courier', 'bold')
+        doc.text('OPTIONS', margin, y, { maxWidth })
+        doc.setFontSize(10)
+        doc.setFont('courier', 'normal')
+        y += lineHeight * 1.2
       } else {
-        doc.text(line, margin, y, { maxWidth })
-        y += lineHeight
+        // For lines with special formatting (underscores, aligned text), preserve spacing
+        // Split long lines only if necessary
+        if (line.length > 80) {
+          const wrappedLines = doc.splitTextToSize(line, maxWidth)
+          wrappedLines.forEach((wrappedLine: string) => {
+            doc.text(wrappedLine, margin, y, { maxWidth })
+            y += lineHeight
+          })
+        } else {
+          doc.text(line, margin, y, { maxWidth })
+          y += lineHeight
+        }
       }
     }
   })
@@ -219,6 +229,21 @@ export async function downloadAsWord(content: string, filename: string, htmlCont
             text: line,
             font: 'Courier New',
             size: 22,
+            bold: true,
+          }),
+        ],
+        spacing: { after: 120, before: 0 },
+      })
+    }
+    
+    // Handle OPTIONS header with larger font (+6 points: 20pt base + 6 = 26pt, but Word uses half-points so 32 = 16pt)
+    if (trimmed.startsWith('***OPTIONS***')) {
+      return new Paragraph({
+        children: [
+          new TextRun({
+            text: 'OPTIONS',
+            font: 'Courier New',
+            size: 32, // 16pt (base 20 = 10pt, +6pt = 16pt = 32 in Word units)
             bold: true,
           }),
         ],

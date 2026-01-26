@@ -6,8 +6,8 @@ export async function POST(request: Request) {
   try {
     const { tenantId, county, formType, ejectmentReason, violationDescription, leaseId } = await request.json()
 
-    if (!county || !leaseId) {
-      return NextResponse.json({ error: 'County and lease ID are required' }, { status: 400 })
+    if (!leaseId) {
+      return NextResponse.json({ error: 'Lease ID is required' }, { status: 400 })
     }
 
     // Fetch lease, property, and tenant details
@@ -29,9 +29,15 @@ export async function POST(request: Request) {
     const property = leaseData.RENT_properties
     const tenant = leaseData.RENT_tenants
 
+    // Get county from property (same source as dashboard property tax overview)
+    const propertyCounty = property.county || county || ''
+    if (!propertyCounty) {
+      return NextResponse.json({ error: 'County information not found for this property. Please ensure the property has a county set.' }, { status: 400 })
+    }
+
     // Determine magistrate from address
     const magistrateDistrict = getMagistrateDistrict(
-      county,
+      propertyCounty,
       property.city,
       property.zip_code || property.postal_code
     )
@@ -170,11 +176,28 @@ Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7
 
 **IMPORTANT: Payment in full will stop all eviction proceedings from moving forward.**
 
-This notice is being delivered by physical delivery to the premises.
+***OPTIONS***
 
-Failure to comply with this notice by the specified deadline will result in the commencement of eviction proceedings without further notice. This may include legal action to recover possession of the property, unpaid rent, and any other damages or costs as permitted by law.
+Please contact us by text at 864-322-3432. We will respond by phone shortly.
 
-We urge you to take immediate action to resolve this matter.
+You must choose ONE of the following options:
+
+1) Voluntary Move-Out Agreement
+Sign paperwork agreeing to move out and surrender possession of the property, including turning over all keys.
+
+This option includes an agreement not to pursue collections and not to file a judgment,
+
+Provided the property is left in good condition.
+
+2) Payment in Full
+Make payment in full to bring your rent account current.
+
+3) Eviction Proceedings
+If neither option above is completed, we will proceed with eviction.
+
+You will be responsible for all rent owed, court costs, and legal fees.
+
+We reserve the right to pursue any unpaid balance through a judgment.
 
 **LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
@@ -242,7 +265,7 @@ ${checkbox3} The terms or conditions of the lease have been violated as follows:
       forms.ejectment = `APPLICATION FOR EJECTMENT (Eviction)
 
 STATE OF SOUTH CAROLINA
-COUNTY OF ${county.toUpperCase()}
+COUNTY OF ${propertyCounty.toUpperCase()}
 
 PLAINTIFF(S): Honest Home Sales, LLC
 
@@ -325,7 +348,7 @@ SCCA/732 (Amended 05/2008)`
         forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS
 
 STATE OF SOUTH CAROLINA
-COUNTY OF ${county.toUpperCase()}
+COUNTY OF ${propertyCounty.toUpperCase()}
 
 CIVIL CASE NUMBER: _________________________
 
@@ -367,7 +390,7 @@ SCCA/716 (Amended 05/2008)`
     if (forms.ejectment) {
       const { generateEjectmentHTML } = await import('@/lib/form-html-generator')
       formsWithHTML.ejectmentHTML = generateEjectmentHTML(
-        county,
+        propertyCounty,
         'Honest Home Sales, LLC',
         `${tenant.first_name} ${tenant.last_name}`,
         magistrateDistrict,
@@ -400,7 +423,7 @@ SCCA/716 (Amended 05/2008)`
       }) || []
       
       formsWithHTML.affidavitHTML = generateAffidavitHTML(
-        county,
+        propertyCounty,
         'Honest Home Sales, LLC',
         `${tenant.first_name} ${tenant.last_name}`,
         invoiceItemsForHTML,

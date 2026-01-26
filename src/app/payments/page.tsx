@@ -104,7 +104,6 @@ export default function PaymentsPage() {
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [selectedTenantForGenerate, setSelectedTenantForGenerate] = useState<string>('')
-  const [selectedCounty, setSelectedCounty] = useState<string>('')
   const [generatingForm, setGeneratingForm] = useState(false)
   const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
   const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
@@ -3146,7 +3145,6 @@ return'<div class="s">'+l+'</div>';
                 onClick={() => {
                   setShowGenerateModal(false)
                   setSelectedTenantForGenerate('')
-                  setSelectedCounty('')
                   setFormType('notice')
                   setEjectmentReason('nonpayment')
                   setViolationDescription('')
@@ -3173,25 +3171,6 @@ return'<div class="s">'+l+'</div>';
                       {row.property.name} - {row.tenant.full_name || `${row.tenant.first_name} ${row.tenant.last_name}`}
                     </option>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  County
-                </label>
-                <select
-                  value={selectedCounty}
-                  onChange={(e) => setSelectedCounty(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select county...</option>
-                  <option value="Spartanburg">Spartanburg</option>
-                  <option value="Greenville">Greenville</option>
-                  <option value="Anderson">Anderson</option>
-                  <option value="Cherokee">Cherokee</option>
-                  <option value="Union">Union</option>
-                  <option value="Saluda">Saluda</option>
                 </select>
               </div>
 
@@ -3263,7 +3242,6 @@ return'<div class="s">'+l+'</div>';
                   onClick={() => {
                     setShowGenerateModal(false)
                     setSelectedTenantForGenerate('')
-                    setSelectedCounty('')
                     setFormType('notice')
                     setEjectmentReason('nonpayment')
                     setViolationDescription('')
@@ -3274,8 +3252,8 @@ return'<div class="s">'+l+'</div>';
                 </button>
                 <button
                   onClick={async () => {
-                    if (!selectedTenantForGenerate || !selectedCounty) {
-                      alert('Please select a property/tenant and county')
+                    if (!selectedTenantForGenerate) {
+                      alert('Please select a property/tenant')
                       return
                     }
 
@@ -3284,6 +3262,13 @@ return'<div class="s">'+l+'</div>';
                     )
                     if (!tenant) {
                       alert('Selected tenant not found')
+                      return
+                    }
+
+                    // Get county from property (same source as dashboard property tax overview)
+                    const county = tenant.property?.county || ''
+                    if (!county) {
+                      alert('County information not found for this property. Please ensure the property has a county set.')
                       return
                     }
 
@@ -3308,7 +3293,7 @@ return'<div class="s">'+l+'</div>';
                         },
                         body: JSON.stringify({
                           tenantId: tenant.tenant.id || tenant.lease.tenant_id,
-                          county: selectedCounty,
+                          county: county,
                           formType,
                           ejectmentReason,
                           violationDescription,
@@ -3332,7 +3317,7 @@ return'<div class="s">'+l+'</div>';
                       setGeneratingForm(false)
                     }
                   }}
-                  disabled={generatingForm || !selectedTenantForGenerate || !selectedCounty}
+                  disabled={generatingForm || !selectedTenantForGenerate}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {generatingForm ? 'Generating...' : 'Generate Forms'}

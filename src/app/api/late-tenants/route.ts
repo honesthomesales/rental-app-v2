@@ -208,11 +208,14 @@ export async function GET(request: Request) {
         const amountTotal = parseFloat(invoice.amount_total || 0)
         const recalculatedBalanceDue = amountTotal - actualPaid
         
-        return {
+        // Create new object with recalculated balance (don't rely on spread to override)
+        const invoiceWithRecalc = {
           ...invoice,
           actualPaid,
-          balance_due: recalculatedBalanceDue // Use recalculated balance
+          balance_due: recalculatedBalanceDue // Use recalculated balance - this MUST override the original
         }
+        
+        return invoiceWithRecalc
       })
 
       // Find all unpaid invoices - EXACT same logic as payments page
@@ -221,9 +224,27 @@ export async function GET(request: Request) {
       // IMPORTANT: Must check recalculated balance_due > 0, not just status='OPEN'
       // Some invoices have status='OPEN' but are fully paid (balance_due <= 0)
       const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
-        const balanceDue = parseFloat(invoice.balance_due as any || 0)
+        // CRITICAL: Recalculate balance_due here to ensure we're using the correct value
+        // Don't rely on the balance_due property - recalculate it from actualPaid
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const actualPaid = invoice.actualPaid || 0
+        const recalculatedBalanceDue = amountTotal - actualPaid
+        
         const isOpen = invoice.status === 'OPEN'
-        const hasBalance = balanceDue > 0 // Must be strictly greater than 0
+        const hasBalance = recalculatedBalanceDue > 0 // Must be strictly greater than 0
+        
+        // Debug: Log if we're including an invoice with balance <= 0
+        if (isOpen && !hasBalance && recalculatedBalanceDue <= 0) {
+          console.error(`⚠️ INVOICE WITH balance_due <= 0 BEING CONSIDERED:`, {
+            id: invoice.id,
+            status: invoice.status,
+            recalculated_balance_due: recalculatedBalanceDue,
+            amount_total: amountTotal,
+            actualPaid: actualPaid,
+            stored_balance_due: invoice.balance_due
+          })
+        }
+        
         return isOpen && hasBalance
       })
 
@@ -231,13 +252,16 @@ export async function GET(request: Request) {
       // Must also check status='OPEN' to match payments page logic
       // Use recalculated balance_due
       // IMPORTANT: Must check recalculated balance_due > 0, not just status='OPEN'
-      const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
+        const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
         // Use same date normalization as payments page
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
         const isPastDue = dueDate < todayDate
-        const balanceDue = parseFloat(invoice.balance_due as any || 0)
-        const hasBalance = balanceDue > 0 // Must be strictly greater than 0
+        // Recalculate balance_due to ensure we're using the correct value
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const actualPaid = invoice.actualPaid || 0
+        const recalculatedBalanceDue = amountTotal - actualPaid
+        const hasBalance = recalculatedBalanceDue > 0 // Must be strictly greater than 0
         const isOpen = invoice.status === 'OPEN'
         return isPastDue && hasBalance && isOpen
       })
@@ -245,9 +269,13 @@ export async function GET(request: Request) {
       // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as payments page
       // This matches the payments page "Total Owed" calculation
       // Use recalculated balance_due (from actual payment totals)
-      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.balance_due as any || 0), 0
-      )
+      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => {
+        // Recalculate balance_due to ensure we're using the correct value
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const actualPaid = invoice.actualPaid || 0
+        const recalculatedBalanceDue = amountTotal - actualPaid
+        return sum + recalculatedBalanceDue
+      }, 0)
 
       if (lateInvoices.length === 0) {
         // Even if no late invoices, we still want to track totalAllOwed for the summary
@@ -270,9 +298,13 @@ export async function GET(request: Request) {
       
       // Calculate totals using EXACT same logic as payments page
       // Use recalculated balance_due (from actual payment totals)
-      const totalLateAmount = lateInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.balance_due as any || 0), 0
-      )
+      const totalLateAmount = lateInvoices.reduce((sum, invoice) => {
+        // Recalculate balance_due to ensure we're using the correct value
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const actualPaid = invoice.actualPaid || 0
+        const recalculatedBalanceDue = amountTotal - actualPaid
+        return sum + recalculatedBalanceDue
+      }, 0)
       const totalLateFees = lateInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.amount_late || 0), 0
       )
@@ -302,26 +334,46 @@ export async function GET(request: Request) {
           
           // Show invoices that were EXCLUDED (status=OPEN but balance_due <= 0)
           const excludedInvoices = invoicesWithRecalculatedBalance.filter(inv => {
-            const balanceDue = parseFloat(inv.balance_due as any || 0)
+            const balanceDue = typeof inv.balance_due === 'number' 
+              ? inv.balance_due 
+              : parseFloat(inv.balance_due as any || 0)
             return inv.status === 'OPEN' && balanceDue <= 0
           })
           
-          console.log(`  - Unpaid invoice details (${allUnpaidInvoices.length} invoices):`, allUnpaidInvoices.map(inv => ({
-            id: inv.id,
-            due_date: inv.due_date,
-            amount_total: parseFloat(inv.amount_total || 0),
-            balance_due: parseFloat(inv.balance_due || 0),
-            actualPaid: inv.actualPaid || 0,
-            status: inv.status
-          })))
-          console.log(`  - EXCLUDED invoices (status=OPEN but balance_due <= 0): ${excludedInvoices.length}`, excludedInvoices.map(inv => ({
-            id: inv.id,
-            due_date: inv.due_date,
-            balance_due: parseFloat(inv.balance_due || 0),
-            actualPaid: inv.actualPaid || 0,
-            amount_total: parseFloat(inv.amount_total || 0),
-            status: inv.status
-          })))
+          // Debug: Check what balance_due values we have
+          console.log(`  - DEBUG: Checking balance_due values in invoicesWithRecalculatedBalance:`)
+          invoicesWithRecalculatedBalance.slice(0, 5).forEach(inv => {
+            console.log(`    Invoice ${inv.id}: balance_due type=${typeof inv.balance_due}, value=${inv.balance_due}, actualPaid=${inv.actualPaid}`)
+          })
+          
+          console.log(`  - Unpaid invoice details (${allUnpaidInvoices.length} invoices):`, allUnpaidInvoices.map(inv => {
+            const balanceDue = typeof inv.balance_due === 'number' 
+              ? inv.balance_due 
+              : parseFloat(inv.balance_due as any || 0)
+            return {
+              id: inv.id,
+              due_date: inv.due_date,
+              amount_total: parseFloat(inv.amount_total || 0),
+              balance_due: balanceDue,
+              balance_due_type: typeof inv.balance_due,
+              actualPaid: inv.actualPaid || 0,
+              status: inv.status
+            }
+          }))
+          console.log(`  - EXCLUDED invoices (status=OPEN but balance_due <= 0): ${excludedInvoices.length}`, excludedInvoices.map(inv => {
+            const balanceDue = typeof inv.balance_due === 'number' 
+              ? inv.balance_due 
+              : parseFloat(inv.balance_due as any || 0)
+            return {
+              id: inv.id,
+              due_date: inv.due_date,
+              balance_due: balanceDue,
+              balance_due_type: typeof inv.balance_due,
+              actualPaid: inv.actualPaid || 0,
+              amount_total: parseFloat(inv.amount_total || 0),
+              status: inv.status
+            }
+          }))
           console.log(`  - ALL valid invoices (before status/balance filter):`, validInvoices.map(inv => ({
             id: inv.id,
             due_date: inv.due_date,

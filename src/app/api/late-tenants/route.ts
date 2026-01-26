@@ -235,9 +235,21 @@ export async function GET(request: Request) {
         const isOpen = invoice.status === 'OPEN'
         const isUnpaid = isOpen && balanceValue > 0
 
-        // Debug for 5667 N Main St - show EVERYTHING
-        const address = lease.RENT_properties?.address || ''
-        if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
+        // Debug for 5667 N Main St - show EVERYTHING and collect for console output
+        if (isMainStProperty) {
+          const filterResult = {
+            invoiceId: invoice.id,
+            status: invoice.status,
+            isOpen,
+            recalculatedBalanceDue_raw: recalcBalance,
+            recalculatedBalanceDue_type: typeof recalcBalance,
+            recalculatedBalanceDue_parsed: balanceValue,
+            hasBalance: balanceValue > 0,
+            result: isUnpaid,
+            included: isUnpaid ? 'YES' : 'NO'
+          }
+          filterCheckResults.push(filterResult)
+          
           console.log(`FILTER CHECK: Invoice ${invoice.id.substring(0, 8)}...`)
           console.log(`  - Status: ${invoice.status}, Is Open: ${isOpen}`)
           console.log(`  - recalculatedBalanceDue (raw): ${recalcBalance} (type: ${typeof recalcBalance})`)
@@ -294,9 +306,12 @@ export async function GET(request: Request) {
       )
       const totalLatePeriods = lateInvoices.length
       
-      // Debug logging for 5667 N Main St
+      // Debug logging for 5667 N Main St - collect filter results for console output
       const address = lease.RENT_properties?.address || 'unknown'
-      if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
+      const filterCheckResults: any[] = []
+      const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
+      
+      if (isMainStProperty) {
         console.log(`\n🔍 ========== DETAILED DEBUG for ${address} ==========`)
         console.log(`  - Lease ID: ${lease.id}`)
         console.log(`  - Property ID: ${lease.property_id}`)
@@ -362,6 +377,8 @@ export async function GET(request: Request) {
         // Verify no duplicates in unpaidInvoiceIds
         unpaidInvoiceIdsUnique: Array.from(new Set(allUnpaidInvoices.map(inv => inv.id))), // Unique IDs only
         unpaidInvoiceIdsUniqueCount: new Set(allUnpaidInvoices.map(inv => inv.id)).size, // Unique count
+        // Debug: filter check results for console output
+        filterCheckResults: isMainStProperty ? filterCheckResults : undefined
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

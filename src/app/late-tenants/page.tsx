@@ -83,6 +83,24 @@ export default function LateTenantsPage() {
           address: mainStTenant.property?.address
         })
         console.log('🔍 Late Tenants API - Invoice IDs being counted:', mainStTenant.unpaidInvoiceIds?.join(', ') || 'none')
+        
+        // Log detailed filter check results
+        if (mainStTenant.filterCheckResults) {
+          console.log('\n🔍 ========== FILTER CHECK RESULTS (COPY THIS) ==========')
+          console.log(JSON.stringify(mainStTenant.filterCheckResults, null, 2))
+          console.log('🔍 ========== END FILTER CHECK RESULTS ==========\n')
+          
+          // Also show as a table for easy reading
+          console.table(mainStTenant.filterCheckResults.map((r: any) => ({
+            Invoice: r.invoiceId.substring(0, 8) + '...',
+            Status: r.status,
+            'Is Open': r.isOpen,
+            'Balance (raw)': r.recalculatedBalanceDue_raw,
+            'Balance (parsed)': r.recalculatedBalanceDue_parsed,
+            'Has Balance': r.hasBalance,
+            'INCLUDED': r.included
+          })))
+        }
       }
       
       setAllLateTenants(data?.rows || [])

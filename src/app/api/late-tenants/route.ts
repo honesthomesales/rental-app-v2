@@ -325,13 +325,6 @@ export async function GET(request: Request) {
         const amountTotal = parseFloat(invoice.amount_total as any || 0)
         const recalculatedBalanceDue = amountTotal - actualPaid
         
-        // EXACT copy from payments page line 563-566
-        return {
-          ...invoice,
-          balance_due: recalculatedBalanceDue // Use recalculated balance
-        }
-      })
-        
         // Debug for 5667 N Main St - show payment linking and collect for console
         if (isMainStProperty) {
           const allPaymentsForLease = paymentsByLease.get(lease.id) || []
@@ -363,8 +356,11 @@ export async function GET(request: Request) {
           paymentCheckResults.push(paymentCheck)
         }
         
-        // Return the invoice with recalculated balance_due (EXACT same as payments page)
-        return invoice
+        // EXACT copy from payments page line 563-566
+        return {
+          ...invoice,
+          balance_due: recalculatedBalanceDue // Use recalculated balance
+        }
       })
 
       // Find all unpaid invoices - EXACT COPY from payments page line 571-573

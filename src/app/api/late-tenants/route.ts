@@ -349,21 +349,24 @@ export async function GET(request: Request) {
         }
       }
       
+      // CRITICAL: Use currentDate (actual server date) instead of today parameter
+      // This ensures we always filter based on the actual current date, not a potentially incorrect parameter
       const validInvoices = invoices.filter(invoice => {
         // CRITICAL: Normalize due_date to YYYY-MM-DD format for comparison
         const invoiceDueDate = String(invoice.due_date || '').split('T')[0]
         
-        // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
+        // CRITICAL: Only process invoices with due_date <= currentDate (matching Payments page)
+        // Use currentDate (actual server date) not today parameter to ensure accuracy
         // String comparison works for ISO date strings (YYYY-MM-DD format)
         // Example: "2026-01-14" > "2025-01-15" = true (correctly excludes future dates)
         // This MUST match the Payments page filter exactly
-        const isFuture = invoiceDueDate > today
+        const isFuture = invoiceDueDate > currentDate
         if (isFuture) {
           if (isMainStProperty) {
-            console.error(`  ⚠️ FILTER: Excluding future invoice: ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > today="${today}"`)
-            console.error(`    Comparison: "${invoiceDueDate}" > "${today}" = ${isFuture}`)
+            console.error(`  ⚠️ FILTER: Excluding future invoice: ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > currentDate="${currentDate}" (today="${today}")`)
+            console.error(`    Comparison: "${invoiceDueDate}" > "${currentDate}" = ${isFuture}`)
             console.error(`    invoiceDueDate type: ${typeof invoiceDueDate}, length: ${invoiceDueDate.length}`)
-            console.error(`    today type: ${typeof today}, length: ${today.length}`)
+            console.error(`    currentDate type: ${typeof currentDate}, length: ${currentDate.length}`)
           }
           return false // Skip future invoices - they're not due yet
         }
@@ -468,14 +471,15 @@ export async function GET(request: Request) {
         }))
         
         // Show all invoice IDs from invoices
-        // CRITICAL: Only include invoices with due_date <= today (validation check)
+        // CRITICAL: Only include invoices with due_date <= currentDate (validation check)
         // Normalize due_date for comparison
+        // Use currentDate (actual server date) not today parameter
         const validInvoicesForDebug = validInvoices.filter(inv => {
           const invDueDate = String(inv.due_date || '').split('T')[0]
-          const isFuture = invDueDate > today
+          const isFuture = invDueDate > currentDate
           if (isFuture) {
-            console.error(`  ⚠️ DEBUG: Excluding future invoice from debug output: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
-            console.error(`    Comparison: "${invDueDate}" > "${today}" = ${isFuture}`)
+            console.error(`  ⚠️ DEBUG: Excluding future invoice from debug output: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > currentDate="${currentDate}" (today="${today}")`)
+            console.error(`    Comparison: "${invDueDate}" > "${currentDate}" = ${isFuture}`)
           }
           return !isFuture
         })

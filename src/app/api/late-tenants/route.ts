@@ -260,17 +260,35 @@ export async function GET(request: Request) {
       })
       
       // CRITICAL VALIDATION: Ensure no future invoices passed the filter
-      const futureInvoicesInValid = validInvoices.filter(inv => inv.due_date > today)
+      // This is a safety check - the filter above should have already excluded them
+      const futureInvoicesInValid = validInvoices.filter(inv => {
+        const invDueDate = inv.due_date
+        const isFuture = invDueDate > today
+        return isFuture
+      })
       if (futureInvoicesInValid.length > 0) {
         console.error(`⚠️ CRITICAL ERROR: ${futureInvoicesInValid.length} future invoices passed the filter!`)
         console.error(`  today="${today}"`)
         console.error(`  Future invoices:`, futureInvoicesInValid.map(inv => ({
           id: inv.id.substring(0, 8) + '...',
           due_date: inv.due_date,
-          comparison: `${inv.due_date} > ${today} = ${inv.due_date > today}`
+          comparison: `${inv.due_date} > ${today} = ${inv.due_date > today}`,
+          type_inv: typeof inv.due_date,
+          type_today: typeof today
         })))
-        // Remove them explicitly
-        validInvoices.splice(0, validInvoices.length, ...validInvoices.filter(inv => inv.due_date <= today))
+        // CRITICAL FIX: Remove them explicitly by creating a new array
+        const filteredValidInvoices = validInvoices.filter(inv => {
+          const invDueDate = inv.due_date
+          const isFuture = invDueDate > today
+          if (isFuture) {
+            console.error(`  Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
+          }
+          return !isFuture
+        })
+        // Replace the array contents
+        validInvoices.length = 0
+        validInvoices.push(...filteredValidInvoices)
+        console.error(`  After removal: ${validInvoices.length} invoices remain`)
       }
       
       // Debug logging for 5667 N Main St

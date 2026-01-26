@@ -203,6 +203,32 @@ export async function GET(request: Request) {
       const filterCheckResults: any[] = []
       const paymentCheckResults: any[] = []
       const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
+      
+      // Log all payments for this lease to see what invoice_ids they have
+      if (isMainStProperty) {
+        const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+        console.log(`\n💰 ALL PAYMENTS FOR LEASE ${lease.id} (${allPaymentsForLease.length} total):`)
+        allPaymentsForLease.forEach((p, idx) => {
+          console.log(`  [${idx + 1}] Payment ${p.id?.substring(0, 8) || 'no-id'}...`)
+          console.log(`      Amount: $${p.amount}, Invoice ID: ${p.invoice_id || 'NULL'}, Date: ${p.payment_date}`)
+          console.log(`      Invoice ID type: ${typeof p.invoice_id}, Invoice ID === null: ${p.invoice_id === null}, Invoice ID === undefined: ${p.invoice_id === undefined}`)
+        })
+        
+        // Show all invoice IDs from invoices
+        console.log(`\n📋 ALL INVOICE IDs FOR THIS LEASE (${validInvoices.length} total):`)
+        validInvoices.forEach((inv, idx) => {
+          console.log(`  [${idx + 1}] Invoice ${inv.id.substring(0, 8)}... (type: ${typeof inv.id})`)
+        })
+        
+        // Show paymentsByInvoice map contents
+        console.log(`\n🗺️ PAYMENTS BY INVOICE MAP CONTENTS:`)
+        const invoiceIdsInMap = Array.from(paymentsByInvoice.keys())
+        console.log(`  Total invoice IDs in map: ${invoiceIdsInMap.length}`)
+        invoiceIdsInMap.forEach(invId => {
+          const payments = paymentsByInvoice.get(invId) || []
+          console.log(`  - Invoice ${invId.substring(0, 8)}...: ${payments.length} payment(s)`)
+        })
+      }
 
       // Recalculate balance_due using actual payment totals - EXACT same as diagnostic endpoint
       // Diagnostic endpoint line 81-91: uses recalculatedBalanceDue property (which we know works)

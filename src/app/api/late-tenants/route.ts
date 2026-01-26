@@ -93,25 +93,37 @@ export async function GET(request: Request) {
     // Fetch invoices with due_date <= today for processing (matching payments page)
     // CRITICAL: The Payments page calls /api/invoices?leaseId=...&to=${today}
     // which uses .lte('due_date', to) - this MUST match exactly
+    // The invoices API route does: if (to) { query = query.lte('due_date', to) }
     console.log(`🔍 Fetching invoices with due_date <= "${today}" for ${leaseIds.length} leases`)
+    
+    // Use the EXACT same query as /api/invoices route (lines 49-50)
     const { data: allInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
       .in('lease_id', leaseIds)
-      .lte('due_date', today)  // Same as payments page: /api/invoices?leaseId=...&to=${today}
+      .lte('due_date', today)  // EXACT same as invoices API: if (to) { query = query.lte('due_date', to) }
       .order('due_date', { ascending: false })
     
     // CRITICAL DEBUG: Check if query returned invoices with future dates
     if (allInvoices && allInvoices.length > 0) {
-      const futureInvoices = allInvoices.filter(inv => inv.due_date > today)
+      const futureInvoices = allInvoices.filter(inv => {
+        const invDueDate = String(inv.due_date || '').split('T')[0] // Handle potential timestamp format
+        return invDueDate > today
+      })
       if (futureInvoices.length > 0) {
         console.error(`⚠️ SUPABASE QUERY RETURNED ${futureInvoices.length} INVOICES WITH FUTURE DATES!`)
         console.error(`  Query used: .lte('due_date', "${today}")`)
-        console.error(`  Future invoices:`, futureInvoices.slice(0, 5).map(inv => ({
-          id: inv.id.substring(0, 8) + '...',
-          due_date: inv.due_date,
-          lease_id: inv.lease_id
-        })))
+        console.error(`  today type: ${typeof today}, value: "${today}"`)
+        console.error(`  Future invoices:`, futureInvoices.slice(0, 5).map(inv => {
+          const invDueDate = String(inv.due_date || '').split('T')[0]
+          return {
+            id: inv.id.substring(0, 8) + '...',
+            due_date: inv.due_date,
+            due_date_parsed: invDueDate,
+            comparison: `${invDueDate} > ${today} = ${invDueDate > today}`,
+            lease_id: inv.lease_id
+          }
+        }))
       }
     }
 

@@ -1800,15 +1800,19 @@ return'<div class="s">'+l+'</div>';
                 <p className="text-gray-600">Track and manage rental payments</p>
               </div>
               <button
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  console.log('Generate Forms button clicked')
-                  setShowGenerateModal(true)
-                  console.log('showGenerateModal set to true')
+                onClick={() => {
+                  console.log('Generate Forms button clicked - start')
+                  try {
+                    console.log('Setting showGenerateModal to true')
+                    setShowGenerateModal(true)
+                    console.log('showGenerateModal set successfully')
+                  } catch (error) {
+                    console.error('Error in Generate Forms button handler:', error)
+                  }
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium cursor-pointer"
                 type="button"
+                style={{ zIndex: 10 }}
               >
                 Generate Forms
               </button>

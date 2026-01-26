@@ -80,9 +80,17 @@ export default function LateTenantsPage() {
           unpaidCount: mainStTenant.lateInvoices?.length || 0,
           unpaidInvoiceCount: mainStTenant.unpaidInvoiceCount,
           unpaidInvoiceIds: mainStTenant.unpaidInvoiceIds,
-          address: mainStTenant.property?.address
+          address: mainStTenant.property?.address,
+          hasInvoiceFilterDebug: !!mainStTenant.invoiceFilterDebug
         })
         console.log('🔍 Late Tenants API - Invoice IDs being counted:', mainStTenant.unpaidInvoiceIds?.join(', ') || 'none')
+        
+        // CRITICAL: Log if invoiceFilterDebug exists
+        if (mainStTenant.invoiceFilterDebug) {
+          console.log('✅ invoiceFilterDebug EXISTS in response')
+        } else {
+          console.error('❌ invoiceFilterDebug MISSING from response!')
+        }
         
         // Log detailed filter check results
         if (mainStTenant.filterCheckResults) {

@@ -212,47 +212,50 @@ export async function GET(request: Request) {
       // 1. Filter by due_date >= leaseStartDate
       // 2. Only process invoices with due_date <= today (matching /api/invoices?to=${today})
       const leaseStartDate = leaseStartDates.get(lease.id)
-      
-      // Debug: Log today value and invoice count before filtering
       const address = lease.RENT_properties?.address || 'unknown'
       const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
-      if (isMainStProperty) {
-        console.log(`\n🔍 FILTER DEBUG for ${address}:`)
-        console.log(`  - today value: "${today}"`)
-        console.log(`  - invoices before filter: ${invoices.length}`)
-        console.log(`  - leaseStartDate: ${leaseStartDate}`)
-      }
       
+      // CRITICAL FIX: Filter out invoices with due_date > today FIRST
+      // The Supabase query should have done this, but we need to ensure it's applied
+      // This is the EXACT same filter as Payments page: /api/invoices?to=${today}
       const validInvoices = invoices.filter(invoice => {
         const invoiceDueDate = invoice.due_date
         
         // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
-        // The Payments page fetches with /api/invoices?to=${today} which filters due_date <= today
-        // We must do the same filter here to match exactly
         // String comparison works for ISO date strings (YYYY-MM-DD)
+        // This MUST match the Payments page filter exactly
         if (invoiceDueDate > today) {
-          if (isMainStProperty) {
-            console.log(`  - EXCLUDED (future): invoice ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > today="${today}"`)
-          }
           return false // Skip future invoices - they're not due yet
         }
         
         // Filter by due_date >= leaseStartDate (matching Payments page line 451-453)
         if (leaseStartDate && invoiceDueDate < leaseStartDate) {
-          if (isMainStProperty) {
-            console.log(`  - EXCLUDED (before lease start): invoice ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" < leaseStartDate="${leaseStartDate}"`)
-          }
           return false
         }
         
-        if (isMainStProperty) {
-          console.log(`  - INCLUDED: invoice ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}"`)
-        }
         return true
       })
       
+      // Debug logging for 5667 N Main St
       if (isMainStProperty) {
+        console.log(`\n🔍 FILTER DEBUG for ${address}:`)
+        console.log(`  - today value: "${today}"`)
+        console.log(`  - invoices before filter: ${invoices.length}`)
         console.log(`  - invoices after filter: ${validInvoices.length}`)
+        console.log(`  - leaseStartDate: ${leaseStartDate}`)
+        
+        // Show which invoices were filtered out
+        const filteredOut = invoices.filter(inv => {
+          const invDueDate = inv.due_date
+          return invDueDate > today || (leaseStartDate && invDueDate < leaseStartDate)
+        })
+        if (filteredOut.length > 0) {
+          console.log(`  - Filtered out ${filteredOut.length} invoices:`)
+          filteredOut.forEach(inv => {
+            const reason = inv.due_date > today ? 'future' : 'before lease start'
+            console.log(`    - ${inv.id.substring(0, 8)}... due_date="${inv.due_date}" (${reason})`)
+          })
+        }
         console.log(`🔍 END FILTER DEBUG\n`)
       }
 

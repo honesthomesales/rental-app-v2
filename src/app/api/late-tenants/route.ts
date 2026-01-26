@@ -4,6 +4,9 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache this route for 0 seconds to ensure fresh data (disable caching for debugging)
 export const revalidate = 0
 
+// Version number to track code deployments
+const API_VERSION = 'v3.0-diagnostic-match'
+
 /**
  * Late Tenants API
  * 
@@ -434,6 +437,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
+      version: API_VERSION,
       summary,
       rows: lateTenantsRows
     }, {

@@ -64,6 +64,7 @@ export default function LateTenantsPage() {
       }
       
       const data = await response.json()
+      console.log('📥 API Response Version:', data?.version || 'unknown')
       console.log('📥 API Response:', data?.rows?.length, 'tenants loaded')
       console.log('📥 Sample tenant:', data?.rows?.[0])
       
@@ -85,11 +86,14 @@ export default function LateTenantsPage() {
       }
       
       setAllLateTenants(data?.rows || [])
-      setSummary(data?.summary || {
-        lateLeases: 0,
-        totalLateOwed: 0,
-        thirtyPlusLate: 0,
-        avgDaysLate: 0
+      setSummary({
+        ...(data?.summary || {
+          lateLeases: 0,
+          totalLateOwed: 0,
+          thirtyPlusLate: 0,
+          avgDaysLate: 0
+        }),
+        version: data?.version || 'unknown'
       })
     } catch (error) {
       console.error('Error fetching late tenants:', error)
@@ -388,8 +392,17 @@ export default function LateTenantsPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Late Tenants</h1>
-        <p className="text-gray-600 mt-2">Track overdue payments and manage late tenants</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Late Tenants</h1>
+            <p className="text-gray-600 mt-2">Track overdue payments and manage late tenants</p>
+          </div>
+          {summary.version && (
+            <div className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+              API: {summary.version}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Portfolio Totals Banner */}

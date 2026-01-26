@@ -315,7 +315,8 @@ export async function GET(request: Request) {
         let linkedPayments = paymentsByInvoice.get(inv.id) || []
         
         // If no payments linked by invoice_id, try to allocate by amount and date matching
-        // Match payments that match invoice amount and are within 60 days (before or after) of due date
+        // Match payments that match invoice amount - allow payments before or after due date
+        // (payments can be made in advance or allocated retroactively)
         if (linkedPayments.length === 0 && unallocatedPayments.length > 0) {
           const invoiceAmount = parseFloat(inv.amount_total || 0)
           const invoiceDueDate = new Date(inv.due_date)
@@ -327,18 +328,29 @@ export async function GET(request: Request) {
           })
           
           // Among amount-matching payments, prefer those closest to the due date
+          // Allow payments up to 365 days before or 60 days after the due date
           if (amountMatchingPayments.length > 0) {
             const paymentWithDates = amountMatchingPayments
               .map(p => ({
                 payment: p,
                 paymentDate: p.payment_date ? new Date(p.payment_date) : null,
-                daysDiff: p.payment_date ? Math.abs((invoiceDueDate.getTime() - new Date(p.payment_date).getTime()) / (1000 * 60 * 60 * 24)) : Infinity
+                daysDiff: p.payment_date ? Math.abs((invoiceDueDate.getTime() - new Date(p.payment_date).getTime()) / (1000 * 60 * 60 * 24)) : Infinity,
+                daysBefore: p.payment_date ? (invoiceDueDate.getTime() - new Date(p.payment_date).getTime()) / (1000 * 60 * 60 * 24) : Infinity
               }))
-              .filter(p => p.paymentDate !== null && p.daysDiff <= 60)
-              .sort((a, b) => a.daysDiff - b.daysDiff)
+              .filter(p => {
+                if (p.paymentDate === null) return false
+                // Allow payments up to 365 days before or 60 days after due date
+                return p.daysBefore <= 365 && p.daysBefore >= -60
+              })
+              .sort((a, b) => {
+                // Prefer payments closest to due date, but prioritize payments before due date
+                if (a.daysBefore >= 0 && b.daysBefore < 0) return -1
+                if (a.daysBefore < 0 && b.daysBefore >= 0) return 1
+                return a.daysDiff - b.daysDiff
+              })
             
             if (paymentWithDates.length > 0) {
-              // Allocate the closest matching payment
+              // Allocate the best matching payment
               linkedPayments = [paymentWithDates[0].payment]
               allocatedPaymentIds.add(paymentWithDates[0].payment.id)
             }

@@ -275,6 +275,9 @@ export async function GET(request: Request) {
       const address = lease.RENT_properties?.address || 'unknown'
       const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
       
+      // Declare debug data variable BEFORE it's used
+      let invoiceFilterDebugData: any = null
+      
       // CRITICAL FIX: Filter out invoices with due_date > today FIRST
       // The Supabase query should have done this, but we need to ensure it's applied
       // This is the EXACT same filter as Payments page: /api/invoices?to=${today}
@@ -423,7 +426,6 @@ export async function GET(request: Request) {
       let allPaymentsData: any = null
       let allInvoiceIdsData: any = null
       let paymentsMapData: any = null
-      let invoiceFilterDebugData: any = null
       
       if (isMainStProperty) {
         const allPaymentsForLease = paymentsByLease.get(lease.id) || []

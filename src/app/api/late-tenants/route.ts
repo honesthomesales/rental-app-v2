@@ -28,8 +28,9 @@ export async function GET(request: Request) {
     todayDate.setHours(0, 0, 0, 0)
     
     console.log('🔍 ========== TODAY VALUE DEBUG ==========')
-    console.log(`  today param from URL: "${todayParam}"`)
-    console.log(`  today value used: "${today}"`)
+    const todayParamFromURL = searchParams.get('today')
+    console.log(`  today param from URL: "${todayParamFromURL}" (ignored - using actual current date)`)
+    console.log(`  today value used: "${today}" (actual current date)`)
     console.log(`  today type: ${typeof today}`)
     console.log(`  today length: ${today.length}`)
     console.log(`  today char codes: ${Array.from(today).map(c => c.charCodeAt(0)).join(',')}`)

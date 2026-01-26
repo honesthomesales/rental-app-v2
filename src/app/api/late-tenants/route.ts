@@ -212,29 +212,53 @@ export async function GET(request: Request) {
       // 1. Filter by due_date >= leaseStartDate
       // 2. Only process invoices with due_date <= today (matching /api/invoices?to=${today})
       const leaseStartDate = leaseStartDates.get(lease.id)
+      
+      // Debug: Log today value and invoice count before filtering
+      const address = lease.RENT_properties?.address || 'unknown'
+      const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
+      if (isMainStProperty) {
+        console.log(`\n🔍 FILTER DEBUG for ${address}:`)
+        console.log(`  - today value: "${today}"`)
+        console.log(`  - invoices before filter: ${invoices.length}`)
+        console.log(`  - leaseStartDate: ${leaseStartDate}`)
+      }
+      
       const validInvoices = invoices.filter(invoice => {
         const invoiceDueDate = invoice.due_date
         
         // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
         // The Payments page fetches with /api/invoices?to=${today} which filters due_date <= today
         // We must do the same filter here to match exactly
+        // String comparison works for ISO date strings (YYYY-MM-DD)
         if (invoiceDueDate > today) {
+          if (isMainStProperty) {
+            console.log(`  - EXCLUDED (future): invoice ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > today="${today}"`)
+          }
           return false // Skip future invoices - they're not due yet
         }
         
         // Filter by due_date >= leaseStartDate (matching Payments page line 451-453)
         if (leaseStartDate && invoiceDueDate < leaseStartDate) {
+          if (isMainStProperty) {
+            console.log(`  - EXCLUDED (before lease start): invoice ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" < leaseStartDate="${leaseStartDate}"`)
+          }
           return false
         }
         
+        if (isMainStProperty) {
+          console.log(`  - INCLUDED: invoice ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}"`)
+        }
         return true
       })
+      
+      if (isMainStProperty) {
+        console.log(`  - invoices after filter: ${validInvoices.length}`)
+        console.log(`🔍 END FILTER DEBUG\n`)
+      }
 
       // Debug logging for 5667 N Main St - collect filter results for console output
-      const address = lease.RENT_properties?.address || 'unknown'
       const filterCheckResults: any[] = []
       const paymentCheckResults: any[] = []
-      const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
       
       // Log all payments for this lease to see what invoice_ids they have - collect for console output
       let allPaymentsData: any = null

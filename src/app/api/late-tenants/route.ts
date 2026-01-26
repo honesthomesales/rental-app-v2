@@ -311,58 +311,36 @@ export async function GET(request: Request) {
         console.log(`  - First 10 invoice IDs that match payment invoice_ids: ${matchingPaymentIds.length} (${matchingPaymentIds.map(id => id.substring(0, 8)).join(', ')})`)
       }
       
-      // Recalculate balance_due using actual payment totals
-      // If invoice has no payments linked by invoice_id, check if payments linked to other invoices
-      // for this lease should be allocated to this invoice (handles payment misallocation)
-      const allPaymentsForLease = paymentsByLease.get(lease.id) || []
-      const allocatedPaymentIds = new Set<string>()
-      
-      // First pass: mark payments that are explicitly linked to invoices in validInvoices
-      validInvoices.forEach(inv => {
-        const linkedPayments = paymentsByInvoice.get(inv.id) || []
-        linkedPayments.forEach(p => allocatedPaymentIds.add(p.id))
-      })
-      
-      // Get unallocated payments (payments linked to invoice IDs not in validInvoices)
-      const unallocatedPayments = allPaymentsForLease.filter(p => 
-        p.invoice_id && !allocatedPaymentIds.has(p.id)
-      )
-      
-      const invoicesWithRecalculatedBalance = validInvoices.map(inv => {
-        // Get payments explicitly linked by invoice_id
-        let linkedPayments = paymentsByInvoice.get(inv.id) || []
+      // Recalculate balance_due using actual payment totals - EXACT COPY from payments page
+      // Payments page lines 551-567: Simple lookup by invoice_id, no allocation logic
+      const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
+        // EXACT copy from payments page line 554
+        const linkedPayments = paymentsByInvoice.get(invoice.id) || []
+        // EXACT copy from payments page line 555-557
+        const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
+          sum + parseFloat(payment.amount || 0), 0
+        )
         
-        // If no payments linked and there are unallocated payments, try to allocate by amount match
-        // This handles cases where payments are linked to older invoices but should be allocated to newer ones
-        if (linkedPayments.length === 0 && unallocatedPayments.length > 0) {
-          const invoiceAmount = parseFloat(inv.amount_total || 0)
-          // Find unallocated payments that match this invoice amount exactly
-          const matchingPayments = unallocatedPayments.filter(p => {
-            const paymentAmount = parseFloat(p.amount || 0)
-            return Math.abs(paymentAmount - invoiceAmount) < 0.01
-          })
-          
-          // Allocate the first matching payment (FIFO - first in, first out)
-          if (matchingPayments.length > 0) {
-            linkedPayments = [matchingPayments[0]]
-            allocatedPaymentIds.add(matchingPayments[0].id)
-          }
+        // EXACT copy from payments page line 560-561
+        const amountTotal = parseFloat(invoice.amount_total as any || 0)
+        const recalculatedBalanceDue = amountTotal - actualPaid
+        
+        // EXACT copy from payments page line 563-566
+        return {
+          ...invoice,
+          balance_due: recalculatedBalanceDue // Use recalculated balance
         }
-        
-        const actualPaid = linkedPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0)
-        
-        // Recalculate balance_due
-        const recalculatedBalanceDue = parseFloat(inv.amount_total || 0) - actualPaid
+      })
         
         // Debug for 5667 N Main St - show payment linking and collect for console
         if (isMainStProperty) {
           const allPaymentsForLease = paymentsByLease.get(lease.id) || []
-          const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === inv.id)
+          const paymentsWithThisInvoiceId = allPaymentsForLease.filter(p => p.invoice_id === invoice.id)
           
           const paymentCheck = {
-            invoiceId: inv.id,
-            invoiceId_short: inv.id.substring(0, 8) + '...',
-            amountTotal: parseFloat(inv.amount_total || 0),
+            invoiceId: invoice.id,
+            invoiceId_short: invoice.id.substring(0, 8) + '...',
+            amountTotal: parseFloat(invoice.amount_total || 0),
             linkedPaymentsCount: linkedPayments.length,
             actualPaid: actualPaid,
             paymentsInMap: linkedPayments.map(p => ({
@@ -378,34 +356,26 @@ export async function GET(request: Request) {
               amount: p.amount,
               invoice_id: p.invoice_id,
               invoice_id_type: typeof p.invoice_id,
-              invoice_id_matches: p.invoice_id === inv.id,
-              invoice_id_strict_eq: p.invoice_id === inv.id
+              invoice_id_matches: p.invoice_id === invoice.id,
+              invoice_id_strict_eq: p.invoice_id === invoice.id
             })) : []
           }
           paymentCheckResults.push(paymentCheck)
         }
         
-        // EXACT copy from diagnostic endpoint lines 86-90
-        const result = {
-          ...inv,
-          actualPaid,
-          recalculatedBalanceDue
-        }
-        
-        // Verify recalculatedBalanceDue is set correctly
-        if (typeof result.recalculatedBalanceDue === 'undefined' || result.recalculatedBalanceDue === null) {
-          console.error(`⚠️ recalculatedBalanceDue is undefined/null for invoice ${invoice.id}`)
-        }
-        
-        return result
+        // Return the invoice with recalculated balance_due (EXACT same as payments page)
+        return invoice
       })
 
-      // Find all unpaid invoices - EXACT same logic as diagnostic endpoint line 94-96
-      // Diagnostic endpoint: inv.status === 'OPEN' && parseFloat(inv.recalculatedBalanceDue as any || 0) > 0
-      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
-        // EXACT same as diagnostic endpoint - use parseFloat directly, no type checking
-        const recalcBalance = invoice.recalculatedBalanceDue
-        const balanceValue = parseFloat(recalcBalance as any || 0)
+      // Find all unpaid invoices - EXACT COPY from payments page line 571-573
+      const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
+        inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
+      )
+      
+      // Debug version for 5667 N Main St
+      const allUnpaidInvoicesDebug = invoicesWithRecalculatedBalance.filter(invoice => {
+        // EXACT same as payments page line 572
+        const balanceValue = parseFloat(invoice.balance_due as any || 0)
         const isOpen = invoice.status === 'OPEN'
         const isUnpaid = isOpen && balanceValue > 0
 
@@ -436,20 +406,19 @@ export async function GET(request: Request) {
         return isUnpaid
       })
 
-      // Find late invoices (due before today and not fully paid) - EXACT same logic as diagnostic endpoint
+      // Find late invoices (due before today and not fully paid)
       const lateInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
         const isPastDue = dueDate < todayDate
-        const hasBalance = parseFloat(invoice.recalculatedBalanceDue as any || 0) > 0 // EXACT same as diagnostic endpoint
+        const hasBalance = parseFloat(invoice.balance_due as any || 0) > 0 // EXACT same as payments page
         const isOpen = invoice.status === 'OPEN'
         return isPastDue && hasBalance && isOpen
       })
 
-      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as diagnostic endpoint line 135-137
-      // Diagnostic endpoint: unpaidInvoices.reduce((sum, inv) => sum + parseFloat(inv.recalculatedBalanceDue as any || 0), 0)
-      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.recalculatedBalanceDue as any || 0), 0
+      // Calculate total of ALL unpaid invoices (not just late ones) - EXACT COPY from payments page line 576-578
+      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum: number, inv: Invoice) => 
+        sum + parseFloat(inv.balance_due as any || 0), 0
       )
 
       if (lateInvoices.length === 0) {

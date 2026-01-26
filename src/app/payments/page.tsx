@@ -3479,50 +3479,7 @@ return'<div class="s">'+l+'</div>';
       )}
 
       {/* Misc Income Modal */}
-
-                    // Get approved invoices
-                    const approvedInvoices = pastInvoicesToApprove.filter((invoice, index) => {
-                      const invoiceKey = `${invoice.due_date}-${index}`
-                      return approvedPastInvoices.has(invoiceKey)
-                    })
-
-                    try {
-                      const response = await fetch('/api/invoices/create-approved', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ invoices: approvedInvoices })
-                      })
-
-                      const data = await response.json()
-
-                      if (!response.ok) {
-                        throw new Error(data.error || 'Failed to create approved invoices')
-                      }
-
-                      // Refresh invoices
-                      if (selectedLease) {
-                        await handleViewInvoices(selectedLease)
-                      }
-
-                      // Close modal
-                      setShowPastInvoiceApprovalModal(false)
-                      setPastInvoicesToApprove([])
-                      setApprovedPastInvoices(new Set())
-                    } catch (error) {
-                      console.error('Error creating approved invoices:', error)
-                      alert('Failed to create approved invoices: ' + (error instanceof Error ? error.message : 'Unknown error'))
-                    }
-                  }}
-                  disabled={approvedPastInvoices.size === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Create {approvedPastInvoices.size} Approved Invoice(s)
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {showMiscIncomeModal && (
 
       {/* Add Invoice Modal */}
       {showAddInvoiceModal && selectedLease && (

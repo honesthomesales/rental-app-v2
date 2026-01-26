@@ -3086,7 +3086,55 @@ return'<div class="s">'+l+'</div>';
                             Approved
                           </span>
                         )}
-      </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowPastInvoiceApprovalModal(false)
+                    setPastInvoicesToApprove([])
+                    setApprovedPastInvoices(new Set())
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    // Create approved invoices
+                    for (const invoice of pastInvoicesToApprove) {
+                      const invoiceKey = `${invoice.due_date}-${pastInvoicesToApprove.indexOf(invoice)}`
+                      if (approvedPastInvoices.has(invoiceKey)) {
+                        try {
+                          await fetch('/api/invoices', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(invoice)
+                          })
+                        } catch (error) {
+                          console.error('Error creating approved invoice:', error)
+                        }
+                      }
+                    }
+                    setShowPastInvoiceApprovalModal(false)
+                    setPastInvoicesToApprove([])
+                    setApprovedPastInvoices(new Set())
+                    await fetchLeases()
+                  }}
+                  disabled={approvedPastInvoices.size === 0}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  Create Approved Invoices ({approvedPastInvoices.size})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Generate Forms Modal */}
       {showGenerateModal && (

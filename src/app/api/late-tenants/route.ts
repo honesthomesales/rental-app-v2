@@ -311,14 +311,47 @@ export async function GET(request: Request) {
         console.log(`  - First 10 invoice IDs that match payment invoice_ids: ${matchingPaymentIds.length} (${matchingPaymentIds.map(id => id.substring(0, 8)).join(', ')})`)
       }
       
-      // Recalculate balance_due using actual payment totals - EXACT COPY from diagnostic endpoint
-      // Diagnostic endpoint lines 80-91: Simple lookup by invoice_id, no date matching
-      const invoicesWithRecalculatedBalance = validInvoices.map(inv => {
-        // EXACT copy from diagnostic endpoint line 82-83
+      // Recalculate balance_due using actual payment totals
+      // If invoice has no payments linked by invoice_id, check if payments linked to other invoices
+      // for this lease should be allocated to this invoice (handles payment misallocation)
+      const allPaymentsForLease = paymentsByLease.get(lease.id) || []
+      const allocatedPaymentIds = new Set<string>()
+      
+      // First pass: mark payments that are explicitly linked to invoices in validInvoices
+      validInvoices.forEach(inv => {
         const linkedPayments = paymentsByInvoice.get(inv.id) || []
+        linkedPayments.forEach(p => allocatedPaymentIds.add(p.id))
+      })
+      
+      // Get unallocated payments (payments linked to invoice IDs not in validInvoices)
+      const unallocatedPayments = allPaymentsForLease.filter(p => 
+        p.invoice_id && !allocatedPaymentIds.has(p.id)
+      )
+      
+      const invoicesWithRecalculatedBalance = validInvoices.map(inv => {
+        // Get payments explicitly linked by invoice_id
+        let linkedPayments = paymentsByInvoice.get(inv.id) || []
+        
+        // If no payments linked and there are unallocated payments, try to allocate by amount match
+        // This handles cases where payments are linked to older invoices but should be allocated to newer ones
+        if (linkedPayments.length === 0 && unallocatedPayments.length > 0) {
+          const invoiceAmount = parseFloat(inv.amount_total || 0)
+          // Find unallocated payments that match this invoice amount exactly
+          const matchingPayments = unallocatedPayments.filter(p => {
+            const paymentAmount = parseFloat(p.amount || 0)
+            return Math.abs(paymentAmount - invoiceAmount) < 0.01
+          })
+          
+          // Allocate the first matching payment (FIFO - first in, first out)
+          if (matchingPayments.length > 0) {
+            linkedPayments = [matchingPayments[0]]
+            allocatedPaymentIds.add(matchingPayments[0].id)
+          }
+        }
+        
         const actualPaid = linkedPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0)
         
-        // EXACT copy from diagnostic endpoint line 84
+        // Recalculate balance_due
         const recalculatedBalanceDue = parseFloat(inv.amount_total || 0) - actualPaid
         
         // Debug for 5667 N Main St - show payment linking and collect for console

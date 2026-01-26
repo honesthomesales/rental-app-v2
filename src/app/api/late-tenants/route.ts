@@ -413,27 +413,48 @@ export async function GET(request: Request) {
     console.log('Late tenants summary:', summary)
     console.log('Late tenants rows:', lateTenantsRows.length)
     
-    // Log specific tenant for debugging
-    const mainStRow = lateTenantsRows.find(row => 
+    // Log specific tenant for debugging - check ALL rows for this property
+    const mainStRows = lateTenantsRows.filter(row => 
       row.property?.address?.toLowerCase().includes('5667') || 
       row.property?.address?.toLowerCase().includes('main')
     )
-    if (mainStRow) {
-      console.log('🔍 5667 N Main St in API response:', {
-        totalAllOwed: mainStRow.totalAllOwed,
-        totalOwedLate: mainStRow.totalOwedLate,
-        unpaidCount: mainStRow.lateInvoices?.length || 0,
-        unpaidInvoiceCount: mainStRow.unpaidInvoiceCount,
-        unpaidInvoiceIdsUniqueCount: mainStRow.unpaidInvoiceIdsUniqueCount,
-        address: mainStRow.property?.address,
-        invoiceIds: mainStRow.unpaidInvoiceIds,
-        uniqueInvoiceIds: mainStRow.unpaidInvoiceIdsUnique
+    if (mainStRows.length > 0) {
+      console.log(`\n🔍 ========== FINAL API RESPONSE for 5667 N Main St ==========`)
+      console.log(`  Found ${mainStRows.length} row(s) for this property`)
+      
+      mainStRows.forEach((row, idx) => {
+        console.log(`\n  Row ${idx + 1}:`)
+        console.log(`    Lease ID: ${row.leaseId}`)
+        console.log(`    Property Address: ${row.property?.address}`)
+        console.log(`    Total All Owed: $${row.totalAllOwed}`)
+        console.log(`    Unpaid Invoice Count: ${row.unpaidInvoiceCount}`)
+        console.log(`    Unique Invoice Count: ${row.unpaidInvoiceIdsUniqueCount}`)
+        console.log(`    Invoice IDs: ${row.unpaidInvoiceIds?.join(', ') || 'none'}`)
+        
+        if (row.unpaidInvoiceCount !== row.unpaidInvoiceIdsUniqueCount) {
+          console.error(`    ⚠️ DUPLICATE DETECTED: unpaidInvoiceCount=${row.unpaidInvoiceCount}, uniqueCount=${row.unpaidInvoiceIdsUniqueCount}`)
+        }
       })
       
-      // Check if there are duplicates
-      if (mainStRow.unpaidInvoiceCount !== mainStRow.unpaidInvoiceIdsUniqueCount) {
-        console.error(`⚠️ DUPLICATE DETECTED: unpaidInvoiceCount=${mainStRow.unpaidInvoiceCount}, uniqueCount=${mainStRow.unpaidInvoiceIdsUniqueCount}`)
+      // If multiple rows, show combined totals
+      if (mainStRows.length > 1) {
+        const combinedTotal = mainStRows.reduce((sum, row) => sum + (row.totalAllOwed || 0), 0)
+        const combinedCount = mainStRows.reduce((sum, row) => sum + (row.unpaidInvoiceCount || 0), 0)
+        const allInvoiceIds = mainStRows.flatMap(row => row.unpaidInvoiceIds || [])
+        const uniqueInvoiceIds = new Set(allInvoiceIds)
+        
+        console.log(`\n  📊 COMBINED TOTALS (if viewing as single property):`)
+        console.log(`    Total All Owed: $${combinedTotal}`)
+        console.log(`    Combined Invoice Count: ${combinedCount}`)
+        console.log(`    Unique Invoice Count: ${uniqueInvoiceIds.size}`)
+        console.log(`    All Invoice IDs: ${allInvoiceIds.join(', ')}`)
+        
+        if (combinedCount !== uniqueInvoiceIds.size) {
+          console.error(`    ⚠️ DUPLICATES ACROSS LEASES: Combined count=${combinedCount}, Unique count=${uniqueInvoiceIds.size}`)
+        }
       }
+      
+      console.log(`🔍 ========== END FINAL API RESPONSE ==========\n`)
     }
 
     return NextResponse.json({

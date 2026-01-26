@@ -97,24 +97,32 @@ export async function GET(request: Request) {
     console.log(`🔍 Fetching invoices with due_date <= "${today}" for ${leaseIds.length} leases`)
     
     // Use the EXACT same query as /api/invoices route (lines 49-50)
-    const { data: allInvoices, error: invoicesError } = await supabaseServer
+    const { data: allInvoicesRaw, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
       .in('lease_id', leaseIds)
       .lte('due_date', today)  // EXACT same as invoices API: if (to) { query = query.lte('due_date', to) }
       .order('due_date', { ascending: false })
     
+    // CRITICAL: Filter out ANY invoices with future dates IMMEDIATELY (safety check)
+    // This ensures we only process invoices with due_date <= today, regardless of what Supabase returns
+    const allInvoices = (allInvoicesRaw || []).filter(inv => {
+      const invDueDate = String(inv.due_date || '').split('T')[0] // Handle potential timestamp format
+      const isFuture = invDueDate > today
+      return !isFuture
+    })
+    
     // CRITICAL DEBUG: Check if query returned invoices with future dates
-    if (allInvoices && allInvoices.length > 0) {
-      const futureInvoices = allInvoices.filter(inv => {
-        const invDueDate = String(inv.due_date || '').split('T')[0] // Handle potential timestamp format
+    if (allInvoicesRaw && allInvoicesRaw.length > 0) {
+      const futureInvoices = allInvoicesRaw.filter(inv => {
+        const invDueDate = String(inv.due_date || '').split('T')[0]
         return invDueDate > today
       })
       if (futureInvoices.length > 0) {
-        console.error(`⚠️ SUPABASE QUERY RETURNED ${futureInvoices.length} INVOICES WITH FUTURE DATES!`)
+        console.error(`⚠️ SUPABASE QUERY RETURNED ${futureInvoices.length} INVOICES WITH FUTURE DATES! (Filtered out)`)
         console.error(`  Query used: .lte('due_date', "${today}")`)
         console.error(`  today type: ${typeof today}, value: "${today}"`)
-        console.error(`  Future invoices:`, futureInvoices.slice(0, 5).map(inv => {
+        console.error(`  Future invoices (filtered):`, futureInvoices.slice(0, 5).map(inv => {
           const invDueDate = String(inv.due_date || '').split('T')[0]
           return {
             id: inv.id.substring(0, 8) + '...',
@@ -126,6 +134,8 @@ export async function GET(request: Request) {
         }))
       }
     }
+    
+    console.log(`✅ Fetched ${allInvoices.length} invoices (after filtering future dates) from ${allInvoicesRaw?.length || 0} total`)
 
     if (invoicesError) {
       console.error('Error fetching invoices:', invoicesError)

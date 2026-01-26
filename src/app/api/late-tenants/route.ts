@@ -6,7 +6,7 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 export const revalidate = 0
 
 // Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
-const API_VERSION = 'v5.0-exact-payments-page-flow'
+const API_VERSION = 'v5.1-direct-supabase-same-as-api-routes'
 
 /**
  * Late Tenants API
@@ -68,26 +68,27 @@ export async function GET(request: Request) {
       const isMainStProperty = address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')
       
       try {
-        // STEP 1: Call /api/invoices EXACTLY like Payments page (line 444)
-        // Payments page: fetch(`/api/invoices?leaseId=${leaseData.id}&to=${today}`)
-        const invoicesUrl = `${request.url.split('/api')[0]}/api/invoices?leaseId=${leaseId}&to=${today}`
-        const invoicesResponse = await fetch(invoicesUrl, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
+        // STEP 1: Fetch invoices EXACTLY like Payments page does
+        // Payments page line 444: fetch(`/api/invoices?leaseId=${leaseData.id}&to=${today}`)
+        // Instead of calling the API, we'll do the same Supabase query directly for performance
+        // This matches /api/invoices route lines 37-50
+        const { data: invoicesData, error: invoicesError } = await supabaseServer
+          .from('RENT_invoices')
+          .select('*')
+          .eq('lease_id', leaseId)
+          .lte('due_date', today)  // Same as /api/invoices?to=${today}
+          .order('due_date', { ascending: false })
         
-        if (!invoicesResponse.ok) {
-          console.error(`Error fetching invoices for lease ${leaseId}: ${invoicesResponse.status}`)
+        if (invoicesError) {
+          console.error(`Error fetching invoices for lease ${leaseId}:`, invoicesError)
           continue
         }
         
-        const invoicesData = await invoicesResponse.json()
         const invoices = Array.isArray(invoicesData) ? invoicesData : []
         
         if (isMainStProperty) {
           console.log(`\n🔍 Payments Page Flow - Lease ${leaseId} (${address}):`)
-          console.log(`  Step 1: Fetched ${invoices.length} invoices from /api/invoices?leaseId=${leaseId}&to=${today}`)
+          console.log(`  Step 1: Fetched ${invoices.length} invoices (due_date <= ${today})`)
         }
         
         // STEP 2: Filter invoices EXACTLY like Payments page (lines 451-453)
@@ -102,20 +103,25 @@ export async function GET(request: Request) {
           console.log(`  Step 2: Filtered to ${validInvoices.length} valid invoices (due_date >= leaseStartDate)`)
         }
         
-        // STEP 3: Call /api/payments EXACTLY like Payments page (line 536)
-        // Payments page: fetch(`/api/payments?leaseId=${leaseData.id}`)
-        const paymentsUrl = `${request.url.split('/api')[0]}/api/payments?leaseId=${leaseId}`
-        const paymentsResponse = await fetch(paymentsUrl, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
+        // STEP 3: Fetch payments EXACTLY like Payments page does
+        // Payments page line 536: fetch(`/api/payments?leaseId=${leaseData.id}`)
+        // Instead of calling the API, we'll do the same Supabase query directly for performance
+        // This matches /api/payments route lines 603-604
+        const { data: paymentsData, error: paymentsError } = await supabaseServer
+          .from('RENT_payments')
+          .select('*')
+          .eq('lease_id', leaseId)
+          .order('payment_date', { ascending: false })
         
-        const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
+        if (paymentsError) {
+          console.error(`Error fetching payments for lease ${leaseId}:`, paymentsError)
+          // Continue with empty payments array
+        }
+        
         const payments = Array.isArray(paymentsData) ? paymentsData : []
         
         if (isMainStProperty) {
-          console.log(`  Step 3: Fetched ${payments.length} payments from /api/payments?leaseId=${leaseId}`)
+          console.log(`  Step 3: Fetched ${payments.length} payments`)
         }
         
         // STEP 4: Use shared calculation function - ensures EXACT match with Payments page

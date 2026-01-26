@@ -208,28 +208,43 @@ export async function GET(request: Request) {
         )
         
         // Recalculate balance_due using actual paid amount (EXACT same as diagnostic endpoint line 83-84)
-        const recalculatedBalanceDue = parseFloat(invoice.amount_total || 0) - actualPaid
+        const amountTotal = parseFloat(invoice.amount_total || 0)
+        const recalculatedBalanceDue = amountTotal - actualPaid
         
         // EXACT same as diagnostic endpoint line 86-90: use recalculatedBalanceDue property
-        return {
+        const result = {
           ...invoice,
           actualPaid,
           recalculatedBalanceDue
         }
+        
+        // Verify recalculatedBalanceDue is set correctly
+        if (typeof result.recalculatedBalanceDue === 'undefined' || result.recalculatedBalanceDue === null) {
+          console.error(`⚠️ recalculatedBalanceDue is undefined/null for invoice ${invoice.id}`)
+        }
+        
+        return result
       })
 
       // Find all unpaid invoices - EXACT same logic as diagnostic endpoint line 94-96
       // Diagnostic endpoint: inv.status === 'OPEN' && parseFloat(inv.recalculatedBalanceDue as any || 0) > 0
       const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
         // EXACT same as diagnostic endpoint - use parseFloat directly, no type checking
-        const isUnpaid = invoice.status === 'OPEN' && parseFloat(invoice.recalculatedBalanceDue as any || 0) > 0
+        const recalcBalance = invoice.recalculatedBalanceDue
+        const balanceValue = parseFloat(recalcBalance as any || 0)
+        const isOpen = invoice.status === 'OPEN'
+        const isUnpaid = isOpen && balanceValue > 0
 
-        // Debug for 5667 N Main St
+        // Debug for 5667 N Main St - show EVERYTHING
         const address = lease.RENT_properties?.address || ''
         if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
-          const recalcBalance = invoice.recalculatedBalanceDue
-          const balanceValue = parseFloat(invoice.recalculatedBalanceDue as any || 0)
-          console.log(`FILTER CHECK: Invoice ${invoice.id.substring(0, 8)}... - Status: ${invoice.status}, recalculatedBalanceDue: ${recalcBalance} (raw), parsed: ${balanceValue}, INCLUDED: ${isUnpaid}`)
+          console.log(`FILTER CHECK: Invoice ${invoice.id.substring(0, 8)}...`)
+          console.log(`  - Status: ${invoice.status}, Is Open: ${isOpen}`)
+          console.log(`  - recalculatedBalanceDue (raw): ${recalcBalance} (type: ${typeof recalcBalance})`)
+          console.log(`  - recalculatedBalanceDue (parsed): ${balanceValue}`)
+          console.log(`  - Has Balance (>0): ${balanceValue > 0}`)
+          console.log(`  - Result (isOpen && balanceValue > 0): ${isUnpaid}`)
+          console.log(`  - ${isUnpaid ? '✅ INCLUDED' : '❌ EXCLUDED'}`)
         }
         
         return isUnpaid

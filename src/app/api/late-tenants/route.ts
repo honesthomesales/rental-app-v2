@@ -221,19 +221,18 @@ export async function GET(request: Request) {
       // Find all unpaid invoices - EXACT same logic as diagnostic endpoint line 94-96
       // Diagnostic endpoint: inv.status === 'OPEN' && parseFloat(inv.recalculatedBalanceDue as any || 0) > 0
       const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => {
-        // EXACT same as diagnostic endpoint: parseFloat(inv.recalculatedBalanceDue as any || 0) > 0
-        const recalcBalance = invoice.recalculatedBalanceDue
-        const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-        const isOpen = invoice.status === 'OPEN'
-        const hasBalance = balanceValue > 0
+        // EXACT same as diagnostic endpoint - use parseFloat directly, no type checking
+        const isUnpaid = invoice.status === 'OPEN' && parseFloat(invoice.recalculatedBalanceDue as any || 0) > 0
 
         // Debug for 5667 N Main St
         const address = lease.RENT_properties?.address || ''
         if (address.toLowerCase().includes('5667') || address.toLowerCase().includes('main')) {
-          console.log(`FILTER CHECK: Invoice ${invoice.id.substring(0, 8)}... - Status: ${invoice.status}, recalculatedBalanceDue: ${recalcBalance} (type: ${typeof recalcBalance}), parsed: ${balanceValue}, Is Open: ${isOpen}, Has Balance: ${hasBalance}, INCLUDED: ${isOpen && hasBalance}`)
+          const recalcBalance = invoice.recalculatedBalanceDue
+          const balanceValue = parseFloat(invoice.recalculatedBalanceDue as any || 0)
+          console.log(`FILTER CHECK: Invoice ${invoice.id.substring(0, 8)}... - Status: ${invoice.status}, recalculatedBalanceDue: ${recalcBalance} (raw), parsed: ${balanceValue}, INCLUDED: ${isUnpaid}`)
         }
         
-        return isOpen && hasBalance
+        return isUnpaid
       })
 
       // Find late invoices (due before today and not fully paid) - EXACT same logic as diagnostic endpoint
@@ -241,20 +240,16 @@ export async function GET(request: Request) {
         const dueDate = new Date(invoice.due_date + 'T12:00:00')
         dueDate.setHours(0, 0, 0, 0)
         const isPastDue = dueDate < todayDate
-        const recalcBalance = invoice.recalculatedBalanceDue
-        const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-        const hasBalance = balanceValue > 0 // Use recalculatedBalanceDue
+        const hasBalance = parseFloat(invoice.recalculatedBalanceDue as any || 0) > 0 // EXACT same as diagnostic endpoint
         const isOpen = invoice.status === 'OPEN'
         return isPastDue && hasBalance && isOpen
       })
 
       // Calculate total of ALL unpaid invoices (not just late ones) - EXACT same as diagnostic endpoint line 135-137
       // Diagnostic endpoint: unpaidInvoices.reduce((sum, inv) => sum + parseFloat(inv.recalculatedBalanceDue as any || 0), 0)
-      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => {
-        const recalcBalance = invoice.recalculatedBalanceDue
-        const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-        return sum + balanceValue
-      }, 0)
+      const totalAllOwedForLease = allUnpaidInvoices.reduce((sum, invoice) => 
+        sum + parseFloat(invoice.recalculatedBalanceDue as any || 0), 0
+      )
 
       if (lateInvoices.length === 0) {
         // Even if no late invoices, we still want to track totalAllOwed for the summary
@@ -276,11 +271,9 @@ export async function GET(request: Request) {
       const daysLate = Math.floor((todayDate.getTime() - new Date(oldestLateInvoice.due_date).getTime()) / (1000 * 60 * 60 * 24))
       
       // Calculate totals using recalculatedBalanceDue - EXACT same as diagnostic endpoint
-      const totalLateAmount = lateInvoices.reduce((sum, invoice) => {
-        const recalcBalance = invoice.recalculatedBalanceDue
-        const balanceValue = typeof recalcBalance === 'number' ? recalcBalance : parseFloat(String(recalcBalance || 0))
-        return sum + balanceValue
-      }, 0)
+      const totalLateAmount = lateInvoices.reduce((sum, invoice) => 
+        sum + parseFloat(invoice.recalculatedBalanceDue as any || 0), 0
+      )
       const totalLateFees = lateInvoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.amount_late || 0), 0
       )
@@ -362,7 +355,7 @@ export async function GET(request: Request) {
           period_end: invoice.period_end,
           amount_total: parseFloat(invoice.amount_total || 0),
           amount_paid: invoice.actualPaid || parseFloat(invoice.amount_paid || 0), // Use actual paid amount
-          balance_due: typeof invoice.recalculatedBalanceDue === 'number' ? invoice.recalculatedBalanceDue : parseFloat(String(invoice.recalculatedBalanceDue || 0)), // Use recalculatedBalanceDue
+          balance_due: parseFloat(invoice.recalculatedBalanceDue as any || 0), // Use recalculatedBalanceDue - EXACT same as diagnostic endpoint
           amount_late: parseFloat(invoice.amount_late || 0),
           status: invoice.status,
           days_late: Math.floor((todayDate.getTime() - new Date(invoice.due_date).getTime()) / (1000 * 60 * 60 * 24))

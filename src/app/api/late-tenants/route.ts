@@ -378,7 +378,7 @@ export async function GET(request: Request) {
         unpaidInvoiceIdsUnique: Array.from(new Set(allUnpaidInvoices.map(inv => inv.id))), // Unique IDs only
         unpaidInvoiceIdsUniqueCount: new Set(allUnpaidInvoices.map(inv => inv.id)).size, // Unique count
         // Debug: filter check results for console output
-        filterCheckResults: isMainStProperty ? filterCheckResults : undefined
+        filterCheckResults: isMainStProperty ? filterCheckResults : undefined,
         lateInvoices: lateInvoices.map(invoice => ({
           id: invoice.id,
           due_date: invoice.due_date,

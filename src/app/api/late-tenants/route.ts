@@ -446,13 +446,13 @@ export async function GET(request: Request) {
         // Show which invoices were filtered out
         const filteredOut = invoices.filter(inv => {
           const invDueDate = String(inv.due_date || '').split('T')[0]
-          return invDueDate > actualToday || (leaseStartDate && invDueDate < leaseStartDate)
+          return invDueDate > today || (leaseStartDate && invDueDate < leaseStartDate)
         })
         if (filteredOut.length > 0) {
           console.log(`  - Filtered out ${filteredOut.length} invoices:`)
           filteredOut.forEach(inv => {
             const invDueDate = String(inv.due_date || '').split('T')[0]
-            const reason = invDueDate > actualToday ? 'future' : 'before lease start'
+            const reason = invDueDate > today ? 'future' : 'before lease start'
             console.log(`    - ${inv.id.substring(0, 8)}... due_date="${invDueDate}" (${reason})`)
           })
         }

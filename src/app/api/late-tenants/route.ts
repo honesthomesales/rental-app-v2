@@ -78,10 +78,19 @@ export async function GET(request: Request) {
     }
 
     // OPTIMIZED: Batch fetch all invoices for all active leases in a single query
-    // EXACT same filtering as payments page: invoices up to today
+    // Fetch ALL invoices (not just due_date <= today) to build complete paymentsByInvoice map
+    // This ensures payments linked to older/future invoices are included in the map
     const leaseIds = leases.map(lease => lease.id)
     const leaseStartDates = new Map(leases.map(lease => [lease.id, lease.lease_start_date]))
     
+    // Fetch ALL invoices to build complete paymentsByInvoice map
+    const { data: allInvoicesForPaymentsMap, error: allInvoicesError } = await supabaseServer
+      .from('RENT_invoices')
+      .select('*')
+      .in('lease_id', leaseIds)
+      .order('due_date', { ascending: false })
+    
+    // Fetch invoices with due_date <= today for processing (matching payments page)
     const { data: allInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
@@ -158,6 +167,11 @@ export async function GET(request: Request) {
       console.error('⚠️ INVOICES APPEARING IN MULTIPLE LEASE GROUPS:', invoicesInMultipleLeases)
     }
 
+    // Build paymentsByInvoice map using ALL invoices (including those with due_date > today)
+    // This ensures payments linked to older/future invoices are included
+    // Payments are linked by invoice_id, so we need all invoice IDs in the map
+    const allInvoiceIds = new Set((allInvoicesForPaymentsMap || []).map(inv => inv.id))
+    
     allPayments?.forEach(payment => {
       const leaseId = payment.lease_id
       if (!paymentsByLease.has(leaseId)) {
@@ -166,6 +180,8 @@ export async function GET(request: Request) {
       paymentsByLease.get(leaseId)!.push(payment)
       
       // Also group by invoice_id to calculate actual paid amounts (matching payments page logic)
+      // Include payments even if the invoice_id isn't in allInvoices (due_date > today)
+      // This handles cases where payments are linked to older invoices
       if (payment.invoice_id) {
         if (!paymentsByInvoice.has(payment.invoice_id)) {
           paymentsByInvoice.set(payment.invoice_id, [])

@@ -3477,35 +3477,8 @@ return'<div class="s">'+l+'</div>';
           </div>
         </div>
       )}
-    </div>
-  )
-})}
-              </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-between items-center">
-              <div className="text-sm text-gray-600">
-                {approvedPastInvoices.size} of {pastInvoicesToApprove.length} approved
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setShowPastInvoiceApprovalModal(false)
-                    setPastInvoicesToApprove([])
-                    setApprovedPastInvoices(new Set())
-                    setLoadingInvoices(false)
-                  }}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (approvedPastInvoices.size === 0) {
-                      alert('Please approve at least one invoice to create')
-                      return
-                    }
+      {/* Misc Income Modal */}
 
                     // Get approved invoices
                     const approvedInvoices = pastInvoicesToApprove.filter((invoice, index) => {

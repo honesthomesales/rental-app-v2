@@ -6,7 +6,7 @@ import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoi
 export const revalidate = 0
 
 // Version number to track code deployments - UPDATE THIS ON EVERY RELEASE
-const API_VERSION = 'v4.2-use-client-date-like-payments-page'
+const API_VERSION = 'v4.3-consistent-today-usage-throughout'
 
 /**
  * Late Tenants API
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     // If today parameter is provided, use it (matches Payments page client-side calculation)
     // Otherwise fall back to server date (shouldn't happen if client sends it)
     const today = todayParam || new Date().toISOString().split('T')[0]
-    const actualToday = today // Use the date from client (same as Payments page)
+    // Use 'today' from client (same as Payments page) - no need for actualToday variable
     const todayDate = new Date(today + 'T12:00:00')
     todayDate.setHours(0, 0, 0, 0)
     
@@ -116,20 +116,22 @@ export async function GET(request: Request) {
     console.log(`🔍 Fetching invoices with due_date <= "${today}" for ${leaseIds.length} leases`)
     
     // Use the EXACT same query as /api/invoices route (lines 49-50)
-    // CRITICAL: Use actualToday (actual current date) not today parameter
-    // This matches Payments page which uses: const today = new Date().toISOString().split('T')[0]
+    // CRITICAL: The Payments page calls /api/invoices?to=${today} where today is calculated client-side
+    // The /api/invoices route does: if (to) { query = query.lte('due_date', to) }
+    // We MUST use the same 'today' value that the client sends (from Payments page calculation)
     const { data: allInvoicesRaw, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
       .in('lease_id', leaseIds)
-      .lte('due_date', actualToday)  // Use actual current date, not parameter
+      .lte('due_date', today)  // Use 'today' from client (same as Payments page /api/invoices?to=${today})
       .order('due_date', { ascending: false })
     
     // CRITICAL: Filter out ANY invoices with future dates IMMEDIATELY (safety check)
-    // This ensures we only process invoices with due_date <= actualToday, regardless of what Supabase returns
+    // This ensures we only process invoices with due_date <= today, regardless of what Supabase returns
+    // Use 'today' (from client) to match Payments page exactly
     const allInvoices = (allInvoicesRaw || []).filter(inv => {
       const invDueDate = String(inv.due_date || '').split('T')[0] // Handle potential timestamp format
-      const isFuture = invDueDate > actualToday
+      const isFuture = invDueDate > today
       return !isFuture
     })
     
@@ -137,7 +139,7 @@ export async function GET(request: Request) {
     if (allInvoicesRaw && allInvoicesRaw.length > 0) {
       const futureInvoices = allInvoicesRaw.filter(inv => {
         const invDueDate = String(inv.due_date || '').split('T')[0]
-        return invDueDate > today
+        return invDueDate > today // Use 'today' from client
       })
       if (futureInvoices.length > 0) {
         console.error(`⚠️ SUPABASE QUERY RETURNED ${futureInvoices.length} INVOICES WITH FUTURE DATES! (Filtered out)`)
@@ -199,12 +201,12 @@ export async function GET(request: Request) {
     
     // CRITICAL: Filter out future invoices AGAIN before grouping by lease
     // This is a safety check to ensure no future invoices make it into invoicesByLease
-    // Use actualToday (actual current date) not today parameter
+    // Use 'today' from client to match Payments page exactly
     const allInvoicesFiltered = (allInvoices || []).filter(inv => {
       const invDueDate = String(inv.due_date || '').split('T')[0]
-      const isFuture = invDueDate > actualToday
+      const isFuture = invDueDate > today
       if (isFuture) {
-        console.error(`  ⚠️ PRE-GROUPING FILTER: Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > actualToday="${actualToday}"`)
+        console.error(`  ⚠️ PRE-GROUPING FILTER: Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
       }
       return !isFuture
     })
@@ -271,16 +273,16 @@ export async function GET(request: Request) {
       let invoices = invoicesByLease.get(lease.id) || []
       
       // CRITICAL FIX: Filter out future invoices IMMEDIATELY before any processing
-      // Use actualToday (actual current date) not today parameter - matches Payments page exactly
+      // Use 'today' from client to match Payments page exactly
       const invoicesBeforeFutureFilter = invoices.length
       invoices = invoices.filter(inv => {
         const invDueDate = String(inv.due_date || '').split('T')[0]
-        const isFuture = invDueDate > actualToday
+        const isFuture = invDueDate > today
         return !isFuture
       })
       if (invoicesBeforeFutureFilter !== invoices.length) {
         console.error(`⚠️ CRITICAL: Filtered out ${invoicesBeforeFutureFilter - invoices.length} future invoices from lease ${lease.id} before processing`)
-        console.error(`  actualToday="${actualToday}", today="${today}"`)
+        console.error(`  today="${today}" (from client, same as Payments page)`)
       }
       
       // Verify all invoices belong to this lease (safety check)
@@ -323,26 +325,23 @@ export async function GET(request: Request) {
         // Collect debug data for API response
         invoiceFilterDebugData = {
           today: today,
-          actualToday: actualToday,
           todayType: typeof today,
           todayLength: today.length,
           todayCharCodes: Array.from(today).map(c => c.charCodeAt(0)),
-          actualTodayType: typeof actualToday,
-          actualTodayLength: actualToday.length,
           currentDate: new Date().toISOString().split('T')[0],
           leaseStartDate: leaseStartDate,
           totalInvoicesBeforeFilter: invoices.length,
           invoices: invoices.map((inv, idx) => {
             const rawDueDate = inv.due_date
             const normalizedDueDate = String(rawDueDate || '').split('T')[0]
-            const isFuture = normalizedDueDate > actualToday
+            const isFuture = normalizedDueDate > today
             const beforeLeaseStart = leaseStartDate && normalizedDueDate < leaseStartDate
             const willBeExcluded = isFuture || beforeLeaseStart
             
             console.log(`    [${idx + 1}] Invoice ${inv.id.substring(0, 8)}...`)
             console.log(`        due_date raw: "${rawDueDate}" (type: ${typeof rawDueDate})`)
             console.log(`        due_date normalized: "${normalizedDueDate}"`)
-            console.log(`        comparison: "${normalizedDueDate}" > "${actualToday}" = ${isFuture}`)
+            console.log(`        comparison: "${normalizedDueDate}" > "${today}" = ${isFuture}`)
             console.log(`        before lease start: ${beforeLeaseStart}`)
             console.log(`        will be ${willBeExcluded ? 'EXCLUDED' : 'INCLUDED'}`)
             
@@ -353,7 +352,7 @@ export async function GET(request: Request) {
               due_date_raw: rawDueDate,
               due_date_raw_type: typeof rawDueDate,
               due_date_normalized: normalizedDueDate,
-              comparison: `${normalizedDueDate} > ${actualToday}`,
+              comparison: `${normalizedDueDate} > ${today}`,
               comparison_result: isFuture,
               before_lease_start: beforeLeaseStart,
               will_be_excluded: willBeExcluded,
@@ -369,17 +368,17 @@ export async function GET(request: Request) {
         // CRITICAL: Normalize due_date to YYYY-MM-DD format for comparison
         const invoiceDueDate = String(invoice.due_date || '').split('T')[0]
         
-        // CRITICAL: Only process invoices with due_date <= actualToday (matching Payments page)
+        // CRITICAL: Only process invoices with due_date <= today (matching Payments page)
         // Payments page line 436: const today = new Date().toISOString().split('T')[0]
         // Payments page line 444: /api/invoices?leaseId=${leaseData.id}&to=${today}
         // This filters due_date <= today at the API level
         // String comparison works for ISO date strings (YYYY-MM-DD format)
         // Example: "2026-01-14" > "2025-01-15" = true (correctly excludes future dates)
-        const isFuture = invoiceDueDate > actualToday
+        const isFuture = invoiceDueDate > today
         if (isFuture) {
           if (isMainStProperty) {
-            console.error(`  ⚠️ FILTER: Excluding future invoice: ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > actualToday="${actualToday}"`)
-            console.error(`    Comparison: "${invoiceDueDate}" > "${actualToday}" = ${isFuture}`)
+            console.error(`  ⚠️ FILTER: Excluding future invoice: ${invoice.id.substring(0, 8)}... due_date="${invoiceDueDate}" > today="${today}"`)
+            console.error(`    Comparison: "${invoiceDueDate}" > "${today}" = ${isFuture}`)
           }
           return false // Skip future invoices - they're not due yet
         }
@@ -485,15 +484,15 @@ export async function GET(request: Request) {
         }))
         
         // Show all invoice IDs from invoices
-        // CRITICAL: Only include invoices with due_date <= actualToday (validation check)
+        // CRITICAL: Only include invoices with due_date <= today (validation check)
         // Normalize due_date for comparison
-        // Use actualToday (actual current date) not today parameter
+        // Use 'today' from client (same as Payments page)
         const validInvoicesForDebug = validInvoices.filter(inv => {
           const invDueDate = String(inv.due_date || '').split('T')[0]
-          const isFuture = invDueDate > actualToday
+          const isFuture = invDueDate > today
           if (isFuture) {
-            console.error(`  ⚠️ DEBUG: Excluding future invoice from debug output: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > actualToday="${actualToday}"`)
-            console.error(`    Comparison: "${invDueDate}" > "${actualToday}" = ${isFuture}`)
+            console.error(`  ⚠️ DEBUG: Excluding future invoice from debug output: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
+            console.error(`    Comparison: "${invDueDate}" > "${today}" = ${isFuture}`)
           }
           return !isFuture
         })
@@ -569,12 +568,12 @@ export async function GET(request: Request) {
       
       // CRITICAL: Final check - ensure no future invoices before processing
       // This is a safety check after the validation above
-      // Use actualToday (actual current date) not today parameter
+      // Use 'today' from client (same as Payments page)
       const finalValidInvoices = validInvoices.filter(inv => {
         const invDueDate = String(inv.due_date || '').split('T')[0]
-        const isFuture = invDueDate > actualToday
+        const isFuture = invDueDate > today
         if (isFuture) {
-          console.error(`  ⚠️ FINAL CHECK: Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > actualToday="${actualToday}"`)
+          console.error(`  ⚠️ FINAL CHECK: Removing future invoice: ${inv.id.substring(0, 8)}... due_date="${invDueDate}" > today="${today}"`)
         }
         return !isFuture
       })
@@ -583,12 +582,12 @@ export async function GET(request: Request) {
       const leasePayments = paymentsByLease.get(lease.id) || []
       
       // Use shared calculation function - ensures EXACT match with Payments page
-      // Pass actualToday to filter out future invoices (matching Payments page /api/invoices?to=${today})
+      // Pass 'today' to filter out future invoices (matching Payments page /api/invoices?to=${today})
       const { unpaidInvoices: allUnpaidInvoices, totalOwed: totalAllOwedForLease } = calculateUnpaidInvoices(
         finalValidInvoices as Invoice[],
         leasePayments as Payment[],
         leaseStartDate || undefined,
-        actualToday // Pass actual current date to filter future invoices
+        today // Pass 'today' from client (same as Payments page)
       )
       
       // Debug for 5667 N Main St - collect filter results

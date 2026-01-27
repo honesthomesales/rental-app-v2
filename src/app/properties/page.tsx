@@ -32,10 +32,14 @@ export default function PropertiesPage() {
   // OPTIMIZED: Use useMemo for expensive filtering and sorting calculations
   const filteredProperties = useMemo(() => {
     let filtered = properties.filter(property => {
-      // Filter by retired status if not showing retired
+      // Filter by retired status - if showRetired is false, exclude retired properties
+      // If showRetired is true, show all properties
       if (!showRetired && property.status === 'retired') {
         return false
       }
+      
+      // If showRetired is true, we want to show all (including retired)
+      // If showRetired is false, we want to show only active/null (retired already filtered above)
       
       const searchLower = searchTerm.toLowerCase()
       return (
@@ -180,13 +184,15 @@ export default function PropertiesPage() {
       })
 
       if (response.ok) {
-        fetchProperties()
+        await fetchProperties()
       } else {
-        alert('Failed to retire property. Please try again.')
+        const errorData = await response.json()
+        console.error('Failed to retire property:', errorData)
+        alert(`Failed to retire property: ${errorData.error || errorData.details || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Error retiring property:', error)
-      alert('Failed to retire property. Please try again.')
+      alert(`Failed to retire property: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 

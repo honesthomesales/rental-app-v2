@@ -6,10 +6,11 @@ export const revalidate = 60
 
 export async function GET() {
   try {
-    // Fetch total properties
+    // Fetch total properties (excluding retired)
     const { data: allProperties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
       .select('*')
+      .or('status.is.null,status.eq.active')
 
     if (propertiesError) {
       throw new Error(`Error fetching properties: ${propertiesError.message}`)

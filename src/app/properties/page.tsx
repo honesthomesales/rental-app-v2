@@ -23,6 +23,7 @@ export default function PropertiesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [showRetired, setShowRetired] = useState(false)
 
   useEffect(() => {
     fetchProperties()
@@ -31,13 +32,18 @@ export default function PropertiesPage() {
   // OPTIMIZED: Use useMemo for expensive filtering and sorting calculations
   const filteredProperties = useMemo(() => {
     let filtered = properties.filter(property => {
+      // Filter by retired status if not showing retired
+      if (!showRetired && property.status === 'retired') {
+        return false
+      }
+      
       const searchLower = searchTerm.toLowerCase()
       return (
         property.name.toLowerCase().includes(searchLower) ||
         property.address.toLowerCase().includes(searchLower) ||
         property.city.toLowerCase().includes(searchLower) ||
         property.state.toLowerCase().includes(searchLower) ||
-        property.property_type.toLowerCase().includes(searchLower)
+        (property.property_type && property.property_type.toLowerCase().includes(searchLower))
       )
     })
 
@@ -69,11 +75,15 @@ export default function PropertiesPage() {
     })
 
     return filtered
-  }, [properties, searchTerm, sortField, sortDirection])
+  }, [properties, searchTerm, sortField, sortDirection, showRetired])
+  
+  useEffect(() => {
+    fetchProperties()
+  }, [showRetired])
 
   const fetchProperties = async () => {
     try {
-      const response = await fetch('/api/properties')
+      const response = await fetch(`/api/properties?includeRetired=${showRetired}`)
       
       if (!response.ok) {
         const errorData = await response.json()
@@ -237,13 +247,24 @@ export default function PropertiesPage() {
           <h1 className="text-2xl font-bold text-gray-900">Properties</h1>
           <p className="text-gray-600 mt-2">Manage your rental properties ({filteredProperties.length} of {properties.length})</p>
         </div>
-        <button
-          onClick={handleAddProperty}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-        >
-          <PlusIcon className="h-5 w-5 mr-2" />
-          Add Property
-        </button>
+        <div className="flex items-center space-x-3">
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showRetired}
+              onChange={(e) => setShowRetired(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Show Retired</span>
+          </label>
+          <button
+            onClick={handleAddProperty}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Add Property
+          </button>
+        </div>
       </div>
 
       {/* Search and Filter */}
@@ -411,6 +432,27 @@ export default function PropertiesPage() {
                         >
                           <PencilIcon className="h-4 w-4" />
                         </button>
+                        {property.status === 'retired' ? (
+                          <button
+                            onClick={() => handleActivateProperty(property)}
+                            className="text-green-600 hover:text-green-900"
+                            title="Activate Property"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleRetireProperty(property)}
+                            className="text-orange-600 hover:text-orange-900"
+                            title="Retire Property (Sold)"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteProperty(property)}
                           className="text-red-600 hover:text-red-900"

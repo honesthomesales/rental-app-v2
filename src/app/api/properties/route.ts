@@ -4,14 +4,23 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache properties for 60 seconds - they don't change frequently
 export const revalidate = 60
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    console.log('Fetching properties from RENT_properties table...')
+    const { searchParams } = new URL(request.url)
+    const includeRetired = searchParams.get('includeRetired') === 'true'
     
-    const { data: properties, error } = await supabaseServer
+    console.log('Fetching properties from RENT_properties table...', { includeRetired })
+    
+    let query = supabaseServer
       .from('RENT_properties')
       .select('*')
-      .order('created_at', { ascending: false })
+    
+    // By default, exclude retired properties unless explicitly requested
+    if (!includeRetired) {
+      query = query.or('status.is.null,status.eq.active')
+    }
+    
+    const { data: properties, error } = await query.order('created_at', { ascending: false })
 
     console.log('Properties query result:', { properties: properties?.length, error })
 

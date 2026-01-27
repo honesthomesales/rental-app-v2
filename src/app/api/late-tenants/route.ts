@@ -73,11 +73,19 @@ export async function GET(request: Request) {
 
     console.log('Found active leases:', leases?.length || 0)
     
+    // Filter out leases where property is retired
+    const activePropertyLeases = leases?.filter(lease => {
+      const property = lease.RENT_properties
+      return !property || property.status === 'active' || property.status === null
+    }) || []
+    
+    console.log('Active leases with non-retired properties:', activePropertyLeases.length)
+    
     // Process each lease EXACTLY like Payments page does (lines 441-603)
     const lateTenantsRows: any[] = []
     let totalAllOwed = 0
-
-    for (const lease of leases || []) {
+    
+    for (const lease of activePropertyLeases) {
       const leaseId = lease.id
       const leaseStartDate = lease.lease_start_date
       const address = lease.RENT_properties?.address || 'unknown'

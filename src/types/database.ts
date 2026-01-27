@@ -38,6 +38,7 @@ export interface Property {
   insurance_payment?: number
   tax_payment?: number
   rent_value?: number
+  status?: 'active' | 'retired'
   created_at?: string
   updated_at?: string
 }

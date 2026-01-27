@@ -119,14 +119,34 @@ export async function POST(request: Request) {
     const totalDue = allUnpaidInvoices.reduce((sum, invoice) => 
       sum + parseFloat(invoice.balance_due as any || 0), 0
     )
-    // totalLateFees = sum of amount_late from ALL unpaid invoices
-    const lateFeeAmount = allUnpaidInvoices.reduce((sum, invoice) => 
-      sum + parseFloat(invoice.amount_late || 0), 0
-    )
-    // Rent amount = sum of amount_rent from ALL unpaid invoices
-    const rentAmount = allUnpaidInvoices.reduce((sum, invoice) => 
-      sum + parseFloat(invoice.amount_rent || 0), 0
-    )
+    
+    // Calculate rent and late fee amounts proportionally based on balance_due
+    // This ensures the breakdown matches the total due
+    let rentAmount = 0
+    let lateFeeAmount = 0
+    
+    allUnpaidInvoices.forEach(invoice => {
+      const invoiceTotal = parseFloat(invoice.amount_total || 0)
+      const balanceDue = parseFloat(invoice.balance_due as any || 0)
+      
+      if (invoiceTotal > 0 && balanceDue > 0) {
+        // Calculate the proportion of each component in the original invoice
+        const invoiceRent = parseFloat(invoice.amount_rent || 0)
+        const invoiceLate = parseFloat(invoice.amount_late || 0)
+        
+        // Calculate proportional amounts based on balance due
+        const rentProportion = invoiceRent / invoiceTotal
+        const lateProportion = invoiceLate / invoiceTotal
+        
+        // Apply proportions to balance due
+        rentAmount += balanceDue * rentProportion
+        lateFeeAmount += balanceDue * lateProportion
+      } else if (balanceDue > 0) {
+        // Fallback: if no amount_total, use amount_rent and amount_late directly
+        rentAmount += parseFloat(invoice.amount_rent || 0)
+        lateFeeAmount += parseFloat(invoice.amount_late || 0)
+      }
+    })
     // Number of rent cycles = count of ALL unpaid invoices (matching payments page)
     const numberOfPeriods = allUnpaidInvoices.length
     
@@ -209,10 +229,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${currentDate}
-Method of Delivery: Physical Delivery to Premises and Mailed
-
----
-This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) and is legally binding.`
+Method of Delivery: Physical Delivery to Premises and Mailed`
     }
 
     // Generate Application for Ejectment if requested

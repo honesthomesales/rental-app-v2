@@ -185,10 +185,16 @@ export default function PropertiesPage() {
 
       if (response.ok) {
         await fetchProperties()
+        alert(`Property "${property.name}" has been retired successfully.`)
       } else {
         const errorData = await response.json()
         console.error('Failed to retire property:', errorData)
-        alert(`Failed to retire property: ${errorData.error || errorData.details || 'Unknown error'}`)
+        
+        if (errorData.details && errorData.details.includes('column does not exist')) {
+          alert(`Database Setup Required:\n\n${errorData.details}\n\nPlease run the migration script in Supabase SQL Editor.`)
+        } else {
+          alert(`Failed to retire property: ${errorData.error || errorData.details || 'Unknown error'}`)
+        }
       }
     } catch (error) {
       console.error('Error retiring property:', error)

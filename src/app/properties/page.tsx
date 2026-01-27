@@ -27,7 +27,7 @@ export default function PropertiesPage() {
 
   useEffect(() => {
     fetchProperties()
-  }, [])
+  }, [showRetired])
 
   // OPTIMIZED: Use useMemo for expensive filtering and sorting calculations
   const filteredProperties = useMemo(() => {

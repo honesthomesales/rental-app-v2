@@ -4,7 +4,7 @@ import { getMagistrateDistrict, getMagistrateCourtAddress } from '@/lib/magistra
 
 export async function POST(request: Request) {
   try {
-    const { tenantId, county, formType, ejectmentReason, violationDescription, leaseId } = await request.json()
+    const { tenantId, county, formType, ejectmentReason, violationDescription, evictionReasons, leaseId } = await request.json()
 
     if (!leaseId) {
       return NextResponse.json({ error: 'Lease ID is required' }, { status: 400 })
@@ -174,9 +174,20 @@ As of the date of this notice, the full amount of $${totalDue.toLocaleString(und
 
 Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.
 
-**IMPORTANT: Payment in full will stop all eviction proceedings from moving forward.**
-
-***OPTIONS***
+${evictionReasons && evictionReasons.length > 0 ? evictionReasons.map((reason: string) => {
+  if (reason === 'overdue') {
+    return 'Failure to Pay Rent:\nTenant has failed to pay rent and/or other amounts due under the lease agreement. As of the date of this notice, the account remains past due.'
+  } else if (reason === 'holdover') {
+    return 'Holdover Tenancy / Expired Lease:\nThe lease agreement has expired, and Tenant remains in possession of the premises without a valid lease or written authorization from the Landlord.'
+  } else if (reason === 'inspection') {
+    return 'Failure to Provide Access:\nTenant has failed to allow reasonable access to the premises for inspection, maintenance, or repairs after proper notice, as required under the lease and applicable law.'
+  } else if (reason === 'communication') {
+    return 'Failure to Communicate / Non-Responsiveness:\nTenant has failed to respond to reasonable attempts at communication regarding tenancy matters, including rent, access, or lease compliance.'
+  } else if (reason === 'freeform') {
+    return 'Tenant has failed to comply with the terms and conditions of the lease agreement and/or applicable law.'
+  }
+  return ''
+}).filter(Boolean).join('\n\n') + '\n\n' : ''}***OPTIONS***
 
 Please contact us by text at 864-322-3432. We will respond by phone shortly.
 
@@ -198,7 +209,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${currentDate}
-Method of Delivery: Physical Delivery to Premises
+Method of Delivery: Physical Delivery to Premises and Mailed
 
 ---
 This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) and is legally binding.`

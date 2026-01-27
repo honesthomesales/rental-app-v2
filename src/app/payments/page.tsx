@@ -108,6 +108,7 @@ export default function PaymentsPage() {
   const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
   const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
   const [violationDescription, setViolationDescription] = useState('')
+  const [evictionReasons, setEvictionReasons] = useState<string[]>([])
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
@@ -838,7 +839,7 @@ return'<div class="s">'+l+'</div>';
                   // Since we don't have a direct "get by ID" endpoint, we'll fetch with a wide date range
                   const extendedFutureDate = new Date()
                   extendedFutureDate.setFullYear(extendedFutureDate.getFullYear() + 5) // Look 5 years ahead
-                  const extendedUrl = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseStart}&to=${extendedFutureDate.toISOString().split('T')[0]}`
+                  const extendedUrl = `/api/invoices?leaseId=${leaseRow.lease.id}&from=${leaseRow.lease.lease_start_date}&to=${extendedFutureDate.toISOString().split('T')[0]}`
                   const extendedResponse = await fetch(extendedUrl)
                   const extendedInvoicesData = await extendedResponse.json()
                   const extendedInvoices = Array.isArray(extendedInvoicesData) ? extendedInvoicesData : []
@@ -3142,13 +3143,14 @@ return'<div class="s">'+l+'</div>';
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900">Generate Legal Forms</h2>
               <button
-                onClick={() => {
-                  setShowGenerateModal(false)
-                  setSelectedTenantForGenerate('')
-                  setFormType('notice')
-                  setEjectmentReason('nonpayment')
-                  setViolationDescription('')
-                }}
+                  onClick={() => {
+                    setShowGenerateModal(false)
+                    setSelectedTenantForGenerate('')
+                    setFormType('notice')
+                    setEjectmentReason('nonpayment')
+                    setViolationDescription('')
+                    setEvictionReasons([])
+                  }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <XMarkIcon className="h-6 w-6" />
@@ -3205,22 +3207,108 @@ return'<div class="s">'+l+'</div>';
                       <option value="violation">Terms or conditions of the lease have been violated</option>
                     </select>
                   </div>
-
-                  {ejectmentReason === 'violation' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Description of Violation
-                      </label>
-                      <textarea
-                        value={violationDescription}
-                        onChange={(e) => setViolationDescription(e.target.value)}
-                        rows={4}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Describe the lease violation..."
-                      />
-                    </div>
-                  )}
                 </>
+              )}
+
+              {(formType === 'notice' || (formType === 'ejectment' || formType === 'both') && ejectmentReason === 'violation') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reasons for Move (Select all that apply)
+                  </label>
+                  <div className="space-y-2 border border-gray-300 rounded-lg p-3 bg-gray-50">
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evictionReasons.includes('overdue')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'overdue'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'overdue'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>1. Overdue Payments</strong>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evictionReasons.includes('holdover')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'holdover'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'holdover'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>2. Lease Is Past / Holdover</strong>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evictionReasons.includes('inspection')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'inspection'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'inspection'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>3. Failure to Allow Inspection</strong>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evictionReasons.includes('communication')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'communication'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'communication'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>4. Lack of Communication</strong>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evictionReasons.includes('freeform')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'freeform'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'freeform'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>5. Free-Form Reason</strong>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {(formType === 'ejectment' || formType === 'both') && ejectmentReason === 'violation' && evictionReasons.length === 0 && (
+                <div className="text-sm text-red-600">
+                  Please select at least one reason for move.
+                </div>
               )}
 
               <div>
@@ -3245,6 +3333,7 @@ return'<div class="s">'+l+'</div>';
                     setFormType('notice')
                     setEjectmentReason('nonpayment')
                     setViolationDescription('')
+                    setEvictionReasons([])
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                 >
@@ -3266,7 +3355,7 @@ return'<div class="s">'+l+'</div>';
                     }
 
                     // Get county from property (same source as dashboard property tax overview)
-                    const county = tenant.property?.county || ''
+                    const county = (tenant.property as any)?.county || ''
                     if (!county) {
                       alert('County information not found for this property. Please ensure the property has a county set.')
                       return
@@ -3277,10 +3366,14 @@ return'<div class="s">'+l+'</div>';
                         alert('No amount owed found for this tenant')
                         return
                       }
-                      if (ejectmentReason === 'violation' && !violationDescription.trim()) {
-                        alert('Please provide a description of the lease violation')
+                      if (ejectmentReason === 'violation' && evictionReasons.length === 0) {
+                        alert('Please select at least one reason for move')
                         return
                       }
+                    }
+                    if (formType === 'notice' && evictionReasons.length === 0) {
+                      alert('Please select at least one reason for move')
+                      return
                     }
 
                     try {
@@ -3297,6 +3390,7 @@ return'<div class="s">'+l+'</div>';
                           formType,
                           ejectmentReason,
                           violationDescription,
+                          evictionReasons: evictionReasons,
                           leaseId: tenant.lease.id,
                         }),
                       })

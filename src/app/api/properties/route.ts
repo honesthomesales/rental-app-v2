@@ -18,12 +18,34 @@ export async function GET(request: Request) {
     // By default, exclude retired properties unless explicitly requested
     // Use .neq() to exclude retired - this will include null and active status
     if (!includeRetired) {
-      // Filter out retired properties - this will include null (not set) and active
-      query = query.neq('status', 'retired')
+      try {
+        // Filter out retired properties - this will include null (not set) and active
+        query = query.neq('status', 'retired')
+      } catch (err) {
+        // If status column doesn't exist, just get all properties
+        // This handles the case where migration hasn't been run yet
+        console.warn('Status column may not exist, fetching all properties:', err)
+      }
     }
     // If including retired, get all properties regardless of status (no filter)
     
     const { data: properties, error } = await query.order('created_at', { ascending: false })
+    
+    // If we get an error about the column not existing, return all properties
+    if (error && error.message && error.message.includes('column') && error.message.includes('does not exist')) {
+      console.warn('Status column does not exist, returning all properties')
+      // Retry without the filter
+      const { data: allProperties, error: retryError } = await supabaseServer
+        .from('RENT_properties')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (retryError) {
+        throw new Error(`Error fetching properties: ${retryError.message}`)
+      }
+      
+      return NextResponse.json(allProperties || [])
+    }
 
     console.log('Properties query result:', { properties: properties?.length, error })
 

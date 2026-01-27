@@ -3215,7 +3215,7 @@ return'<div class="s">'+l+'</div>';
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Reasons for Move (Select all that apply)
                   </label>
-                  <div className="space-y-2 border border-gray-300 rounded-lg p-3 bg-gray-50">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 border border-gray-300 rounded-lg p-3 bg-gray-50">
                     <label className="flex items-start space-x-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -3231,40 +3231,6 @@ return'<div class="s">'+l+'</div>';
                       />
                       <span className="text-sm text-gray-700">
                         <strong>1. Overdue Payments</strong>
-                      </span>
-                    </label>
-                    <label className="flex items-start space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={evictionReasons.includes('holdover')}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setEvictionReasons([...evictionReasons, 'holdover'])
-                          } else {
-                            setEvictionReasons(evictionReasons.filter(r => r !== 'holdover'))
-                          }
-                        }}
-                        className="mt-1"
-                      />
-                      <span className="text-sm text-gray-700">
-                        <strong>2. Lease Is Past / Holdover</strong>
-                      </span>
-                    </label>
-                    <label className="flex items-start space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={evictionReasons.includes('inspection')}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setEvictionReasons([...evictionReasons, 'inspection'])
-                          } else {
-                            setEvictionReasons(evictionReasons.filter(r => r !== 'inspection'))
-                          }
-                        }}
-                        className="mt-1"
-                      />
-                      <span className="text-sm text-gray-700">
-                        <strong>3. Failure to Allow Inspection</strong>
                       </span>
                     </label>
                     <label className="flex items-start space-x-2 cursor-pointer">
@@ -3287,6 +3253,23 @@ return'<div class="s">'+l+'</div>';
                     <label className="flex items-start space-x-2 cursor-pointer">
                       <input
                         type="checkbox"
+                        checked={evictionReasons.includes('holdover')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'holdover'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'holdover'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>2. Lease Is Past / Holdover</strong>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
                         checked={evictionReasons.includes('freeform')}
                         onChange={(e) => {
                           if (e.target.checked) {
@@ -3299,6 +3282,23 @@ return'<div class="s">'+l+'</div>';
                       />
                       <span className="text-sm text-gray-700">
                         <strong>5. Free-Form Reason</strong>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evictionReasons.includes('inspection')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEvictionReasons([...evictionReasons, 'inspection'])
+                          } else {
+                            setEvictionReasons(evictionReasons.filter(r => r !== 'inspection'))
+                          }
+                        }}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <strong>3. Failure to Allow Inspection</strong>
                       </span>
                     </label>
                   </div>
@@ -3446,7 +3446,19 @@ return'<div class="s">'+l+'</div>';
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.notice}</pre>
                   </div>
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end space-x-2">
+                    <button
+                      onClick={() => {
+                        const printWin = window.open('', '_blank', 'width=900,height=1100')
+                        if (!printWin) { alert('Please allow popups'); return }
+                        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>7-Day Notice</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;padding:1in;max-width:8.5in;margin:0 auto}pre{white-space:pre-wrap;font-family:inherit;margin:0}@media print{body{padding:0;margin:0}}</style></head><body><pre>${generatedForms.notice.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre><script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`
+                        printWin.document.write(html)
+                        printWin.document.close()
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Print
+                    </button>
                     <button
                       onClick={() => {
                         if (downloadFormat === 'pdf') {
@@ -3457,7 +3469,7 @@ return'<div class="s">'+l+'</div>';
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Notice ({downloadFormat.toUpperCase()})
+                      Download ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>
@@ -3470,6 +3482,21 @@ return'<div class="s">'+l+'</div>';
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
                   </div>
                   <div className="mt-3 flex justify-end space-x-2">
+                    <button
+                      onClick={() => {
+                        const printWin = window.open('', '_blank', 'width=900,height=1100')
+                        if (!printWin) { alert('Please allow popups'); return }
+                        const content = generatedForms.ejectmentHTML || generatedForms.ejectment
+                        const html = generatedForms.ejectmentHTML 
+                          ? `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Application for Ejectment</title></head><body>${content}<script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`
+                          : `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Application for Ejectment</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;padding:1in;max-width:8.5in;margin:0 auto}pre{white-space:pre-wrap;font-family:inherit;margin:0}@media print{body{padding:0;margin:0}}</style></head><body><pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre><script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`
+                        printWin.document.write(html)
+                        printWin.document.close()
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Print
+                    </button>
                     {generatedForms.ejectmentHTML && (
                       <button
                         onClick={() => {
@@ -3481,7 +3508,7 @@ return'<div class="s">'+l+'</div>';
                           a.click()
                           URL.revokeObjectURL(url)
                         }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                       >
                         View HTML
                       </button>
@@ -3509,6 +3536,21 @@ return'<div class="s">'+l+'</div>';
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.affidavit}</pre>
                   </div>
                   <div className="mt-3 flex justify-end space-x-2">
+                    <button
+                      onClick={() => {
+                        const printWin = window.open('', '_blank', 'width=900,height=1100')
+                        if (!printWin) { alert('Please allow popups'); return }
+                        const content = generatedForms.affidavitHTML || generatedForms.affidavit
+                        const html = generatedForms.affidavitHTML 
+                          ? `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Affidavit of Item of Account</title></head><body>${content}<script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`
+                          : `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Affidavit of Item of Account</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;padding:1in;max-width:8.5in;margin:0 auto}pre{white-space:pre-wrap;font-family:inherit;margin:0}@media print{body{padding:0;margin:0}}</style></head><body><pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre><script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`
+                        printWin.document.write(html)
+                        printWin.document.close()
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Print
+                    </button>
                     {generatedForms.affidavitHTML && (
                       <button
                         onClick={() => {
@@ -3520,7 +3562,7 @@ return'<div class="s">'+l+'</div>';
                           a.click()
                           URL.revokeObjectURL(url)
                         }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                       >
                         View HTML
                       </button>

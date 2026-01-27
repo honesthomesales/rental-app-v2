@@ -162,7 +162,57 @@ export default function PropertiesPage() {
     setShowAddModal(true)
   }
 
+  const handleRetireProperty = async (property: Property) => {
+    if (!confirm(`Are you sure you want to retire ${property.name}? This will exclude it from current calculations but preserve all history.`)) {
+      return
+    }
 
+    try {
+      const response = await fetch('/api/properties', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: property.id,
+          status: 'retired'
+        })
+      })
+
+      if (response.ok) {
+        fetchProperties()
+      } else {
+        alert('Failed to retire property. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error retiring property:', error)
+      alert('Failed to retire property. Please try again.')
+    }
+  }
+
+  const handleActivateProperty = async (property: Property) => {
+    try {
+      const response = await fetch('/api/properties', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: property.id,
+          status: 'active'
+        })
+      })
+
+      if (response.ok) {
+        fetchProperties()
+      } else {
+        alert('Failed to activate property. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error activating property:', error)
+      alert('Failed to activate property. Please try again.')
+    }
+  }
 
   const handleSaveProperty = async (propertyData: Partial<PropertyWithLease>) => {
     try {

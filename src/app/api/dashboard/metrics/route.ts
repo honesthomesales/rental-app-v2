@@ -151,6 +151,7 @@ export async function GET() {
     // Calculate total debt (same as profit page)
     // Total debt = totalFixedExpenses + otherExpenses
     // totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
+    // Note: Insurance and taxes are annual, so we use them as-is (they represent monthly equivalent)
     const totalInsurance = allProperties
       ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
     
@@ -173,6 +174,8 @@ export async function GET() {
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     
     // Get one-time expenses (interest_rate = -9.9999) - these are otherExpenses
+    // For dashboard, we'll use all one-time expenses (not filtered by month like profit page)
+    // This gives us a total debt picture
     const otherExpenses = expenses
       ?.filter(exp => exp.interest_rate === -9.9999)
       .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0

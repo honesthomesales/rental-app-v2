@@ -542,23 +542,25 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
+          <div className="flex items-start">
             <div className="flex-shrink-0">
               <CurrencyDollarIcon className="h-8 w-8 text-emerald-600" />
             </div>
-            <div className="ml-4 flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-500">Profit</p>
-              <div className="mt-1">
-                <p className="text-base font-semibold text-gray-900 whitespace-nowrap">
-                  Current: <span className={metrics?.currentProfit && metrics.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+            <div className="ml-4 flex-1 overflow-hidden">
+              <p className="text-sm font-medium text-gray-500 mb-2">Profit</p>
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis">
+                  <span className="text-gray-600">Current:</span>{' '}
+                  <span className={metrics?.currentProfit && metrics.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
                     ${metrics?.currentProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                   </span>
-                </p>
-                <p className="text-base font-semibold text-gray-900 whitespace-nowrap">
-                  Potential: <span className={metrics?.potentialProfit && metrics.potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                </div>
+                <div className="text-sm font-semibold text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis">
+                  <span className="text-gray-600">Potential:</span>{' '}
+                  <span className={metrics?.potentialProfit && metrics.potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
                     ${metrics?.potentialProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                   </span>
-                </p>
+                </div>
               </div>
             </div>
           </div>

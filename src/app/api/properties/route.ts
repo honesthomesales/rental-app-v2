@@ -16,13 +16,12 @@ export async function GET(request: Request) {
       .select('*')
     
     // By default, exclude retired properties unless explicitly requested
-    // Include properties where status is null (not set yet) or status is 'active'
+    // Use .neq() to exclude retired - this will include null and active status
     if (!includeRetired) {
-      query = query.or('status.is.null,status.eq.active')
-    } else {
-      // If including retired, get all properties regardless of status
-      // No filter needed
+      // Filter out retired properties - this will include null (not set) and active
+      query = query.neq('status', 'retired')
     }
+    // If including retired, get all properties regardless of status (no filter)
     
     const { data: properties, error } = await query.order('created_at', { ascending: false })
 

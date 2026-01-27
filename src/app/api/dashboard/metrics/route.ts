@@ -7,10 +7,11 @@ export const revalidate = 60
 export async function GET() {
   try {
     // Fetch total properties (excluding retired)
+    // Use .neq() to exclude retired - this will include null (not set) and active
     const { data: allProperties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
       .select('*')
-      .or('status.is.null,status.eq.active')
+      .neq('status', 'retired')
 
     if (propertiesError) {
       throw new Error(`Error fetching properties: ${propertiesError.message}`)

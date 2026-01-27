@@ -157,10 +157,14 @@ export async function GET() {
     const totalTaxes = allProperties
       ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
     
-    // Get total payments from expenses table (all expenses)
-    const { data: expenses } = await supabaseServer
+    // Get total payments from expenses table (all expenses, not filtered by month)
+    const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
       .select('amount, interest_rate')
+    
+    if (expensesError) {
+      console.error('Error fetching expenses for debt calculation:', expensesError)
+    }
     
     const totalPayments = expenses
       ?.filter(exp => exp.interest_rate !== -9.9999) // Exclude one-time expenses
@@ -168,16 +172,31 @@ export async function GET() {
     
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     
-    // Get one-time expenses (interest_rate = -9.9999)
-    const oneTimeExpenses = expenses
+    // Get one-time expenses (interest_rate = -9.9999) - these are otherExpenses
+    const otherExpenses = expenses
       ?.filter(exp => exp.interest_rate === -9.9999)
       .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
     
-    const totalDebt = totalFixedExpenses + oneTimeExpenses
+    const totalDebt = totalFixedExpenses + otherExpenses
 
     // Calculate profit
+    // Current profit = monthly income - total debt
+    // Potential profit = (monthly income + potential income) - total debt
     const currentProfit = monthlyIncome - totalDebt
     const potentialProfit = (monthlyIncome + potentialIncome) - totalDebt
+    
+    console.log('Debt calculation:', {
+      totalInsurance,
+      totalTaxes,
+      totalPayments,
+      totalFixedExpenses,
+      otherExpenses,
+      totalDebt,
+      monthlyIncome,
+      potentialIncome,
+      currentProfit,
+      potentialProfit
+    })
 
     const metrics = {
       totalProperties: allProperties?.length || 0,

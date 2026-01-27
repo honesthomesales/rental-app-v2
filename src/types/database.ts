@@ -154,6 +154,9 @@ export interface DashboardMetrics {
     singlewide: number
     loan: number
   }
+  totalDebt?: number
+  currentProfit?: number
+  potentialProfit?: number
 }
 
 // Payments grid types

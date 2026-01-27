@@ -148,6 +148,37 @@ export async function GET() {
       else if (type === 'loan') propertyTypeBreakdown.loan++
     })
 
+    // Calculate total debt (same as profit page)
+    // Total debt = totalFixedExpenses + otherExpenses
+    // totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
+    const totalInsurance = allProperties
+      ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
+    
+    const totalTaxes = allProperties
+      ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
+    
+    // Get total payments from expenses table (all expenses)
+    const { data: expenses } = await supabaseServer
+      .from('RENT_expenses')
+      .select('amount, interest_rate')
+    
+    const totalPayments = expenses
+      ?.filter(exp => exp.interest_rate !== -9.9999) // Exclude one-time expenses
+      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+    
+    const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
+    
+    // Get one-time expenses (interest_rate = -9.9999)
+    const oneTimeExpenses = expenses
+      ?.filter(exp => exp.interest_rate === -9.9999)
+      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+    
+    const totalDebt = totalFixedExpenses + oneTimeExpenses
+
+    // Calculate profit
+    const currentProfit = monthlyIncome - totalDebt
+    const potentialProfit = (monthlyIncome + potentialIncome) - totalDebt
+
     const metrics = {
       totalProperties: allProperties?.length || 0,
       occupiedProperties,
@@ -156,7 +187,10 @@ export async function GET() {
       totalPotentialIncome: monthlyIncome + potentialIncome,
       latePayments,
       totalOwed,
-      propertyTypeBreakdown
+      propertyTypeBreakdown,
+      totalDebt,
+      currentProfit,
+      potentialProfit
     }
 
     return NextResponse.json(metrics)

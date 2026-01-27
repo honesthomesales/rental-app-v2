@@ -87,6 +87,8 @@ export async function PUT(request: Request) {
       Object.entries(updateData).filter(([_, value]) => value !== undefined)
     )
     
+    console.log('Updating property:', { id, updateData: cleanUpdateData })
+    
     const { data, error } = await supabaseServer
       .from('RENT_properties')
       .update(cleanUpdateData)
@@ -96,11 +98,25 @@ export async function PUT(request: Request) {
 
     if (error) {
       console.error('Supabase error updating property:', error)
+      
+      // Check if the error is about missing column
+      if (error.message && (error.message.includes('column') && error.message.includes('does not exist') || error.message.includes('status'))) {
+        return NextResponse.json(
+          { 
+            error: 'Database column missing', 
+            details: 'The status column does not exist. Please run the migration script add-property-status-field.sql in your Supabase SQL editor first.' 
+          },
+          { status: 500 }
+        )
+      }
+      
       return NextResponse.json(
         { error: 'Database error', details: error.message },
         { status: 500 }
       )
     }
+    
+    console.log('Property updated successfully:', data)
 
     return NextResponse.json(data)
   } catch (error) {

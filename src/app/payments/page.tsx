@@ -606,21 +606,23 @@ return'<div class="s">'+l+'</div>';
                     leaseId: leaseData.id,
                     propertyAddress: leaseData.RENT_properties?.address,
                     totalPayments: payments.length,
-                    validPayments: validPayments.length,
-                    allPaymentDates: validPayments.map((p: any) => ({
-                      date: p.payment_date,
-                      timestamp: new Date(p.payment_date).getTime(),
-                      formatted: new Date(p.payment_date).toLocaleDateString(),
-                      amount: p.amount
-                    })),
-                    sortedFirstFive: sortedPayments.slice(0, 5).map((p: any) => ({
-                      date: p.payment_date,
-                      timestamp: new Date(p.payment_date).getTime(),
-                      formatted: new Date(p.payment_date).toLocaleDateString(),
-                      amount: p.amount
-                    })),
-                    selectedLastPaidDate: lastPaidDate,
-                    selectedLastPaidDateFormatted: lastPaidDate ? new Date(lastPaidDate).toLocaleDateString() : null
+                    validPayments: validPayments.length
+                  })
+                  console.log('📅 All Payment Dates (first 10):', validPayments.slice(0, 10).map((p: any) => ({
+                    date: p.payment_date,
+                    formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
+                    amount: p.amount
+                  })))
+                  console.log('📅 Sorted Payments (most recent first, first 5):', sortedPayments.slice(0, 5).map((p: any) => ({
+                    date: p.payment_date,
+                    formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
+                    timestamp: new Date(p.payment_date).getTime(),
+                    amount: p.amount
+                  })))
+                  console.log('✅ Selected Last Paid Date:', {
+                    raw: lastPaidDate,
+                    formatted: lastPaidDate ? new Date(lastPaidDate).toLocaleDateString('en-US') : null,
+                    timestamp: lastPaidDate ? new Date(lastPaidDate).getTime() : null
                   })
                 }
               }

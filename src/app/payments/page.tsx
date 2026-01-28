@@ -3451,7 +3451,33 @@ return'<div class="s">'+l+'</div>';
                       onClick={() => {
                         const printWin = window.open('', '_blank', 'width=900,height=1100')
                         if (!printWin) { alert('Please allow popups'); return }
-                        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>7-Day Notice</title><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.6;padding:1in;max-width:8.5in;margin:0 auto}pre{white-space:pre-wrap;font-family:inherit;margin:0}@media print{body{padding:0;margin:0}}</style></head><body><pre>${generatedForms.notice.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre><script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`
+                        
+                        // Convert markdown-style formatting to HTML with better styling
+                        let htmlContent = generatedForms.notice
+                          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                          .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong style="font-size:18pt;">$1</strong>')
+                          .split('\n')
+                          .map(line => {
+                            if (line.trim() === '') return '<div style="margin-bottom:8px;"></div>'
+                            if (line.startsWith('**7-DAY NOTICE')) return `<h1 style="font-size:18pt;font-weight:bold;text-align:center;margin-bottom:12px;">${line.replace(/\*\*/g, '')}</h1>`
+                            if (line.startsWith('To:') || line.startsWith('Property:')) return `<div style="margin-bottom:6px;">${line}</div>`
+                            if (line.startsWith('**BREAKDOWN')) return `<div style="font-weight:bold;margin-top:10px;margin-bottom:6px;">${line.replace(/\*\*/g, '')}</div>`
+                            if (line.startsWith('Rent:') || line.startsWith('Late Fee:')) return `<div style="margin-left:20px;margin-bottom:4px;">${line}</div>`
+                            if (line.startsWith('**TOTAL DUE:')) return `<div style="font-weight:bold;font-size:14pt;margin-top:8px;margin-bottom:8px;background-color:#fef3cd;padding:8px;border-left:4px solid #ffc107;">${line.replace(/\*\*/g, '')}</div>`
+                            if (line.startsWith('***OPTIONS***')) return `<div style="font-weight:bold;font-size:18pt;margin-top:12px;margin-bottom:8px;">OPTIONS</div>`
+                            if (line.startsWith('**1)') || line.startsWith('**2)') || line.startsWith('**3)')) return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${line.replace(/\*\*/g, '')}</div>`
+                            return `<div style="margin-bottom:6px;">${line}</div>`
+                          })
+                          .join('')
+                        
+                        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>7-Day Notice</title><style>
+                          @page { size: letter; margin: 0.5in; }
+                          body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.4; padding: 0.5in; margin: 0; }
+                          @media print {
+                            body { padding: 0; margin: 0; }
+                            @page { margin: 0.5in; }
+                          }
+                        </style></head><body>${htmlContent}<script>window.onload=function(){setTimeout(function(){window.print();window.close();},250);};</script></body></html>`
                         printWin.document.write(html)
                         printWin.document.close()
                       }}

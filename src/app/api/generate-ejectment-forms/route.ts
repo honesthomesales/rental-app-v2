@@ -184,52 +184,77 @@ export async function POST(request: Request) {
         ? `Pursuant to North Carolina law (N.C. Gen. Stat. § 42-26), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.`
         : `Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.`
 
-      // Determine if we have eviction reasons and which one to use for the opening
+      // Determine if we have eviction reasons
       const hasOverdueReason = evictionReasons && evictionReasons.includes('overdue')
-      const openingReason = hasOverdueReason ? '**Failure to Pay Rent:**\n\n' : ''
+      const hasOtherReasons = evictionReasons && evictionReasons.filter((r: string) => r !== 'overdue').length > 0
+      
+      // Format the legal reference based on state
+      const legalReference = isNC
+        ? `Pursuant to North Carolina Code Ann. § 42-26, you are hereby given seven (7) days from the date of this notice to either pay the total amount due in full or surrender possession of the premises.`
+        : `Pursuant to South Carolina Code Ann. § 27-40-710(B), you are hereby given seven (7) days from the date of this notice to either pay the total amount due in full or surrender possession of the premises.`
 
-      forms.notice = `**7-DAY NOTICE TO PAY RENT OR QUIT - INTENT TO EVICT**
+      forms.notice = `7-DAY NOTICE TO PAY RENT OR QUIT
+(INTENT TO EVICT)
 
-To: ${tenant.first_name} ${tenant.last_name}
-Property: ${property.address}
+To:
+${tenant.first_name} ${tenant.last_name}
+
+Property Address:
+${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
-${openingReason}You are hereby notified that your rent in the amount of **$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due.
+${hasOverdueReason ? 'FAILURE TO PAY RENT\n\n' : ''}You are hereby notified that rent in the total amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} is past due and remains unpaid.
 
-**BREAKDOWN OF AMOUNTS DUE:**
-Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+BREAKDOWN OF AMOUNTS DUE:
+Rent Due: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 ${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-**TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
-${stateLawReference}
+TOTAL AMOUNT DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 
-${evictionReasons && evictionReasons.length > 0 ? evictionReasons.filter((reason: string) => reason !== 'overdue').map((reason: string) => {
+${legalReference}
+
+Date of Notice: ${currentDate}
+
+Deadline to Pay or Vacate: ${sevenDaysFromNowFormatted}
+
+Failure to comply within this time period will result in eviction proceedings being initiated without further notice.
+
+${hasOtherReasons ? `ADDITIONAL GROUNDS FOR EVICTION
+
+In addition to non-payment of rent, you are further notified of the following violations:
+
+${evictionReasons.filter((reason: string) => reason !== 'overdue').map((reason: string) => {
   if (reason === 'holdover') {
-    return '**Holdover Tenancy / Expired Lease:**\nThe lease agreement has expired, and Tenant remains in possession of the premises without a valid lease or written authorization from the Landlord.'
+    return 'Holdover Tenancy / Expired Lease:\nThe lease agreement has expired, and you remain in possession of the premises without a valid lease or written authorization from the Landlord.'
   } else if (reason === 'inspection') {
-    return '**Failure to Provide Access:**\nTenant has failed to allow reasonable access to the premises for inspection, maintenance, or repairs after proper notice, as required under the lease and applicable law.'
+    return 'Failure to Provide Access:\nYou have failed to allow reasonable access to the premises for inspection, maintenance, or repairs after proper notice, as required under the lease and applicable law.'
   } else if (reason === 'communication') {
-    return '**Failure to Communicate / Non-Responsiveness:**\nTenant has failed to respond to reasonable attempts at communication regarding tenancy matters, including rent, access, or lease compliance.'
+    return 'Failure to Communicate / Non-Responsiveness:\nYou have failed to respond to reasonable attempts at communication regarding tenancy matters, including rent, access, and lease compliance.'
   } else if (reason === 'freeform') {
-    return '**Lease Violation:**\nTenant has failed to comply with the terms and conditions of the lease agreement and/or applicable law.'
+    return 'Lease Violation:\nYou have failed to comply with the terms and conditions of the lease agreement and/or applicable law.'
   }
   return ''
-}).filter(Boolean).join('\n\n') + '\n\n' : ''}***OPTIONS***
+}).filter(Boolean).join('\n\n')}\n\n` : ''}OPTIONS
 
 Please contact us by text at 864-322-3432. We will respond by phone shortly.
 
-**1) Voluntary Move-Out Agreement**
-Sign paperwork agreeing to move out and surrender possession of the property, including turning over all keys. This option includes an agreement not to pursue collections and not to file a judgment, provided the property is left in good condition.
+1) Voluntary Move-Out Agreement
+You may sign an agreement to voluntarily vacate the premises and surrender all keys. Provided the property is left in good condition, this option includes an agreement not to pursue collections or obtain a judgment.
 
-**2) Payment in Full**
-Make payment in full to bring your rent account current.
+2) Payment in Full
+You may make payment in full in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to bring your rent account current.
 
-**3) Eviction Proceedings**
-If neither option above is completed, we will proceed with eviction. You will be responsible for all rent owed, court costs, and legal fees. We reserve the right to pursue any unpaid balance through a judgment.
+3) Eviction Proceedings
+If neither option above is completed by the stated deadline, eviction proceedings will be initiated. You will be responsible for all rent owed, court costs, and any allowable legal fees. The Landlord reserves the right to pursue any unpaid balance through a judgment.
 
-Honest Home Sales, LLC: Member: Billy Rochester
-PO Box 705, Cowpens, SC 29330
-Text: 864-322-3432 | Email: honesthomesales@gmail.com
+Landlord:
+Honest Home Sales, LLC
+Member: Billy Rochester
+PO Box 705
+Cowpens, SC 29330
+
+Text: 864-322-3432
+Email: honesthomesales@gmail.com
 
 Date Notice Delivered: ${currentDate}
 Method of Delivery: Physical Delivery to Premises and Mailed`

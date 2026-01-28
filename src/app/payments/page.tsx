@@ -613,6 +613,9 @@ return'<div class="s">'+l+'</div>';
                     formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
                     amount: p.amount
                   })))
+                  // Get all unique payment dates to see what we have
+                  const allDates = sortedPayments.map((p: any) => p.payment_date)
+                  console.log('📅 ALL Payment Dates (sorted, most recent first):', allDates.slice(0, 15))
                   console.log('📅 Sorted Payments (most recent first, first 10):', sortedPayments.slice(0, 10).map((p: any, idx: number) => ({
                     index: idx,
                     date: p.payment_date,
@@ -621,16 +624,21 @@ return'<div class="s">'+l+'</div>';
                     amount: p.amount,
                     isSelected: idx === 0
                   })))
-                  console.log('🔍 Looking for 2026-01-22 or 2027-01-22:', sortedPayments.filter((p: any) => 
-                    p.payment_date === '2026-01-22' || 
-                    p.payment_date === '2027-01-22' ||
-                    p.payment_date?.startsWith('2026-01-22') ||
-                    p.payment_date?.startsWith('2027-01-22')
-                  ).map((p: any) => ({
+                  
+                  // Look for any payment with date containing "01-22" (could be 2026 or 2027)
+                  const jan22Payments = sortedPayments.filter((p: any) => 
+                    p.payment_date && (
+                      p.payment_date.includes('01-22') ||
+                      p.payment_date.includes('2026-01-22') ||
+                      p.payment_date.includes('2027-01-22')
+                    )
+                  )
+                  console.log('🔍 Looking for Jan 22 payments (any year):', jan22Payments.length > 0 ? jan22Payments.map((p: any) => ({
                     date: p.payment_date,
                     formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
-                    amount: p.amount
-                  })))
+                    amount: p.amount,
+                    indexInSorted: sortedPayments.indexOf(p)
+                  })) : 'NO PAYMENTS FOUND WITH DATE 01-22')
                   console.log('✅ Selected Last Paid Date:', {
                     raw: lastPaidDate,
                     formatted: lastPaidDate ? new Date(lastPaidDate).toLocaleDateString('en-US') : null,

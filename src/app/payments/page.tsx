@@ -600,9 +600,19 @@ return'<div class="s">'+l+'</div>';
                     leaseId: leaseData.id,
                     totalPayments: payments.length,
                     validPayments: validPayments.length,
-                    paymentDates: validPayments.map((p: any) => p.payment_date).sort().reverse(),
-                    sortedPaymentDates: sortedPayments.map((p: any) => p.payment_date),
-                    lastPaidDate
+                    allPaymentDates: validPayments.map((p: any) => ({
+                      date: p.payment_date,
+                      timestamp: new Date(p.payment_date).getTime(),
+                      formatted: new Date(p.payment_date).toLocaleDateString()
+                    })),
+                    sortedPayments: sortedPayments.map((p: any) => ({
+                      date: p.payment_date,
+                      timestamp: new Date(p.payment_date).getTime(),
+                      formatted: new Date(p.payment_date).toLocaleDateString(),
+                      amount: p.amount
+                    })),
+                    lastPaidDate,
+                    lastPaidDateFormatted: lastPaidDate ? new Date(lastPaidDate).toLocaleDateString() : null
                   })
                 }
               }

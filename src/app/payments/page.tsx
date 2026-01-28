@@ -556,7 +556,7 @@ return'<div class="s">'+l+'</div>';
                         lastPaidDate = sortedPayments[0]?.payment_date || null
                       }
                     }
-                    
+
                     return {
                       lease: leaseData,
                       property: leaseData.RENT_properties || {},
@@ -613,10 +613,22 @@ return'<div class="s">'+l+'</div>';
                     formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
                     amount: p.amount
                   })))
-                  console.log('📅 Sorted Payments (most recent first, first 5):', sortedPayments.slice(0, 5).map((p: any) => ({
+                  console.log('📅 Sorted Payments (most recent first, first 10):', sortedPayments.slice(0, 10).map((p: any, idx: number) => ({
+                    index: idx,
                     date: p.payment_date,
                     formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
                     timestamp: new Date(p.payment_date).getTime(),
+                    amount: p.amount,
+                    isSelected: idx === 0
+                  })))
+                  console.log('🔍 Looking for 2026-01-22 or 2027-01-22:', sortedPayments.filter((p: any) => 
+                    p.payment_date === '2026-01-22' || 
+                    p.payment_date === '2027-01-22' ||
+                    p.payment_date?.startsWith('2026-01-22') ||
+                    p.payment_date?.startsWith('2027-01-22')
+                  ).map((p: any) => ({
+                    date: p.payment_date,
+                    formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
                     amount: p.amount
                   })))
                   console.log('✅ Selected Last Paid Date:', {
@@ -1845,9 +1857,9 @@ return'<div class="s">'+l+'</div>';
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
-                <p className="text-gray-600">Track and manage rental payments</p>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
+              <p className="text-gray-600">Track and manage rental payments</p>
               </div>
               <button
                 onClick={() => {
@@ -3140,7 +3152,7 @@ return'<div class="s">'+l+'</div>';
                     </div>
                   )
                 })}
-              </div>
+            </div>
 
               <div className="mt-6 flex justify-end space-x-3">
                 <button
@@ -3587,9 +3599,9 @@ return'<div class="s">'+l+'</div>';
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
                       Download ({downloadFormat.toUpperCase()})
-                    </button>
-                  </div>
-                </div>
+                </button>
+              </div>
+            </div>
               )}
 
               {generatedForms.ejectment && (

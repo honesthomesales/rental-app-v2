@@ -535,15 +535,21 @@ return'<div class="s">'+l+'</div>';
                     
                     const totalUnpaidCount = unpaidInvoices.length
 
-                    // Calculate last paid date from payments
+                    // Calculate last paid date from payments - get the most recent payment date
                     let lastPaidDate: string | null = null
                     if (payments.length > 0) {
+                      // Sort payments by date descending (most recent first)
+                      // Handle both string dates and Date objects
                       const sortedPayments = [...payments].sort((a: any, b: any) => {
-                        const dateA = new Date(a.payment_date || 0).getTime()
-                        const dateB = new Date(b.payment_date || 0).getTime()
+                        const dateA = a.payment_date ? new Date(a.payment_date).getTime() : 0
+                        const dateB = b.payment_date ? new Date(b.payment_date).getTime() : 0
+                        if (isNaN(dateA)) return 1 // Invalid dates go to end
+                        if (isNaN(dateB)) return -1
                         return dateB - dateA // Sort descending (most recent first)
                       })
-                      lastPaidDate = sortedPayments[0]?.payment_date || null
+                      // Get the most recent payment date
+                      const mostRecentPayment = sortedPayments.find(p => p.payment_date && !isNaN(new Date(p.payment_date).getTime()))
+                      lastPaidDate = mostRecentPayment?.payment_date || null
                     }
                     
                     return {
@@ -567,15 +573,21 @@ return'<div class="s">'+l+'</div>';
             const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
             const payments = Array.isArray(paymentsData) ? paymentsData : []
             
-            // Calculate last paid date from payments
+            // Calculate last paid date from payments - get the most recent payment date
             let lastPaidDate: string | null = null
             if (payments.length > 0) {
+              // Sort payments by date descending (most recent first)
+              // Handle both string dates and Date objects
               const sortedPayments = [...payments].sort((a: any, b: any) => {
-                const dateA = new Date(a.payment_date || 0).getTime()
-                const dateB = new Date(b.payment_date || 0).getTime()
+                const dateA = a.payment_date ? new Date(a.payment_date).getTime() : 0
+                const dateB = b.payment_date ? new Date(b.payment_date).getTime() : 0
+                if (isNaN(dateA)) return 1 // Invalid dates go to end
+                if (isNaN(dateB)) return -1
                 return dateB - dateA // Sort descending (most recent first)
               })
-              lastPaidDate = sortedPayments[0]?.payment_date || null
+              // Get the most recent payment date
+              const mostRecentPayment = sortedPayments.find(p => p.payment_date && !isNaN(new Date(p.payment_date).getTime()))
+              lastPaidDate = mostRecentPayment?.payment_date || null
             }
             
             // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)

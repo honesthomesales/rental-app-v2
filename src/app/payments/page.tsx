@@ -576,18 +576,36 @@ return'<div class="s">'+l+'</div>';
             // Calculate last paid date from payments - get the most recent payment date
             let lastPaidDate: string | null = null
             if (payments.length > 0) {
-              // Sort payments by date descending (most recent first)
-              // Handle both string dates and Date objects
-              const sortedPayments = [...payments].sort((a: any, b: any) => {
-                const dateA = a.payment_date ? new Date(a.payment_date).getTime() : 0
-                const dateB = b.payment_date ? new Date(b.payment_date).getTime() : 0
-                if (isNaN(dateA)) return 1 // Invalid dates go to end
-                if (isNaN(dateB)) return -1
-                return dateB - dateA // Sort descending (most recent first)
+              // Filter out payments with invalid dates and sort by date descending (most recent first)
+              const validPayments = payments.filter((p: any) => {
+                if (!p.payment_date) return false
+                const date = new Date(p.payment_date)
+                return !isNaN(date.getTime())
               })
-              // Get the most recent payment date
-              const mostRecentPayment = sortedPayments.find(p => p.payment_date && !isNaN(new Date(p.payment_date).getTime()))
-              lastPaidDate = mostRecentPayment?.payment_date || null
+              
+              if (validPayments.length > 0) {
+                // Sort payments by date descending (most recent first)
+                const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                  const dateA = new Date(a.payment_date).getTime()
+                  const dateB = new Date(b.payment_date).getTime()
+                  return dateB - dateA // Sort descending (most recent first)
+                })
+                
+                // Get the most recent payment date (first in sorted array)
+                lastPaidDate = sortedPayments[0]?.payment_date || null
+                
+                // Debug logging for specific lease
+                if (leaseData.id === 'bde0ed30-ba73-4d93-8aaa-bbaeeab5f74e') {
+                  console.log('Last Paid Date Debug:', {
+                    leaseId: leaseData.id,
+                    totalPayments: payments.length,
+                    validPayments: validPayments.length,
+                    paymentDates: validPayments.map((p: any) => p.payment_date).sort().reverse(),
+                    sortedPaymentDates: sortedPayments.map((p: any) => p.payment_date),
+                    lastPaidDate
+                  })
+                }
+              }
             }
             
             // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)

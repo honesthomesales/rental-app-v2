@@ -3454,19 +3454,29 @@ return'<div class="s">'+l+'</div>';
                         
                         // Convert markdown-style formatting to HTML with better styling
                         let htmlContent = generatedForms.notice
-                          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                          .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong style="font-size:18pt;">$1</strong>')
                           .split('\n')
                           .map(line => {
                             if (line.trim() === '') return '<div style="margin-bottom:8px;"></div>'
+                            // Bold the main title
                             if (line.startsWith('**7-DAY NOTICE')) return `<h1 style="font-size:18pt;font-weight:bold;text-align:center;margin-bottom:12px;">${line.replace(/\*\*/g, '')}</h1>`
                             if (line.startsWith('To:') || line.startsWith('Property:')) return `<div style="margin-bottom:6px;">${line}</div>`
+                            // Bold BREAKDOWN OF AMOUNTS DUE
                             if (line.startsWith('**BREAKDOWN')) return `<div style="font-weight:bold;margin-top:10px;margin-bottom:6px;">${line.replace(/\*\*/g, '')}</div>`
                             if (line.startsWith('Rent:') || line.startsWith('Late Fee:')) return `<div style="margin-left:20px;margin-bottom:4px;">${line}</div>`
+                            // Bold TOTAL DUE
                             if (line.startsWith('**TOTAL DUE:')) return `<div style="font-weight:bold;font-size:14pt;margin-top:8px;margin-bottom:8px;background-color:#fef3cd;padding:8px;border-left:4px solid #ffc107;">${line.replace(/\*\*/g, '')}</div>`
                             if (line.startsWith('***OPTIONS***')) return `<div style="font-weight:bold;font-size:18pt;margin-top:12px;margin-bottom:8px;">OPTIONS</div>`
                             if (line.startsWith('**1)') || line.startsWith('**2)') || line.startsWith('**3)')) return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${line.replace(/\*\*/g, '')}</div>`
-                            return `<div style="margin-bottom:6px;">${line}</div>`
+                            // Bold all eviction reason headers
+                            if (line.startsWith('**Failure to Pay Rent:**') || 
+                                line.startsWith('**Holdover Tenancy') || 
+                                line.startsWith('**Failure to Provide Access:**') || 
+                                line.startsWith('**Failure to Communicate') || 
+                                line.startsWith('**Lease Violation:**')) {
+                              return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${line.replace(/\*\*/g, '')}</div>`
+                            }
+                            // Replace remaining ** with <strong>
+                            return `<div style="margin-bottom:6px;">${line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</div>`
                           })
                           .join('')
                         

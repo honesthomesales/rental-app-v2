@@ -184,27 +184,27 @@ export async function POST(request: Request) {
         ? `Pursuant to North Carolina law (N.C. Gen. Stat. § 42-26), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.`
         : `Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.`
 
+      // Determine if we have eviction reasons and which one to use for the opening
+      const hasOverdueReason = evictionReasons && evictionReasons.includes('overdue')
+      const openingReason = hasOverdueReason ? '**Failure to Pay Rent:**\n\n' : ''
+
       forms.notice = `**7-DAY NOTICE TO PAY RENT OR QUIT - INTENT TO EVICT**
 
 To: ${tenant.first_name} ${tenant.last_name}
 Property: ${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
-You are hereby notified that your rent in the amount of **$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due.
+${openingReason}You are hereby notified that your rent in the amount of **$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due.
 
 **BREAKDOWN OF AMOUNTS DUE:**
 Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 ${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
 
-As of the date of this notice, the full amount of **$${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** remains unpaid.
-
 ${stateLawReference}
 
-${evictionReasons && evictionReasons.length > 0 ? evictionReasons.map((reason: string) => {
-  if (reason === 'overdue') {
-    return '**Failure to Pay Rent:**\nTenant has failed to pay rent and/or other amounts due under the lease agreement. As of the date of this notice, the account remains past due.'
-  } else if (reason === 'holdover') {
+${evictionReasons && evictionReasons.length > 0 ? evictionReasons.filter((reason: string) => reason !== 'overdue').map((reason: string) => {
+  if (reason === 'holdover') {
     return '**Holdover Tenancy / Expired Lease:**\nThe lease agreement has expired, and Tenant remains in possession of the premises without a valid lease or written authorization from the Landlord.'
   } else if (reason === 'inspection') {
     return '**Failure to Provide Access:**\nTenant has failed to allow reasonable access to the premises for inspection, maintenance, or repairs after proper notice, as required under the lease and applicable law.'
@@ -217,8 +217,6 @@ ${evictionReasons && evictionReasons.length > 0 ? evictionReasons.map((reason: s
 }).filter(Boolean).join('\n\n') + '\n\n' : ''}***OPTIONS***
 
 Please contact us by text at 864-322-3432. We will respond by phone shortly.
-
-You must choose ONE of the following options:
 
 **1) Voluntary Move-Out Agreement**
 Sign paperwork agreeing to move out and surrender possession of the property, including turning over all keys. This option includes an agreement not to pursue collections and not to file a judgment, provided the property is left in good condition.

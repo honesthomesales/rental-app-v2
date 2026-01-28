@@ -538,19 +538,39 @@ return'<div class="s">'+l+'</div>';
                     // Calculate last paid date from payments - get the most recent payment date
                     let lastPaidDate: string | null = null
                     if (payments.length > 0) {
-                      // Filter out payments with invalid dates first
+                      // Helper function to normalize date to YYYY-MM-DD format (date only, no time)
+                      // This avoids timezone issues when comparing dates
+                      const normalizeDate = (dateStr: string): string => {
+                        if (!dateStr) return ''
+                        // If already in YYYY-MM-DD format, use it directly (extract first 10 chars)
+                        const isoMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/)
+                        if (isoMatch) {
+                          return isoMatch[1]
+                        }
+                        // Otherwise parse and extract date part using local timezone
+                        const date = new Date(dateStr)
+                        if (isNaN(date.getTime())) return ''
+                        // Use local date components to avoid timezone conversion issues
+                        const year = date.getFullYear()
+                        const month = String(date.getMonth() + 1).padStart(2, '0')
+                        const day = String(date.getDate()).padStart(2, '0')
+                        return `${year}-${month}-${day}`
+                      }
+                      
+                      // Filter out payments with invalid dates
                       const validPayments = payments.filter((p: any) => {
                         if (!p.payment_date) return false
-                        const date = new Date(p.payment_date)
-                        return !isNaN(date.getTime())
+                        const normalizedDate = normalizeDate(p.payment_date)
+                        return normalizedDate !== ''
                       })
                       
                       if (validPayments.length > 0) {
-                        // Sort payments by date descending (most recent first)
+                        // Sort payments by normalized date descending (most recent first)
+                        // Compare as strings (YYYY-MM-DD) which naturally sorts correctly and avoids timezone issues
                         const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                          const dateA = new Date(a.payment_date).getTime()
-                          const dateB = new Date(b.payment_date).getTime()
-                          return dateB - dateA // Sort descending (most recent first)
+                          const dateA = normalizeDate(a.payment_date)
+                          const dateB = normalizeDate(b.payment_date)
+                          return dateB.localeCompare(dateA) // Sort descending (most recent first)
                         })
                         // Get the most recent payment date (first in sorted array)
                         lastPaidDate = sortedPayments[0]?.payment_date || null
@@ -581,19 +601,37 @@ return'<div class="s">'+l+'</div>';
             // Calculate last paid date from payments - get the most recent payment date
             let lastPaidDate: string | null = null
             if (payments.length > 0) {
-              // Filter out payments with invalid dates and sort by date descending (most recent first)
+              // Helper function to normalize date to YYYY-MM-DD format (date only, no time)
+              // This avoids timezone issues when comparing dates
+              const normalizeDate = (dateStr: string): string => {
+                if (!dateStr) return ''
+                // If already in YYYY-MM-DD format, use it directly
+                if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+                  return dateStr.substring(0, 10)
+                }
+                // Otherwise parse and extract date part
+                const date = new Date(dateStr)
+                if (isNaN(date.getTime())) return ''
+                const year = date.getFullYear()
+                const month = String(date.getMonth() + 1).padStart(2, '0')
+                const day = String(date.getDate()).padStart(2, '0')
+                return `${year}-${month}-${day}`
+              }
+              
+              // Filter out payments with invalid dates
               const validPayments = payments.filter((p: any) => {
                 if (!p.payment_date) return false
-                const date = new Date(p.payment_date)
-                return !isNaN(date.getTime())
+                const normalizedDate = normalizeDate(p.payment_date)
+                return normalizedDate !== ''
               })
               
               if (validPayments.length > 0) {
-                // Sort payments by date descending (most recent first)
+                // Sort payments by normalized date descending (most recent first)
+                // Compare as strings (YYYY-MM-DD) which naturally sorts correctly and avoids timezone issues
                 const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                  const dateA = new Date(a.payment_date).getTime()
-                  const dateB = new Date(b.payment_date).getTime()
-                  return dateB - dateA // Sort descending (most recent first)
+                  const dateA = normalizeDate(a.payment_date)
+                  const dateB = normalizeDate(b.payment_date)
+                  return dateB.localeCompare(dateA) // Sort descending (most recent first)
                 })
                 
                 // Get the most recent payment date (first in sorted array)
@@ -619,6 +657,7 @@ return'<div class="s">'+l+'</div>';
                   console.log('📅 Sorted Payments (most recent first, first 10):', sortedPayments.slice(0, 10).map((p: any, idx: number) => ({
                     index: idx,
                     date: p.payment_date,
+                    normalizedDate: normalizeDate(p.payment_date),
                     formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
                     timestamp: new Date(p.payment_date).getTime(),
                     amount: p.amount,
@@ -641,6 +680,7 @@ return'<div class="s">'+l+'</div>';
                   })) : 'NO PAYMENTS FOUND WITH DATE 01-22')
                   console.log('✅ Selected Last Paid Date:', {
                     raw: lastPaidDate,
+                    normalizedDate: lastPaidDate ? normalizeDate(lastPaidDate) : null,
                     formatted: lastPaidDate ? new Date(lastPaidDate).toLocaleDateString('en-US') : null,
                     timestamp: lastPaidDate ? new Date(lastPaidDate).getTime() : null
                   })

@@ -514,6 +514,25 @@ export default function ProfitPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
+              {sortedPropertyDetails && sortedPropertyDetails.length > 0 && (
+                <tr className="bg-blue-50 font-semibold border-b-2 border-blue-200">
+                  <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-blue-50 z-10">
+                    <span className="text-sm font-bold text-gray-900">TOTALS</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.expected_rent || 0), 0))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0), 0))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.misc_income || 0), 0))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-lg font-bold text-green-600">
+                    {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
+                  </td>
+                </tr>
+              )}
               {sortedPropertyDetails && sortedPropertyDetails.length > 0 ? (
                 sortedPropertyDetails.map((property: any, index: number) => (
                   <tr key={index} className="hover:bg-gray-50">

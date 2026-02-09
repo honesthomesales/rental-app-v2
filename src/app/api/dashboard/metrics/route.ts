@@ -21,11 +21,11 @@ export async function GET() {
     const currentDate = new Date().toISOString().split('T')[0]
     const today = currentDate
     
-    // OPTIMIZED: Fetch active leases once with all needed data
+    // OPTIMIZED: Fetch occupied leases once with all needed data
     const { data: activeLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select('id, property_id, lease_start_date, lease_end_date, rent, rent_cadence')
-      .eq('status', 'active')
+      .eq('status', 'occupied')
       .lte('lease_start_date', currentDate)
       .or(`lease_end_date.is.null,lease_end_date.gte.${currentDate}`)
 

@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     console.log(`  today value used: "${today}" (${today === todayParam ? 'from client' : 'from server'})`)
     console.log('🔍 ========== END TODAY VALUE DEBUG ==========')
     
-    // Fetch active leases with property and tenant data
+    // Fetch occupied leases with property and tenant data
     const { data: leases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select(`
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
         RENT_properties(*),
         RENT_tenants(*)
       `)
-      .eq('status', 'active')
+      .eq('status', 'occupied')
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)

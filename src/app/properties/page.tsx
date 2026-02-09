@@ -107,10 +107,10 @@ export default function PropertiesPage() {
       // Merge property data with lease data
       const currentDate = new Date()
       const propertiesWithLease = data.map((property: Property) => {
-        // Find lease where current date is between lease_start_date and lease_end_date AND status is 'active'
+        // Find lease where current date is between lease_start_date and lease_end_date AND status is 'occupied'
         const activeLease = leaseData.find((lease: any) => {
           if (lease.property_id !== property.id) return false
-          if (lease.status !== 'active') return false // Only consider active leases
+          if (lease.status !== 'occupied') return false // Only consider occupied leases
           
           const startDate = new Date(lease.lease_start_date)
           const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null

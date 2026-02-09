@@ -84,12 +84,12 @@ export default function Dashboard() {
           const todayDate = new Date(today)
           
           leasesData.forEach((lease: any) => {
-            // Check if lease is active (status = 'active' and within date range)
-            if (lease.status === 'active' && lease.property_id) {
+            // Check if lease is occupied (status = 'occupied' and within date range)
+            if (lease.status === 'occupied' && lease.property_id) {
               const startDate = new Date(lease.lease_start_date)
               const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
               
-              // Lease is active if today is between start and end (or no end date)
+              // Lease is occupied if today is between start and end (or no end date)
               if (todayDate >= startDate && (!endDate || todayDate <= endDate)) {
                 occupiedPropertyIds.add(lease.property_id)
               }

@@ -88,7 +88,7 @@ export default function LeasesPage() {
 
       // Status filter
       if (filters.status !== 'all') {
-        const leaseStatus = lease.status?.toLowerCase() || 'active'
+        const leaseStatus = lease.status?.toLowerCase() || 'occupied'
         if (filters.status.toLowerCase() !== leaseStatus) {
           return false
         }
@@ -120,8 +120,8 @@ export default function LeasesPage() {
           bValue = b.rent || 0
           break
         case 'status':
-          aValue = (a.status || 'active').toLowerCase()
-          bValue = (b.status || 'active').toLowerCase()
+          aValue = (a.status || 'occupied').toLowerCase()
+          bValue = (b.status || 'occupied').toLowerCase()
           break
         default:
           aValue = ''
@@ -163,7 +163,7 @@ export default function LeasesPage() {
         rent: parseFloat(formData.get('rent') as string) || 0,
         rent_cadence: formData.get('rent_cadence') as string,
         rent_due_day: parseInt(formData.get('rent_due_day') as string) || 1,
-        status: 'active'
+        status: 'occupied'
       }
 
       console.log('Submitting lease:', leaseData)
@@ -259,12 +259,10 @@ export default function LeasesPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active':
+      case 'occupied':
         return 'bg-green-100 text-green-800'
-      case 'inactive':
+      case 'empty':
         return 'bg-gray-100 text-gray-800'
-      case 'terminated':
-        return 'bg-red-100 text-red-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -344,9 +342,8 @@ export default function LeasesPage() {
                 className="px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="all">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="terminated">Terminated</option>
+                <option value="occupied">Occupied</option>
+                <option value="empty">Empty</option>
               </select>
             </div>
           </div>
@@ -499,7 +496,7 @@ export default function LeasesPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(lease.status || 'active')}`}>
-                      {lease.status || 'active'}
+                      {lease.status || 'occupied'}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -847,12 +844,11 @@ export default function LeasesPage() {
                     <label className="block text-sm font-medium text-gray-700">Status</label>
                     <select
                       name="status"
-                      defaultValue={editingLease.status || 'active'}
+                      defaultValue={editingLease.status || 'occupied'}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="terminated">Terminated</option>
+                      <option value="occupied">Occupied</option>
+                      <option value="empty">Empty</option>
                     </select>
                   </div>
                   <div>

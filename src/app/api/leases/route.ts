@@ -20,6 +20,42 @@ export async function GET() {
       throw new Error(`Error fetching leases: ${error.message}`)
     }
 
+    // Auto-expire leases that are past their end date
+    const today = new Date().toISOString().split('T')[0]
+    const expiredLeaseIds: string[] = []
+    
+    if (leases && leases.length > 0) {
+      for (const lease of leases) {
+        // If lease has an end date and it's in the past, and status is 'occupied', mark as 'empty'
+        // Also handle legacy 'active' status for migration
+        if (lease.lease_end_date && 
+            lease.lease_end_date < today && 
+            (lease.status === 'occupied' || lease.status === 'active')) {
+          expiredLeaseIds.push(lease.id)
+        }
+      }
+      
+      // Batch update expired leases to 'empty' status
+      if (expiredLeaseIds.length > 0) {
+        const { error: updateError } = await supabaseServer
+          .from('RENT_leases')
+          .update({ status: 'empty' })
+          .in('id', expiredLeaseIds)
+        
+        if (updateError) {
+          console.error('Error auto-expiring leases:', updateError)
+        } else {
+          console.log(`Auto-expired ${expiredLeaseIds.length} lease(s) to 'empty' status`)
+          // Update the leases array to reflect the status change
+          leases.forEach(lease => {
+            if (expiredLeaseIds.includes(lease.id)) {
+              lease.status = 'empty'
+            }
+          })
+        }
+      }
+    }
+
     return NextResponse.json(leases || [])
   } catch (error) {
     console.error('Error in leases API:', error)
@@ -33,6 +69,18 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const leaseData = await request.json()
+    
+    // Set default status to 'occupied' if not provided
+    if (!leaseData.status) {
+      leaseData.status = 'occupied'
+    }
+    
+    // Auto-expire lease if end date is in the past
+    const today = new Date().toISOString().split('T')[0]
+    if (leaseData.lease_end_date && leaseData.lease_end_date < today) {
+      leaseData.status = 'empty'
+      console.log(`Auto-setting new lease to 'empty' status (end date ${leaseData.lease_end_date} is in the past)`)
+    }
     
     console.log('Creating lease:', leaseData)
     
@@ -103,7 +151,7 @@ export async function PUT(request: Request) {
     // Fetch current lease to compare changes
     const { data: currentLease, error: fetchError } = await supabaseServer
       .from('RENT_leases')
-      .select('lease_start_date, rent, rent_cadence, rent_due_day, property_id, tenant_id')
+      .select('lease_start_date, lease_end_date, rent, rent_cadence, rent_due_day, property_id, tenant_id, status')
       .eq('id', id)
       .single()
 
@@ -120,6 +168,17 @@ export async function PUT(request: Request) {
 
     // Determine new lease_start_date (use updated value or current)
     const newLeaseStartDate = updateData.lease_start_date || currentLease.lease_start_date
+
+    // Auto-expire lease if end date is in the past
+    const today = new Date().toISOString().split('T')[0]
+    const leaseEndDate = updateData.lease_end_date !== undefined ? updateData.lease_end_date : currentLease.lease_end_date
+    if (leaseEndDate && leaseEndDate < today) {
+      // Only auto-expire if status is currently 'occupied' or not being explicitly set
+      if (!updateData.status || updateData.status === 'occupied' || currentLease.status === 'occupied') {
+        updateData.status = 'empty'
+        console.log(`Auto-expiring lease ${id} to 'empty' status (end date ${leaseEndDate} is in the past)`)
+      }
+    }
 
     // Update lease
     const { data: updatedLease, error: updateError } = await supabaseServer

@@ -72,7 +72,7 @@ export interface Lease {
   move_in_fee?: number
   late_fee_amount?: number
   lease_pdf_url?: string
-  status?: 'active' | 'inactive' | 'terminated'
+  status?: 'empty' | 'occupied'
   notes?: string
   rent_due_day?: number
   due_weekday?: number

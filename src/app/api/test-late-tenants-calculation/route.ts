@@ -28,10 +28,10 @@ export async function GET(request: Request) {
       .from('RENT_leases')
       .select('id, lease_start_date')
       .eq('property_id', property.id)
-      .eq('status', 'active')
+      .eq('status', 'occupied')
     
     if (!leases || leases.length === 0) {
-      return NextResponse.json({ error: 'No active leases' }, { status: 404 })
+      return NextResponse.json({ error: 'No occupied leases' }, { status: 404 })
     }
     
     const leaseIds = leases.map(l => l.id)

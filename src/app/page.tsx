@@ -30,6 +30,10 @@ export default function Dashboard() {
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
   const [showPotentialIncomeModal, setShowPotentialIncomeModal] = useState(false)
   const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
+  const [showOccupiedModal, setShowOccupiedModal] = useState(false)
+  const [occupiedProperties, setOccupiedProperties] = useState<any[]>([])
+  const [showMonthlyIncomeModal, setShowMonthlyIncomeModal] = useState(false)
+  const [monthlyIncomeLeases, setMonthlyIncomeLeases] = useState<any[]>([])
   const [taxSelectedProperties, setTaxSelectedProperties] = useState<Map<string, number>>(new Map())
   const [editingRentValue, setEditingRentValue] = useState<{propertyId: string, value: string} | null>(null)
   
@@ -83,6 +87,26 @@ export default function Dashboard() {
           const today = new Date().toISOString().split('T')[0]
           const todayDate = new Date(today)
           
+          // Debug: Find all leases for 4750 S Pine
+          const pine4750Leases = leasesData.filter((lease: any) => {
+            const property = lease.RENT_properties
+            return property && (
+              property.address?.toLowerCase().includes('4750') && 
+              property.address?.toLowerCase().includes('pine')
+            )
+          })
+          
+          if (pine4750Leases.length > 0) {
+            console.log('🔍 All leases for 4750 S Pine:', pine4750Leases.map((l: any) => ({
+              id: l.id,
+              status: l.status,
+              property_id: l.property_id,
+              lease_start_date: l.lease_start_date,
+              lease_end_date: l.lease_end_date,
+              property_address: l.RENT_properties?.address
+            })))
+          }
+          
           leasesData.forEach((lease: any) => {
             // Check if lease is occupied (status = 'occupied' or legacy 'active' and within date range)
             // Handle both new status ('occupied') and legacy status ('active')
@@ -92,7 +116,24 @@ export default function Dashboard() {
               const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
               
               // Lease is occupied if today is between start and end (or no end date)
-              if (todayDate >= startDate && (!endDate || todayDate <= endDate)) {
+              const isWithinDateRange = todayDate >= startDate && (!endDate || todayDate <= endDate)
+              
+              // Debug for 4750 S Pine
+              const property = lease.RENT_properties
+              if (property && property.address?.toLowerCase().includes('4750') && property.address?.toLowerCase().includes('pine')) {
+                console.log('🔍 4750 S Pine lease check:', {
+                  leaseId: lease.id,
+                  status: lease.status,
+                  isOccupied,
+                  startDate: lease.lease_start_date,
+                  endDate: lease.lease_end_date,
+                  today: today,
+                  isWithinDateRange,
+                  willMarkAsOccupied: isOccupied && isWithinDateRange
+                })
+              }
+              
+              if (isWithinDateRange) {
                 occupiedPropertyIds.add(lease.property_id)
               }
             }
@@ -123,6 +164,23 @@ export default function Dashboard() {
           // Sort by potential income (rent_value) descending
           potentialProps.sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
           setPotentialIncomeProperties(potentialProps)
+          
+          // Calculate occupied properties for modal
+          const occupiedProps = propertiesData.filter((property: any) => 
+            occupiedPropertyIds.has(property.id)
+          )
+          setOccupiedProperties(occupiedProps)
+          
+          // Calculate monthly income leases (occupied leases with rent info)
+          const incomeLeases = leasesData.filter((lease: any) => {
+            const isOccupied = lease.status === 'occupied' || lease.status === 'active'
+            if (!isOccupied || !lease.property_id) return false
+            const startDate = new Date(lease.lease_start_date)
+            const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
+            const isWithinDateRange = todayDate >= startDate && (!endDate || todayDate <= endDate)
+            return isWithinDateRange
+          })
+          setMonthlyIncomeLeases(incomeLeases)
         } else if (data && propertiesData) {
           // If leases fetch failed, still set properties but no potential income calculation
           setPotentialIncomeProperties([])
@@ -513,7 +571,10 @@ export default function Dashboard() {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow">
+        <div 
+          className="bg-white p-6 rounded-lg shadow cursor-pointer hover:shadow-lg transition-shadow"
+          onClick={() => setShowOccupiedModal(true)}
+        >
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <HomeIcon className="h-8 w-8 text-blue-600" />
@@ -523,11 +584,15 @@ export default function Dashboard() {
               <p className="text-2xl font-semibold text-gray-900">
                 {metrics?.occupiedProperties || 0} / {metrics?.totalProperties || 0}
               </p>
+              <p className="text-xs text-blue-600 mt-1 font-medium">Click to view/edit</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
+        <div 
+          className="bg-white p-6 rounded-lg shadow cursor-pointer hover:shadow-lg transition-shadow"
+          onClick={() => setShowMonthlyIncomeModal(true)}
+        >
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <CurrencyDollarIcon className="h-8 w-8 text-green-600" />
@@ -535,6 +600,7 @@ export default function Dashboard() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Monthly Income</p>
               <p className="text-2xl font-semibold text-gray-900">${metrics?.monthlyIncome?.toLocaleString() || 0}</p>
+              <p className="text-xs text-green-600 mt-1 font-medium">Click to view/edit</p>
             </div>
           </div>
         </div>
@@ -558,21 +624,21 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-lg shadow">
+        <div className="bg-white p-6 rounded-lg shadow">
           <div className="flex items-start">
             <div className="flex-shrink-0">
-              <CurrencyDollarIcon className="h-7 w-7 text-emerald-600" />
+              <CurrencyDollarIcon className="h-8 w-8 text-emerald-600" />
             </div>
-            <div className="ml-3 flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-500 mb-1.5">Profit</p>
-              <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-gray-900 whitespace-nowrap">
+            <div className="ml-4 flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-500 mb-1.5">Profit</p>
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                   <span className="text-gray-600">Current:</span>{' '}
                   <span className={metrics?.currentProfit && metrics.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
                     ${metrics?.currentProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                   </span>
                 </div>
-                <div className="text-xs font-semibold text-gray-900 whitespace-nowrap">
+                <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                   <span className="text-gray-600">Potential:</span>{' '}
                   <span className={metrics?.potentialProfit && metrics.potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
                     ${metrics?.potentialProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
@@ -1381,6 +1447,229 @@ export default function Dashboard() {
                   setShowPotentialIncomeModal(false)
                   setEditingRentValue(null)
                 }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Occupied Properties Modal */}
+      {showOccupiedModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Occupied Properties</h2>
+                <p className="text-sm text-gray-600 mt-1">Properties with active leases</p>
+              </div>
+              <button
+                onClick={() => setShowOccupiedModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {occupiedProperties.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No occupied properties found.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Property
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Address
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {occupiedProperties.map((property) => (
+                        <tr key={property.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">{property.address || 'N/A'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                              {property.property_type || 'N/A'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {occupiedProperties.length > 0 && (
+                        <tr className="bg-gray-100 font-semibold">
+                          <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            Total Occupied Properties
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
+                            {occupiedProperties.length}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowOccupiedModal(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly Income Modal */}
+      {showMonthlyIncomeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Monthly Income - Active Leases</h2>
+                <p className="text-sm text-gray-600 mt-1">Income from occupied properties</p>
+              </div>
+              <button
+                onClick={() => setShowMonthlyIncomeModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {monthlyIncomeLeases.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No active leases found.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Property
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Tenant
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Rent
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Cadence
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Monthly Income
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {monthlyIncomeLeases.map((lease) => {
+                        const rent = lease.rent || 0
+                        const cadence = lease.rent_cadence || 'monthly'
+                        let monthlyIncome = 0
+                        switch (cadence.toLowerCase()) {
+                          case 'weekly':
+                            monthlyIncome = rent * 4
+                            break
+                          case 'bi-weekly':
+                          case 'biweekly':
+                            monthlyIncome = rent * 2
+                            break
+                          case 'monthly':
+                          default:
+                            monthlyIncome = rent
+                            break
+                        }
+                        return (
+                          <tr key={lease.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">
+                                {lease.RENT_properties?.name || lease.RENT_properties?.address || 'Unknown Property'}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">
+                                {lease.RENT_tenants?.full_name || 
+                                 (lease.RENT_tenants?.first_name && lease.RENT_tenants?.last_name ? 
+                                   `${lease.RENT_tenants.first_name} ${lease.RENT_tenants.last_name}` : 
+                                   'N/A')}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm font-semibold text-gray-900">
+                                ${rent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+                                {cadence}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm font-bold text-green-600">
+                                ${monthlyIncome.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      {monthlyIncomeLeases.length > 0 && (
+                        <tr className="bg-gray-100 font-semibold">
+                          <td colSpan={4} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            Total Monthly Income
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-green-600">
+                            ${monthlyIncomeLeases.reduce((sum, lease) => {
+                              const rent = lease.rent || 0
+                              const cadence = lease.rent_cadence || 'monthly'
+                              let monthlyIncome = 0
+                              switch (cadence.toLowerCase()) {
+                                case 'weekly':
+                                  monthlyIncome = rent * 4
+                                  break
+                                case 'bi-weekly':
+                                case 'biweekly':
+                                  monthlyIncome = rent * 2
+                                  break
+                                case 'monthly':
+                                default:
+                                  monthlyIncome = rent
+                                  break
+                              }
+                              return sum + monthlyIncome
+                            }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowMonthlyIncomeModal(false)}
                 className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 Close

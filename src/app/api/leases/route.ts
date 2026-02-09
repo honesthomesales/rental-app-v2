@@ -173,8 +173,10 @@ export async function PUT(request: Request) {
     const today = new Date().toISOString().split('T')[0]
     const leaseEndDate = updateData.lease_end_date !== undefined ? updateData.lease_end_date : currentLease.lease_end_date
     if (leaseEndDate && leaseEndDate < today) {
-      // Only auto-expire if status is currently 'occupied' or not being explicitly set
-      if (!updateData.status || updateData.status === 'occupied' || currentLease.status === 'occupied') {
+      // Only auto-expire if status is currently 'occupied'/'active' or not being explicitly set
+      // Handle both new status ('occupied') and legacy status ('active')
+      const isCurrentlyOccupied = currentLease.status === 'occupied' || currentLease.status === 'active'
+      if (!updateData.status || updateData.status === 'occupied' || updateData.status === 'active' || isCurrentlyOccupied) {
         updateData.status = 'empty'
         console.log(`Auto-expiring lease ${id} to 'empty' status (end date ${leaseEndDate} is in the past)`)
       }

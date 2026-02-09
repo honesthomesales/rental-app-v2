@@ -35,8 +35,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Only generate invoices for occupied leases
-    if (lease.status !== 'occupied') {
+    // Only generate invoices for occupied leases (handle both new and legacy status)
+    if (lease.status !== 'occupied' && lease.status !== 'active') {
       return NextResponse.json(
         { error: 'Can only generate invoices for occupied leases' },
         { status: 400 }

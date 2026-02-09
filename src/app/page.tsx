@@ -84,8 +84,10 @@ export default function Dashboard() {
           const todayDate = new Date(today)
           
           leasesData.forEach((lease: any) => {
-            // Check if lease is occupied (status = 'occupied' and within date range)
-            if (lease.status === 'occupied' && lease.property_id) {
+            // Check if lease is occupied (status = 'occupied' or legacy 'active' and within date range)
+            // Handle both new status ('occupied') and legacy status ('active')
+            const isOccupied = lease.status === 'occupied' || lease.status === 'active'
+            if (isOccupied && lease.property_id) {
               const startDate = new Date(lease.lease_start_date)
               const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
               
@@ -97,11 +99,26 @@ export default function Dashboard() {
           })
           
           // Filter unoccupied properties with rent_value
-          const potentialProps = propertiesData.filter((property: any) => 
-            !occupiedPropertyIds.has(property.id) && 
-            property.rent_value && 
-            property.rent_value > 0
-          )
+          // A property is unoccupied if it's not in the occupiedPropertyIds set
+          const potentialProps = propertiesData.filter((property: any) => {
+            const isOccupied = occupiedPropertyIds.has(property.id)
+            const hasRentValue = property.rent_value && property.rent_value > 0
+            
+            // Debug logging for 4750 S pine
+            if (property.address && property.address.toLowerCase().includes('4750') && property.address.toLowerCase().includes('pine')) {
+              console.log('🔍 4750 S Pine property check:', {
+                propertyId: property.id,
+                propertyName: property.name,
+                address: property.address,
+                isOccupied,
+                hasRentValue,
+                rentValue: property.rent_value,
+                willShow: !isOccupied && hasRentValue
+              })
+            }
+            
+            return !isOccupied && hasRentValue
+          })
           
           // Sort by potential income (rent_value) descending
           potentialProps.sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))

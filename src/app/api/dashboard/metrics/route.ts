@@ -22,10 +22,11 @@ export async function GET() {
     const today = currentDate
     
     // OPTIMIZED: Fetch occupied leases once with all needed data
+    // Handle both new status ('occupied') and legacy status ('active')
     const { data: activeLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select('id, property_id, lease_start_date, lease_end_date, rent, rent_cadence')
-      .eq('status', 'occupied')
+      .in('status', ['occupied', 'active'])
       .lte('lease_start_date', currentDate)
       .or(`lease_end_date.is.null,lease_end_date.gte.${currentDate}`)
 

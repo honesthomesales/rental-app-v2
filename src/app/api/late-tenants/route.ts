@@ -58,6 +58,7 @@ export async function GET(request: Request) {
     console.log('🔍 ========== END TODAY VALUE DEBUG ==========')
     
     // Fetch occupied leases with property and tenant data
+    // Handle both new status ('occupied') and legacy status ('active')
     const { data: leases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select(`
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
         RENT_properties(*),
         RENT_tenants(*)
       `)
-      .eq('status', 'occupied')
+      .in('status', ['occupied', 'active'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)

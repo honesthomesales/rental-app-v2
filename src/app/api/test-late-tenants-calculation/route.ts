@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       .from('RENT_leases')
       .select('id, lease_start_date')
       .eq('property_id', property.id)
-      .eq('status', 'occupied')
+      .in('status', ['occupied', 'active'])
     
     if (!leases || leases.length === 0) {
       return NextResponse.json({ error: 'No occupied leases' }, { status: 404 })

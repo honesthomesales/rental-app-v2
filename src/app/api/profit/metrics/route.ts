@@ -123,7 +123,7 @@ export async function GET(request: Request) {
           const { data: leases, error: leasesError } = await supabaseServer
             .from('RENT_leases')
             .select('rent, rent_cadence, lease_start_date, lease_end_date')
-            .eq('status', 'occupied')
+            .in('status', ['occupied', 'active'])
           
           if (!leasesError && leases) {
             // Calculate expected rent based on active leases and their cadence
@@ -277,7 +277,7 @@ export async function GET(request: Request) {
           })) || []
           
           // Filter active leases for expected rent calculation
-          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied')
+          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied' || l.status === 'active')
         
           // OPTIMIZED: Use Maps for O(1) lookups instead of filtering arrays
           const paymentsByPropertyMap = new Map<string, number>()

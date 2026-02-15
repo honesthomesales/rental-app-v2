@@ -579,67 +579,33 @@ return'<div class="s">'+l+'</div>';
             const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
             const payments = Array.isArray(paymentsData) ? paymentsData : []
             
-            // Calculate last paid date from invoices (same as invoice modal) - get most recent paid date from invoices
-            // This matches exactly what's shown in the invoice modal's "Paid Date" column
+            // Calculate last paid date from payments linked to invoices (same as invoice modal)
+            // Use payments we already fetched - filter to only payments with invoice_id (linked payments)
             let lastPaidDate: string | null = null
-            try {
-              // Fetch invoices to get paid dates (same method as invoice modal)
-              const today = new Date()
-              const futureDate = new Date(today)
-              futureDate.setFullYear(today.getFullYear() + 1)
-              const futureDateStr = futureDate.toISOString().split('T')[0]
+            if (payments.length > 0) {
+              // Filter to only payments that are linked to invoices (matching invoice modal logic)
+              const linkedPayments = payments.filter((p: any) => p.invoice_id && typeof p.invoice_id === 'string' && !p.invoice_id.startsWith('expected-'))
               
-              const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseData.id}&to=${futureDateStr}`)
-              if (invoicesResponse.ok) {
-                const invoicesData = await invoicesResponse.json()
-                const invoices = Array.isArray(invoicesData) ? invoicesData : []
+              if (linkedPayments.length > 0) {
+                // Filter out payments with invalid dates and sort by date descending (most recent first)
+                const validPayments = linkedPayments.filter((p: any) => {
+                  if (!p.payment_date) return false
+                  const date = new Date(p.payment_date)
+                  return !isNaN(date.getTime())
+                })
                 
-                // Fetch paid dates for all invoices (same logic as invoice modal)
-                const paidDates: string[] = []
-                await Promise.all(
-                  invoices.map(async (invoice: Invoice) => {
-                    try {
-                      const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
-                      if (paymentsResponse.ok) {
-                        const paymentsData = await paymentsResponse.json()
-                        if (Array.isArray(paymentsData) && paymentsData.length > 0) {
-                          const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
-                          if (linkedPayments.length > 0) {
-                            const validPayments = linkedPayments.filter((p: any) => {
-                              if (!p.payment_date) return false
-                              const date = new Date(p.payment_date)
-                              return !isNaN(date.getTime())
-                            })
-                            if (validPayments.length > 0) {
-                              const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                                const dateA = new Date(a.payment_date).getTime()
-                                const dateB = new Date(b.payment_date).getTime()
-                                return dateB - dateA
-                              })
-                              paidDates.push(sortedPayments[0].payment_date)
-                            }
-                          }
-                        }
-                      }
-                    } catch (error) {
-                      // Ignore errors for individual invoices
-                    }
+                if (validPayments.length > 0) {
+                  // Sort payments by date descending (most recent first)
+                  const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                    const dateA = new Date(a.payment_date).getTime()
+                    const dateB = new Date(b.payment_date).getTime()
+                    return dateB - dateA // Sort descending (most recent first)
                   })
-                )
-                
-                // Get the most recent paid date from all invoices
-                if (paidDates.length > 0) {
-                  const sortedDates = [...paidDates].sort((a, b) => {
-                    const dateA = new Date(a).getTime()
-                    const dateB = new Date(b).getTime()
-                    return dateB - dateA
-                  })
-                  lastPaidDate = sortedDates[0]
+                  
+                  // Get the most recent payment date (first in sorted array)
+                  lastPaidDate = sortedPayments[0]?.payment_date || null
                 }
               }
-            } catch (error) {
-              // If invoice fetch fails, fall back to null
-              console.error('Error fetching invoices for last paid date:', error)
             }
             
             // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)

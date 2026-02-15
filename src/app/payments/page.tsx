@@ -104,6 +104,9 @@ export default function PaymentsPage() {
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [selectedTenantForGenerate, setSelectedTenantForGenerate] = useState<string>('')
+  const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false)
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([])
+  const [loadingPaymentHistory, setLoadingPaymentHistory] = useState(false)
   const [generatingForm, setGeneratingForm] = useState(false)
   const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
   const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
@@ -1288,6 +1291,42 @@ return'<div class="s">'+l+'</div>';
     }
   }
 
+  const handleViewPaymentHistory = async (leaseRow: LeaseRow) => {
+    setSelectedLease(leaseRow)
+    setShowPaymentHistoryModal(true)
+    setLoadingPaymentHistory(true)
+    setPaymentHistory([])
+
+    try {
+      // Fetch all payments for this lease
+      const response = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}&limit=50`)
+      
+      if (!response.ok) {
+        console.error('Error fetching payment history:', response.status, response.statusText)
+        setPaymentHistory([])
+        setLoadingPaymentHistory(false)
+        return
+      }
+      
+      const paymentsData = await response.json()
+      const payments = Array.isArray(paymentsData) ? paymentsData : []
+      
+      // Sort by payment date descending (most recent first)
+      const sortedPayments = payments.sort((a: any, b: any) => {
+        const dateA = new Date(a.payment_date).getTime()
+        const dateB = new Date(b.payment_date).getTime()
+        return dateB - dateA
+      })
+      
+      setPaymentHistory(sortedPayments)
+    } catch (error) {
+      console.error('Error fetching payment history:', error)
+      setPaymentHistory([])
+    } finally {
+      setLoadingPaymentHistory(false)
+    }
+  }
+
   const handleGenerateLateNoticeForLease = async (leaseRow: LeaseRow) => {
     try {
       setGeneratingNotice(leaseRow.lease.id)
@@ -2067,9 +2106,16 @@ return'<div class="s">'+l+'</div>';
                         <div className="flex justify-center space-x-2">
                           <button
                             onClick={() => handleViewInvoices(row)}
-                            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                           >
                             Detail
+                          </button>
+                          <button
+                            onClick={() => handleViewPaymentHistory(row)}
+                            className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                            title="View Payment History"
+                          >
+                            History
                           </button>
                           {row.totalOwed > 0 && (
                             <button
@@ -4187,6 +4233,124 @@ return'<div class="s">'+l+'</div>';
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment History Modal */}
+      {showPaymentHistoryModal && selectedLease && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold">Payment History</h2>
+                <p className="text-green-100">{selectedLease.property?.name} - {selectedLease.tenant?.full_name}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPaymentHistoryModal(false)
+                  setSelectedLease(null)
+                  setPaymentHistory([])
+                }}
+                className="text-white hover:text-gray-200 transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingPaymentHistory ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                  <span className="ml-3 text-gray-600">Loading payment history...</span>
+                </div>
+              ) : paymentHistory.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 text-lg">No payment history found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date Paid
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Amount
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Payment Type
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Payment Method
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Notes
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {paymentHistory.map((payment: any) => (
+                        <tr key={payment.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(payment.payment_date).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            ${parseFloat(payment.amount || 0).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2
+                            })}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                            {payment.payment_type || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                            {payment.payment_method || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
+                            {payment.notes || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50">
+                      <tr>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900" colSpan={1}>
+                          Total Payments:
+                        </td>
+                        <td className="px-4 py-3 text-sm font-bold text-gray-900" colSpan={4}>
+                          ${paymentHistory.reduce((sum: number, p: any) => sum + parseFloat(p.amount || 0), 0).toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowPaymentHistoryModal(false)
+                  setSelectedLease(null)
+                  setPaymentHistory([])
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

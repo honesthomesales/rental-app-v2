@@ -64,6 +64,7 @@ export default function PaymentsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [invoicePaymentTotals, setInvoicePaymentTotals] = useState<Map<string, number>>(new Map())
+  const [invoicePaidDates, setInvoicePaidDates] = useState<Map<string, string | null>>(new Map())
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState('')
@@ -801,12 +802,14 @@ return'<div class="s">'+l+'</div>';
               // Continue with refreshed invoices - set invoices and fetch payments
               const allInvoices = invoices
               
-              // Fetch actual payment totals for all invoices in parallel
+              // Fetch actual payment totals and paid dates for all invoices in parallel
               const paymentTotalsMap = new Map<string, number>()
+              const paidDatesMap = new Map<string, string | null>()
               
-              // Pre-populate map with invoice amount_paid as fallback
+              // Pre-populate maps with invoice amount_paid as fallback
               allInvoices.forEach((invoice: Invoice) => {
                 paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+                paidDatesMap.set(invoice.id, null)
               })
               
               await Promise.all(
@@ -819,6 +822,23 @@ return'<div class="s">'+l+'</div>';
                         const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
                         const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
                         paymentTotalsMap.set(invoice.id, actualPaid)
+                        
+                        // Get most recent payment date
+                        if (linkedPayments.length > 0) {
+                          const validPayments = linkedPayments.filter((p: any) => {
+                            if (!p.payment_date) return false
+                            const date = new Date(p.payment_date)
+                            return !isNaN(date.getTime())
+                          })
+                          if (validPayments.length > 0) {
+                            const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                              const dateA = new Date(a.payment_date).getTime()
+                              const dateB = new Date(b.payment_date).getTime()
+                              return dateB - dateA
+                            })
+                            paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
+                          }
+                        }
                       }
                     }
                   } catch (error) {
@@ -828,6 +848,7 @@ return'<div class="s">'+l+'</div>';
               )
               
               setInvoicePaymentTotals(paymentTotalsMap)
+              setInvoicePaidDates(paidDatesMap)
               setInvoices(allInvoices)
               setLoadingInvoices(false)
               // Don't return if approval is needed - we'll refresh after approval
@@ -851,12 +872,14 @@ return'<div class="s">'+l+'</div>';
         return dateB - dateA // Newest first
       })
       
-      // Fetch actual payment totals for all invoices in parallel
+      // Fetch actual payment totals and paid dates for all invoices in parallel
       const paymentTotalsMap = new Map<string, number>()
+      const paidDatesMap = new Map<string, string | null>()
       
-      // Pre-populate map with invoice amount_paid as fallback
+      // Pre-populate maps with invoice amount_paid as fallback
       invoices.forEach((invoice: Invoice) => {
         paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
+        paidDatesMap.set(invoice.id, null)
       })
       
       await Promise.all(
@@ -869,6 +892,24 @@ return'<div class="s">'+l+'</div>';
                 const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
                 const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
                 paymentTotalsMap.set(invoice.id, actualPaid)
+                
+                // Get most recent payment date
+                if (linkedPayments.length > 0) {
+                  const validPayments = linkedPayments.filter((p: any) => {
+                    if (!p.payment_date) return false
+                    const date = new Date(p.payment_date)
+                    return !isNaN(date.getTime())
+                  })
+                  if (validPayments.length > 0) {
+                    const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                      const dateA = new Date(a.payment_date).getTime()
+                      const dateB = new Date(b.payment_date).getTime()
+                      return dateB - dateA
+                    })
+                    paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
+                  }
+                }
+                
                 console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
               } else {
                 console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): No payments found, using invoice amount_paid = $${invoice.amount_paid}`)
@@ -881,6 +922,8 @@ return'<div class="s">'+l+'</div>';
           }
         })
       )
+      
+      setInvoicePaidDates(paidDatesMap)
       
       console.log('Payment totals map:', Array.from(paymentTotalsMap.entries()))
       
@@ -934,7 +977,12 @@ return'<div class="s">'+l+'</div>';
                   return dateB - dateA // Newest first
                 })
                 
-                // Update payment totals for missing invoices
+                // Update payment totals and paid dates for missing invoices
+                const paidDatesMap = new Map<string, string | null>()
+                allInvoicesWithMissing.forEach((invoice: Invoice) => {
+                  paidDatesMap.set(invoice.id, null)
+                })
+                
                 await Promise.all(
                   missingInvoices.map(async (invoice: Invoice) => {
                     try {
@@ -945,6 +993,23 @@ return'<div class="s">'+l+'</div>';
                           const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
                           const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
                           paymentTotalsMap.set(invoice.id, actualPaid)
+                          
+                          // Get most recent payment date
+                          if (linkedPayments.length > 0) {
+                            const validPayments = linkedPayments.filter((p: any) => {
+                              if (!p.payment_date) return false
+                              const date = new Date(p.payment_date)
+                              return !isNaN(date.getTime())
+                            })
+                            if (validPayments.length > 0) {
+                              const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                                const dateA = new Date(a.payment_date).getTime()
+                                const dateB = new Date(b.payment_date).getTime()
+                                return dateB - dateA
+                              })
+                              paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
+                            }
+                          }
                         } else {
                           paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
                         }
@@ -959,6 +1024,7 @@ return'<div class="s">'+l+'</div>';
                 )
                 
                 setInvoicePaymentTotals(paymentTotalsMap)
+                setInvoicePaidDates(paidDatesMap)
                 setInvoices(allInvoicesWithMissing)
                 return
               }
@@ -972,6 +1038,7 @@ return'<div class="s">'+l+'</div>';
       
       console.log('Final invoices to display:', invoices.length, invoices)
       setInvoicePaymentTotals(paymentTotalsMap)
+      setInvoicePaidDates(paidDatesMap)
       setInvoices(invoices)
     } catch (error) {
       console.error('Error fetching invoices:', error)
@@ -2371,8 +2438,12 @@ return'<div class="s">'+l+'</div>';
                             return dateB - dateA // Newest first
                           })
                           
-                          // Fetch actual payment totals for all invoices in parallel
+                          // Fetch actual payment totals and paid dates for all invoices in parallel
                           const paymentTotalsMap = new Map<string, number>()
+                          const paidDatesMap = new Map<string, string | null>()
+                          allInvoices.forEach((invoice: Invoice) => {
+                            paidDatesMap.set(invoice.id, null)
+                          })
                           
                           await Promise.all(
                             allInvoices.map(async (invoice: Invoice) => {
@@ -2384,6 +2455,23 @@ return'<div class="s">'+l+'</div>';
                                     const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
                                     const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
                                     paymentTotalsMap.set(invoice.id, actualPaid)
+                                    
+                                    // Get most recent payment date
+                                    if (linkedPayments.length > 0) {
+                                      const validPayments = linkedPayments.filter((p: any) => {
+                                        if (!p.payment_date) return false
+                                        const date = new Date(p.payment_date)
+                                        return !isNaN(date.getTime())
+                                      })
+                                      if (validPayments.length > 0) {
+                                        const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                                          const dateA = new Date(a.payment_date).getTime()
+                                          const dateB = new Date(b.payment_date).getTime()
+                                          return dateB - dateA
+                                        })
+                                        paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
+                                      }
+                                    }
                                   } else {
                                     paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
                                   }
@@ -2398,6 +2486,7 @@ return'<div class="s">'+l+'</div>';
                           )
                           
                           setInvoicePaymentTotals(paymentTotalsMap)
+                          setInvoicePaidDates(paidDatesMap)
                           setInvoices(allInvoices)
                           setLoadingInvoices(false)
                           setHighlightedInvoiceId(existingInvoices[0].id)
@@ -2545,8 +2634,12 @@ return'<div class="s">'+l+'</div>';
                             return dateB - dateA // Newest first
                           })
                           
-                          // Fetch actual payment totals for all invoices in parallel
+                          // Fetch actual payment totals and paid dates for all invoices in parallel
                           const paymentTotalsMap = new Map<string, number>()
+                          const paidDatesMap = new Map<string, string | null>()
+                          allInvoices.forEach((invoice: Invoice) => {
+                            paidDatesMap.set(invoice.id, null)
+                          })
                           
                           await Promise.all(
                             allInvoices.map(async (invoice: Invoice) => {
@@ -2558,6 +2651,23 @@ return'<div class="s">'+l+'</div>';
                                     const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
                                     const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
                                     paymentTotalsMap.set(invoice.id, actualPaid)
+                                    
+                                    // Get most recent payment date
+                                    if (linkedPayments.length > 0) {
+                                      const validPayments = linkedPayments.filter((p: any) => {
+                                        if (!p.payment_date) return false
+                                        const date = new Date(p.payment_date)
+                                        return !isNaN(date.getTime())
+                                      })
+                                      if (validPayments.length > 0) {
+                                        const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                                          const dateA = new Date(a.payment_date).getTime()
+                                          const dateB = new Date(b.payment_date).getTime()
+                                          return dateB - dateA
+                                        })
+                                        paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
+                                      }
+                                    }
                                   } else {
                                     paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
                                   }
@@ -2572,6 +2682,7 @@ return'<div class="s">'+l+'</div>';
                           )
                           
                           setInvoicePaymentTotals(paymentTotalsMap)
+                          setInvoicePaidDates(paidDatesMap)
                           setInvoices(allInvoices)
                           setLoadingInvoices(false)
                           setHighlightedInvoiceId(existingInvoices[0].id)
@@ -2756,7 +2867,7 @@ return'<div class="s">'+l+'</div>';
                           <thead className="bg-gray-50 border-b-2 border-gray-200">
                             <tr>
                               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Status</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Due Date</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Paid Date</th>
                               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Period</th>
                               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Rent</th>
                               <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Late Fee</th>
@@ -2806,7 +2917,13 @@ return'<div class="s">'+l+'</div>';
                               {getInvoiceStatusBadge(invoice)}
                             </td>
                             <td className="px-3 py-2 text-sm">
-                              {new Date(invoice.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {(() => {
+                                const paidDate = invoicePaidDates.get(invoice.id)
+                                if (paidDate) {
+                                  return new Date(paidDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                }
+                                return '-'
+                              })()}
                             </td>
                             <td className="px-3 py-2 text-sm text-gray-600">
                               {new Date(invoice.period_start + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(invoice.period_end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}

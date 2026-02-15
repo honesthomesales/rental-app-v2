@@ -105,9 +105,6 @@ export default function PaymentsPage() {
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [selectedTenantForGenerate, setSelectedTenantForGenerate] = useState<string>('')
-  const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false)
-  const [paymentHistory, setPaymentHistory] = useState<any[]>([])
-  const [loadingPaymentHistory, setLoadingPaymentHistory] = useState(false)
   const [generatingForm, setGeneratingForm] = useState(false)
   const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
   const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
@@ -582,74 +579,67 @@ return'<div class="s">'+l+'</div>';
             const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
             const payments = Array.isArray(paymentsData) ? paymentsData : []
             
-            // Calculate last paid date from payments - get the most recent payment date
+            // Calculate last paid date from invoices (same as invoice modal) - get most recent paid date from invoices
+            // This matches exactly what's shown in the invoice modal's "Paid Date" column
             let lastPaidDate: string | null = null
-            if (payments.length > 0) {
-              // Filter out payments with invalid dates and sort by date descending (most recent first)
-              const validPayments = payments.filter((p: any) => {
-                if (!p.payment_date) return false
-                const date = new Date(p.payment_date)
-                return !isNaN(date.getTime())
-              })
+            try {
+              // Fetch invoices to get paid dates (same method as invoice modal)
+              const today = new Date()
+              const futureDate = new Date(today)
+              futureDate.setFullYear(today.getFullYear() + 1)
+              const futureDateStr = futureDate.toISOString().split('T')[0]
               
-              if (validPayments.length > 0) {
-                // Sort payments by date descending (most recent first)
-                const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                  const dateA = new Date(a.payment_date).getTime()
-                  const dateB = new Date(b.payment_date).getTime()
-                  return dateB - dateA // Sort descending (most recent first)
-                })
+              const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseData.id}&to=${futureDateStr}`)
+              if (invoicesResponse.ok) {
+                const invoicesData = await invoicesResponse.json()
+                const invoices = Array.isArray(invoicesData) ? invoicesData : []
                 
-                // Get the most recent payment date (first in sorted array)
-                lastPaidDate = sortedPayments[0]?.payment_date || null
+                // Fetch paid dates for all invoices (same logic as invoice modal)
+                const paidDates: string[] = []
+                await Promise.all(
+                  invoices.map(async (invoice: Invoice) => {
+                    try {
+                      const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+                      if (paymentsResponse.ok) {
+                        const paymentsData = await paymentsResponse.json()
+                        if (Array.isArray(paymentsData) && paymentsData.length > 0) {
+                          const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
+                          if (linkedPayments.length > 0) {
+                            const validPayments = linkedPayments.filter((p: any) => {
+                              if (!p.payment_date) return false
+                              const date = new Date(p.payment_date)
+                              return !isNaN(date.getTime())
+                            })
+                            if (validPayments.length > 0) {
+                              const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                                const dateA = new Date(a.payment_date).getTime()
+                                const dateB = new Date(b.payment_date).getTime()
+                                return dateB - dateA
+                              })
+                              paidDates.push(sortedPayments[0].payment_date)
+                            }
+                          }
+                        }
+                      }
+                    } catch (error) {
+                      // Ignore errors for individual invoices
+                    }
+                  })
+                )
                 
-                // Debug logging for all leases - especially for 5667 N Main St
-                if (leaseData.RENT_properties?.address?.toLowerCase().includes('5667') || 
-                    leaseData.RENT_properties?.address?.toLowerCase().includes('main')) {
-                  console.log('🔍 Last Paid Date Calculation (5667 N Main St):', {
-                    leaseId: leaseData.id,
-                    propertyAddress: leaseData.RENT_properties?.address,
-                    totalPayments: payments.length,
-                    validPayments: validPayments.length
+                // Get the most recent paid date from all invoices
+                if (paidDates.length > 0) {
+                  const sortedDates = [...paidDates].sort((a, b) => {
+                    const dateA = new Date(a).getTime()
+                    const dateB = new Date(b).getTime()
+                    return dateB - dateA
                   })
-                  console.log('📅 All Payment Dates (first 10):', validPayments.slice(0, 10).map((p: any) => ({
-                    date: p.payment_date,
-                    formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
-                    amount: p.amount
-                  })))
-                  // Get all unique payment dates to see what we have
-                  const allDates = sortedPayments.map((p: any) => p.payment_date)
-                  console.log('📅 ALL Payment Dates (sorted, most recent first):', allDates.slice(0, 15))
-                  console.log('📅 Sorted Payments (most recent first, first 10):', sortedPayments.slice(0, 10).map((p: any, idx: number) => ({
-                    index: idx,
-                    date: p.payment_date,
-                    formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
-                    timestamp: new Date(p.payment_date).getTime(),
-                    amount: p.amount,
-                    isSelected: idx === 0
-                  })))
-                  
-                  // Look for any payment with date containing "01-22" (could be 2026 or 2027)
-                  const jan22Payments = sortedPayments.filter((p: any) => 
-                    p.payment_date && (
-                      p.payment_date.includes('01-22') ||
-                      p.payment_date.includes('2026-01-22') ||
-                      p.payment_date.includes('2027-01-22')
-                    )
-                  )
-                  console.log('🔍 Looking for Jan 22 payments (any year):', jan22Payments.length > 0 ? jan22Payments.map((p: any) => ({
-                    date: p.payment_date,
-                    formatted: new Date(p.payment_date).toLocaleDateString('en-US'),
-                    amount: p.amount,
-                    indexInSorted: sortedPayments.indexOf(p)
-                  })) : 'NO PAYMENTS FOUND WITH DATE 01-22')
-                  console.log('✅ Selected Last Paid Date:', {
-                    raw: lastPaidDate,
-                    formatted: lastPaidDate ? new Date(lastPaidDate).toLocaleDateString('en-US') : null,
-                    timestamp: lastPaidDate ? new Date(lastPaidDate).getTime() : null
-                  })
+                  lastPaidDate = sortedDates[0]
                 }
               }
+            } catch (error) {
+              // If invoice fetch fails, fall back to null
+              console.error('Error fetching invoices for last paid date:', error)
             }
             
             // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)
@@ -1358,58 +1348,6 @@ return'<div class="s">'+l+'</div>';
     }
   }
 
-  const handleViewPaymentHistory = async (leaseRow: LeaseRow) => {
-    setSelectedLease(leaseRow)
-    setShowPaymentHistoryModal(true)
-    setLoadingPaymentHistory(true)
-    setPaymentHistory([])
-
-    try {
-      // Use EXACT same method as fetchLeases (line 580) - fetch payments directly by leaseId
-      // This gets ONLY actual payments from the database, not inferred from invoices
-      const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
-      
-      if (!paymentsResponse.ok) {
-        console.error('Error fetching payment history:', paymentsResponse.status, paymentsResponse.statusText)
-        setPaymentHistory([])
-        setLoadingPaymentHistory(false)
-        return
-      }
-      
-      const paymentsData = await paymentsResponse.json()
-      const payments = Array.isArray(paymentsData) ? paymentsData : []
-      
-      console.log('Payment History - Raw payments from API:', payments.length)
-      
-      // Use EXACT same filtering logic as fetchLeases (lines 588-592)
-      const validPayments = payments.filter((p: any) => {
-        if (!p.payment_date) return false
-        const date = new Date(p.payment_date)
-        return !isNaN(date.getTime())
-      })
-      
-      console.log('Payment History - Valid payments after filtering:', validPayments.length)
-      
-      // Use EXACT same sorting logic as fetchLeases (lines 596-600)
-      const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-        const dateA = new Date(a.payment_date).getTime()
-        const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA // Sort descending (most recent first)
-      })
-      
-      console.log('Payment History - Final sorted payments:', sortedPayments.length, sortedPayments.slice(0, 10).map(p => ({
-        date: p.payment_date,
-        amount: p.amount
-      })))
-      
-      setPaymentHistory(sortedPayments)
-    } catch (error) {
-      console.error('Error fetching payment history:', error)
-      setPaymentHistory([])
-    } finally {
-      setLoadingPaymentHistory(false)
-    }
-  }
 
   const handleGenerateLateNoticeForLease = async (leaseRow: LeaseRow) => {
     try {
@@ -2316,13 +2254,6 @@ return'<div class="s">'+l+'</div>';
                             className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                           >
                             Detail
-                          </button>
-                          <button
-                            onClick={() => handleViewPaymentHistory(row)}
-                            className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm"
-                            title="View Payment History"
-                          >
-                            History
                           </button>
                           {row.totalOwed > 0 && (
                             <button
@@ -4374,120 +4305,6 @@ return'<div class="s">'+l+'</div>';
         </div>
       )}
 
-      {/* Payment History Modal */}
-      {showPaymentHistoryModal && selectedLease && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 flex justify-between items-center">
-              <div>
-                <h2 className="text-2xl font-bold">Payment History</h2>
-                <p className="text-green-100">{selectedLease.property?.name} - {selectedLease.tenant?.full_name}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowPaymentHistoryModal(false)
-                  setSelectedLease(null)
-                  setPaymentHistory([])
-                }}
-                className="text-white hover:text-gray-200 transition-colors"
-              >
-                <XMarkIcon className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {loadingPaymentHistory ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-                  <span className="ml-3 text-gray-600">Loading payment history...</span>
-                </div>
-              ) : paymentHistory.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500 text-lg">No payment history found</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Date Paid
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Amount
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Payment Type
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Payment Method
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Notes
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {paymentHistory.map((payment: any) => (
-                        <tr key={payment.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(payment.payment_date).toLocaleDateString('en-US', { 
-                              month: 'short', 
-                              day: 'numeric', 
-                              year: 'numeric' 
-                            })}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-green-600">
-                            ${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                            {payment.payment_type || 'Rent'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                            {payment.payment_method || 'Manual Entry'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
-                            {payment.notes || '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50">
-                      <tr>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-900" colSpan={1}>
-                          Total Payments:
-                        </td>
-                        <td className="px-4 py-3 text-sm font-bold text-gray-900" colSpan={4}>
-                          ${paymentHistory.reduce((sum: number, p: any) => sum + parseFloat(p.amount || 0), 0).toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                          })}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end">
-              <button
-                onClick={() => {
-                  setShowPaymentHistoryModal(false)
-                  setSelectedLease(null)
-                  setPaymentHistory([])
-                }}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
     </>
   )

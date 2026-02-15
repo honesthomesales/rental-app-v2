@@ -704,7 +704,11 @@ export default function ExpensesPage() {
                     required
                   >
                     <option value="">Select a property</option>
-                    {properties.map((property) => (
+                    {[...properties].sort((a, b) => {
+                      const aText = `${a.name} - ${a.address}`
+                      const bText = `${b.name} - ${b.address}`
+                      return aText.localeCompare(bText)
+                    }).map((property) => (
                       <option key={property.id} value={property.id}>
                         {property.name} - {property.address}
                       </option>
@@ -919,7 +923,11 @@ export default function ExpensesPage() {
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                   >
                     <option value="">None</option>
-                    {properties.map((property) => (
+                    {[...properties].sort((a, b) => {
+                      const aText = `${a.name} - ${a.address}`
+                      const bText = `${b.name} - ${b.address}`
+                      return aText.localeCompare(bText)
+                    }).map((property) => (
                       <option key={property.id} value={property.id}>
                         {property.name} - {property.address}
                       </option>

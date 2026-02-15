@@ -46,10 +46,14 @@ export async function POST(request: NextRequest) {
       delete insertData.property_id
     }
     
-    // Remove amount field if it exists - use amount_owed instead to avoid constraint issues
-    // The amount field might have DECIMAL(5,4) constraint which would cause overflow
-    if (insertData.interest_rate === 9.9999 || insertData.interest_rate === -9.9999) {
-      delete insertData.amount
+    // Ensure amount field is set - the database requires it to be NOT NULL
+    // Use amount_owed as fallback if amount is not provided
+    if (!insertData.amount && insertData.amount_owed !== undefined) {
+      insertData.amount = insertData.amount_owed
+    }
+    // If neither amount nor amount_owed is provided, default to 0
+    if (insertData.amount === undefined || insertData.amount === null) {
+      insertData.amount = 0
     }
     
     console.log('Insert data after filtering:', JSON.stringify(insertData, null, 2))

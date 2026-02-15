@@ -1298,33 +1298,61 @@ return'<div class="s">'+l+'</div>';
     setPaymentHistory([])
 
     try {
-      // Use EXACT same method as fetchLeases uses - fetch all payments by leaseId
-      // This is the same data source used throughout the payments page
-      const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
+      // Match EXACT logic from handleViewInvoices and handleEditPayments
+      // Get all invoices first (same as handleViewInvoices)
+      const today = new Date()
+      const futureDate = new Date(today)
+      futureDate.setFullYear(today.getFullYear() + 1)
+      const futureDateStr = futureDate.toISOString().split('T')[0]
       
-      if (!paymentsResponse.ok) {
-        console.error('Error fetching payment history:', paymentsResponse.status, paymentsResponse.statusText)
-        setPaymentHistory([])
-        setLoadingPaymentHistory(false)
-        return
-      }
+      const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`)
+      const invoicesData = invoicesResponse.ok ? await invoicesResponse.json() : []
+      const invoices = Array.isArray(invoicesData) ? invoicesData : []
       
-      const paymentsData = await paymentsResponse.json()
-      const payments = Array.isArray(paymentsData) ? paymentsData : []
+      // For each invoice, fetch payments using invoiceId (EXACT same as handleEditPayments line 1009)
+      // This gets payments linked to invoice + period payments + fallback to all lease payments
+      const allPaymentsMap = new Map<string, any>()
       
-      // Use EXACT same filtering and sorting logic as fetchLeases (lines 585-603)
-      // Filter out payments with invalid dates
-      const validPayments = payments.filter((p: any) => {
+      await Promise.all(
+        invoices.map(async (invoice: Invoice) => {
+          try {
+            // EXACT same URL as handleEditPayments line 1009
+            const url = `/api/payments?invoiceId=${invoice.id}`
+            const response = await fetch(url)
+            
+            if (response.ok) {
+              const data = await response.json()
+              const paymentsArray = Array.isArray(data) ? data : []
+              
+              // Add to map (deduplicates by payment id) - same payment might appear for multiple invoices
+              paymentsArray.forEach((payment: any) => {
+                if (payment.id && !allPaymentsMap.has(payment.id)) {
+                  allPaymentsMap.set(payment.id, payment)
+                }
+              })
+            }
+          } catch (error) {
+            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+          }
+        })
+      )
+      
+      // Convert map to array - these are the EXACT same payments shown in invoice modal
+      const allPayments = Array.from(allPaymentsMap.values())
+      
+      // No additional filtering or sorting needed - API already returns sorted
+      // But apply same date validation as fetchLeases for safety
+      const validPayments = allPayments.filter((p: any) => {
         if (!p.payment_date) return false
         const date = new Date(p.payment_date)
         return !isNaN(date.getTime())
       })
       
-      // Sort by payment date descending (most recent first) - EXACT same as fetchLeases
+      // Sort by payment date descending (most recent first)
       const sortedPayments = validPayments.sort((a: any, b: any) => {
         const dateA = new Date(a.payment_date).getTime()
         const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA // Sort descending (most recent first)
+        return dateB - dateA
       })
       
       setPaymentHistory(sortedPayments)
@@ -2038,7 +2066,7 @@ return'<div class="s">'+l+'</div>';
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
               <p className="text-gray-600">Track and manage rental payments</p>
-              <p className="text-xs text-gray-400 mt-1">Version: 2.1.0</p>
+              <p className="text-xs text-gray-400 mt-1">Version: 2.2.0</p>
               </div>
               <button
                 onClick={() => {
@@ -4308,23 +4336,20 @@ return'<div class="s">'+l+'</div>';
                       {paymentHistory.map((payment: any) => (
                         <tr key={payment.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(payment.payment_date).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric'
+                            {new Date(payment.payment_date).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric' 
                             })}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                            ${parseFloat(payment.amount || 0).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2
-                            })}
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-green-600">
+                            ${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                            {payment.payment_type || 'N/A'}
+                            {payment.payment_type || 'Rent'}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                            {payment.payment_method || 'N/A'}
+                            {payment.payment_method || 'Manual Entry'}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
                             {payment.notes || '-'}

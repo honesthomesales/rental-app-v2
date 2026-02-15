@@ -1298,57 +1298,33 @@ return'<div class="s">'+l+'</div>';
     setPaymentHistory([])
 
     try {
-      // Match EXACT logic from handleEditPayments (invoice modal Payments button)
-      // Fetch all invoices first, then get payments for each using invoiceId
-      // This ensures we get the same payments that appear in the invoice modal
-      const today = new Date()
-      const futureDate = new Date(today)
-      futureDate.setFullYear(today.getFullYear() + 1)
-      const futureDateStr = futureDate.toISOString().split('T')[0]
+      // Use EXACT same method as fetchLeases uses - fetch all payments by leaseId
+      // This is the same data source used throughout the payments page
+      const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
       
-      const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`)
-      const invoicesData = invoicesResponse.ok ? await invoicesResponse.json() : []
-      const invoices = Array.isArray(invoicesData) ? invoicesData : []
+      if (!paymentsResponse.ok) {
+        console.error('Error fetching payment history:', paymentsResponse.status, paymentsResponse.statusText)
+        setPaymentHistory([])
+        setLoadingPaymentHistory(false)
+        return
+      }
       
-      // Fetch payments for each invoice using invoiceId (same as handleEditPayments)
-      const allPaymentsMap = new Map<string, any>()
+      const paymentsData = await paymentsResponse.json()
+      const payments = Array.isArray(paymentsData) ? paymentsData : []
       
-      await Promise.all(
-        invoices.map(async (invoice: Invoice) => {
-          try {
-            const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
-            if (paymentsResponse.ok) {
-              const payments = await paymentsResponse.json()
-              const paymentsArray = Array.isArray(payments) ? payments : []
-              
-              // Add to map (deduplicates by payment id)
-              paymentsArray.forEach((payment: any) => {
-                if (payment.id && !allPaymentsMap.has(payment.id)) {
-                  allPaymentsMap.set(payment.id, payment)
-                }
-              })
-            }
-          } catch (error) {
-            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
-          }
-        })
-      )
-      
-      // Convert map to array
-      const allPayments = Array.from(allPaymentsMap.values())
-      
+      // Use EXACT same filtering and sorting logic as fetchLeases (lines 585-603)
       // Filter out payments with invalid dates
-      const validPayments = allPayments.filter((p: any) => {
+      const validPayments = payments.filter((p: any) => {
         if (!p.payment_date) return false
         const date = new Date(p.payment_date)
         return !isNaN(date.getTime())
       })
       
-      // Sort by payment date descending (most recent first)
+      // Sort by payment date descending (most recent first) - EXACT same as fetchLeases
       const sortedPayments = validPayments.sort((a: any, b: any) => {
         const dateA = new Date(a.payment_date).getTime()
         const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA
+        return dateB - dateA // Sort descending (most recent first)
       })
       
       setPaymentHistory(sortedPayments)

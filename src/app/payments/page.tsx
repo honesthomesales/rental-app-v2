@@ -1298,46 +1298,70 @@ return'<div class="s">'+l+'</div>';
     setPaymentHistory([])
 
     try {
-      // Use the EXACT same fetch as fetchLeases (line 580) - this is what the payments page uses
-      // This gets ALL payments for the lease directly from the database
-      const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
+      // Use EXACT same method as handleViewInvoices (lines 729-890)
+      // Get all invoices first, then aggregate payments from each invoice
+      // This matches what you see when clicking "Payments" on each invoice
+      const today = new Date()
+      const futureDate = new Date(today)
+      futureDate.setFullYear(today.getFullYear() + 1)
+      const futureDateStr = futureDate.toISOString().split('T')[0]
       
-      if (!paymentsResponse.ok) {
-        console.error('Error fetching payment history:', paymentsResponse.status, paymentsResponse.statusText)
-        setPaymentHistory([])
-        setLoadingPaymentHistory(false)
-        return
-      }
+      const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`)
+      const invoicesData = invoicesResponse.ok ? await invoicesResponse.json() : []
+      const invoices = Array.isArray(invoicesData) ? invoicesData : []
       
-      const paymentsData = await paymentsResponse.json()
-      const payments = Array.isArray(paymentsData) ? paymentsData : []
+      console.log('Payment History - Fetched invoices:', invoices.length)
       
-      console.log('Payment History - Raw payments from API:', payments.length, payments.map(p => ({
-        id: p.id,
-        date: p.payment_date,
-        amount: p.amount,
-        invoice_id: p.invoice_id
-      })))
+      // For each invoice, fetch payments using invoiceId (EXACT same as handleEditPayments line 1009)
+      // This is what the invoice modal "Payments" button does
+      const allPaymentsMap = new Map<string, any>()
       
-      // Use EXACT same filtering logic as fetchLeases (lines 588-592)
-      const validPayments = payments.filter((p: any) => {
+      await Promise.all(
+        invoices.map(async (invoice: Invoice) => {
+          try {
+            // EXACT same URL and method as handleEditPayments line 1009
+            const url = `/api/payments?invoiceId=${invoice.id}`
+            const response = await fetch(url)
+            
+            if (response.ok) {
+              const data = await response.json()
+              const paymentsArray = Array.isArray(data) ? data : []
+              
+              // Add ALL payments returned (not just linked ones) - this includes period payments
+              paymentsArray.forEach((payment: any) => {
+                if (payment.id && !allPaymentsMap.has(payment.id)) {
+                  allPaymentsMap.set(payment.id, payment)
+                }
+              })
+            }
+          } catch (error) {
+            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+          }
+        })
+      )
+      
+      // Convert to array - these are the EXACT payments shown in invoice modal
+      const allPayments = Array.from(allPaymentsMap.values())
+      
+      console.log('Payment History - Aggregated payments from all invoices:', allPayments.length)
+      
+      // Filter and sort same as fetchLeases
+      const validPayments = allPayments.filter((p: any) => {
         if (!p.payment_date) return false
         const date = new Date(p.payment_date)
         return !isNaN(date.getTime())
       })
       
-      console.log('Payment History - Valid payments after filtering:', validPayments.length)
-      
-      // Use EXACT same sorting logic as fetchLeases (lines 596-600)
       const sortedPayments = [...validPayments].sort((a: any, b: any) => {
         const dateA = new Date(a.payment_date).getTime()
         const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA // Sort descending (most recent first)
+        return dateB - dateA
       })
       
-      console.log('Payment History - Final sorted payments:', sortedPayments.length, sortedPayments.slice(0, 5).map(p => ({
+      console.log('Payment History - Final payments:', sortedPayments.length, sortedPayments.slice(0, 10).map(p => ({
         date: p.payment_date,
-        amount: p.amount
+        amount: p.amount,
+        invoice_id: p.invoice_id
       })))
       
       setPaymentHistory(sortedPayments)

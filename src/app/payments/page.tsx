@@ -1298,8 +1298,9 @@ return'<div class="s">'+l+'</div>';
     setPaymentHistory([])
 
     try {
-      // Fetch all payments for this lease
-      const response = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}&limit=50`)
+      // Fetch all payments for this lease (no limit to match payments page behavior)
+      // This matches the same fetch pattern used in fetchLeases and handleViewInvoices
+      const response = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
       
       if (!response.ok) {
         console.error('Error fetching payment history:', response.status, response.statusText)
@@ -1311,11 +1312,18 @@ return'<div class="s">'+l+'</div>';
       const paymentsData = await response.json()
       const payments = Array.isArray(paymentsData) ? paymentsData : []
       
-      // Sort by payment date descending (most recent first)
-      const sortedPayments = payments.sort((a: any, b: any) => {
+      // Filter out payments with invalid dates (matching fetchLeases logic)
+      const validPayments = payments.filter((p: any) => {
+        if (!p.payment_date) return false
+        const date = new Date(p.payment_date)
+        return !isNaN(date.getTime())
+      })
+      
+      // Sort by payment date descending (most recent first) - matching fetchLeases logic
+      const sortedPayments = validPayments.sort((a: any, b: any) => {
         const dateA = new Date(a.payment_date).getTime()
         const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA
+        return dateB - dateA // Sort descending (most recent first)
       })
       
       setPaymentHistory(sortedPayments)

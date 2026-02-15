@@ -1298,22 +1298,50 @@ return'<div class="s">'+l+'</div>';
     setPaymentHistory([])
 
     try {
-      // Fetch all payments for this lease (no limit to match payments page behavior)
-      // This matches the same fetch pattern used in fetchLeases and handleViewInvoices
-      const response = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
+      // Match the EXACT logic used in handleEditPayments (invoice modal Payments button)
+      // This ensures payment history shows the same payments that appear when clicking
+      // "Payments" on each invoice in the invoice modal
       
-      if (!response.ok) {
-        console.error('Error fetching payment history:', response.status, response.statusText)
-        setPaymentHistory([])
-        setLoadingPaymentHistory(false)
-        return
-      }
+      // First, fetch all invoices for this lease (same as handleViewInvoices)
+      const today = new Date()
+      const futureDate = new Date(today)
+      futureDate.setFullYear(today.getFullYear() + 1)
+      const futureDateStr = futureDate.toISOString().split('T')[0]
       
-      const paymentsData = await response.json()
-      const payments = Array.isArray(paymentsData) ? paymentsData : []
+      const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`)
+      const invoicesData = invoicesResponse.ok ? await invoicesResponse.json() : []
+      const invoices = Array.isArray(invoicesData) ? invoicesData : []
+      
+      // Fetch payments for each invoice using the same method as handleEditPayments
+      // This uses invoiceId which includes period payments and fallback logic
+      const allPaymentsMap = new Map<string, any>()
+      
+      await Promise.all(
+        invoices.map(async (invoice: Invoice) => {
+          try {
+            const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+            if (paymentsResponse.ok) {
+              const payments = await paymentsResponse.json()
+              const paymentsArray = Array.isArray(payments) ? payments : []
+              
+              // Add to map (deduplicates by payment id)
+              paymentsArray.forEach((payment: any) => {
+                if (payment.id && !allPaymentsMap.has(payment.id)) {
+                  allPaymentsMap.set(payment.id, payment)
+                }
+              })
+            }
+          } catch (error) {
+            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+          }
+        })
+      )
+      
+      // Convert map to array
+      const allPayments = Array.from(allPaymentsMap.values())
       
       // Filter out payments with invalid dates (matching fetchLeases logic)
-      const validPayments = payments.filter((p: any) => {
+      const validPayments = allPayments.filter((p: any) => {
         if (!p.payment_date) return false
         const date = new Date(p.payment_date)
         return !isNaN(date.getTime())

@@ -536,25 +536,38 @@ return'<div class="s">'+l+'</div>';
                     
                     const totalUnpaidCount = unpaidInvoices.length
 
-                    // Calculate last paid date from payments - get the most recent payment date
+                    // Calculate last paid date from payments linked to invoices (EXACT same as invoice modal)
                     let lastPaidDate: string | null = null
-                    if (payments.length > 0) {
-                      // Filter out payments with invalid dates first
-                      const validPayments = payments.filter((p: any) => {
-                        if (!p.payment_date) return false
-                        const date = new Date(p.payment_date)
-                        return !isNaN(date.getTime())
-                      })
+                    if (payments.length > 0 && refreshedValidInvoices.length > 0) {
+                      // Get set of invoice IDs (same invoices used in invoice modal)
+                      const invoiceIds = new Set(refreshedValidInvoices.map((inv: Invoice) => inv.id))
                       
-                      if (validPayments.length > 0) {
-                        // Sort payments by date descending (most recent first)
-                        const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                          const dateA = new Date(a.payment_date).getTime()
-                          const dateB = new Date(b.payment_date).getTime()
-                          return dateB - dateA // Sort descending (most recent first)
+                      // Filter to only payments linked to these invoices (EXACT same as invoice modal: p.invoice_id === invoice.id)
+                      const linkedPayments = payments.filter((p: any) => 
+                        p.invoice_id && 
+                        typeof p.invoice_id === 'string' && 
+                        !p.invoice_id.startsWith('expected-') &&
+                        invoiceIds.has(p.invoice_id)
+                      )
+                      
+                      if (linkedPayments.length > 0) {
+                        // Filter out payments with invalid dates and sort by date descending (most recent first)
+                        const validPayments = linkedPayments.filter((p: any) => {
+                          if (!p.payment_date) return false
+                          const date = new Date(p.payment_date)
+                          return !isNaN(date.getTime())
                         })
-                        // Get the most recent payment date (first in sorted array)
-                        lastPaidDate = sortedPayments[0]?.payment_date || null
+                        
+                        if (validPayments.length > 0) {
+                          // Sort payments by date descending (most recent first)
+                          const sortedPayments = [...validPayments].sort((a: any, b: any) => {
+                            const dateA = new Date(a.payment_date).getTime()
+                            const dateB = new Date(b.payment_date).getTime()
+                            return dateB - dateA // Sort descending (most recent first)
+                          })
+                          // Get the most recent payment date (first in sorted array)
+                          lastPaidDate = sortedPayments[0]?.payment_date || null
+                        }
                       }
                     }
 
@@ -579,12 +592,21 @@ return'<div class="s">'+l+'</div>';
             const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
             const payments = Array.isArray(paymentsData) ? paymentsData : []
             
-            // Calculate last paid date from payments linked to invoices (same as invoice modal)
-            // Use payments we already fetched - filter to only payments with invoice_id (linked payments)
+            // Calculate last paid date from payments linked to invoices (EXACT same as invoice modal)
+            // The invoice modal: fetches invoices, then for each invoice gets payments where p.invoice_id === invoice.id
+            // We need to do the same: use invoices we fetched, filter payments to only those linked to those invoices
             let lastPaidDate: string | null = null
-            if (payments.length > 0) {
-              // Filter to only payments that are linked to invoices (matching invoice modal logic)
-              const linkedPayments = payments.filter((p: any) => p.invoice_id && typeof p.invoice_id === 'string' && !p.invoice_id.startsWith('expected-'))
+            if (payments.length > 0 && validInvoices.length > 0) {
+              // Get set of invoice IDs (same invoices used in invoice modal)
+              const invoiceIds = new Set(validInvoices.map((inv: Invoice) => inv.id))
+              
+              // Filter to only payments linked to these invoices (EXACT same as invoice modal: p.invoice_id === invoice.id)
+              const linkedPayments = payments.filter((p: any) => 
+                p.invoice_id && 
+                typeof p.invoice_id === 'string' && 
+                !p.invoice_id.startsWith('expected-') &&
+                invoiceIds.has(p.invoice_id)
+              )
               
               if (linkedPayments.length > 0) {
                 // Filter out payments with invalid dates and sort by date descending (most recent first)

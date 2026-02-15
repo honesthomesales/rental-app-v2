@@ -1298,24 +1298,57 @@ return'<div class="s">'+l+'</div>';
     setPaymentHistory([])
 
     try {
-      // Use the EXACT same method as fetchLeases uses to get payments
-      // This ensures we get the same payments that are used throughout the payments page
-      const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseRow.lease.id}`)
-      const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
-      const payments = Array.isArray(paymentsData) ? paymentsData : []
+      // Match EXACT logic from handleEditPayments (invoice modal Payments button)
+      // Fetch all invoices first, then get payments for each using invoiceId
+      // This ensures we get the same payments that appear in the invoice modal
+      const today = new Date()
+      const futureDate = new Date(today)
+      futureDate.setFullYear(today.getFullYear() + 1)
+      const futureDateStr = futureDate.toISOString().split('T')[0]
       
-      // Filter out payments with invalid dates (EXACT same logic as fetchLeases)
-      const validPayments = payments.filter((p: any) => {
+      const invoicesResponse = await fetch(`/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`)
+      const invoicesData = invoicesResponse.ok ? await invoicesResponse.json() : []
+      const invoices = Array.isArray(invoicesData) ? invoicesData : []
+      
+      // Fetch payments for each invoice using invoiceId (same as handleEditPayments)
+      const allPaymentsMap = new Map<string, any>()
+      
+      await Promise.all(
+        invoices.map(async (invoice: Invoice) => {
+          try {
+            const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
+            if (paymentsResponse.ok) {
+              const payments = await paymentsResponse.json()
+              const paymentsArray = Array.isArray(payments) ? payments : []
+              
+              // Add to map (deduplicates by payment id)
+              paymentsArray.forEach((payment: any) => {
+                if (payment.id && !allPaymentsMap.has(payment.id)) {
+                  allPaymentsMap.set(payment.id, payment)
+                }
+              })
+            }
+          } catch (error) {
+            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+          }
+        })
+      )
+      
+      // Convert map to array
+      const allPayments = Array.from(allPaymentsMap.values())
+      
+      // Filter out payments with invalid dates
+      const validPayments = allPayments.filter((p: any) => {
         if (!p.payment_date) return false
         const date = new Date(p.payment_date)
         return !isNaN(date.getTime())
       })
       
-      // Sort by payment date descending (most recent first) - EXACT same logic as fetchLeases
+      // Sort by payment date descending (most recent first)
       const sortedPayments = validPayments.sort((a: any, b: any) => {
         const dateA = new Date(a.payment_date).getTime()
         const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA // Sort descending (most recent first)
+        return dateB - dateA
       })
       
       setPaymentHistory(sortedPayments)
@@ -1973,47 +2006,48 @@ return'<div class="s">'+l+'</div>';
                     </div>
                   )
                 })}
+              </div>
             </div>
 
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={() => {
-                    setShowPastInvoiceApprovalModal(false)
-                    setPastInvoicesToApprove([])
-                    setApprovedPastInvoices(new Set())
-                  }}
-                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    // Create approved invoices
-                    for (const invoice of pastInvoicesToApprove) {
-                      const invoiceKey = `${invoice.due_date}-${pastInvoicesToApprove.indexOf(invoice)}`
-                      if (approvedPastInvoices.has(invoiceKey)) {
-                        try {
-                          await fetch('/api/invoices', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(invoice)
-                          })
-                        } catch (error) {
-                          console.error('Error creating approved invoice:', error)
-                        }
+            {/* Modal Footer - Buttons at bottom outside scrollable area */}
+            <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowPastInvoiceApprovalModal(false)
+                  setPastInvoicesToApprove([])
+                  setApprovedPastInvoices(new Set())
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  // Create approved invoices
+                  for (const invoice of pastInvoicesToApprove) {
+                    const invoiceKey = `${invoice.due_date}-${pastInvoicesToApprove.indexOf(invoice)}`
+                    if (approvedPastInvoices.has(invoiceKey)) {
+                      try {
+                        await fetch('/api/invoices', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(invoice)
+                        })
+                      } catch (error) {
+                        console.error('Error creating approved invoice:', error)
                       }
                     }
-                    setShowPastInvoiceApprovalModal(false)
-                    setPastInvoicesToApprove([])
-                    setApprovedPastInvoices(new Set())
-                    await fetchLeases()
-                  }}
-                  disabled={approvedPastInvoices.size === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  Create Approved Invoices ({approvedPastInvoices.size})
-                </button>
-              </div>
+                  }
+                  setShowPastInvoiceApprovalModal(false)
+                  setPastInvoicesToApprove([])
+                  setApprovedPastInvoices(new Set())
+                  await fetchLeases()
+                }}
+                disabled={approvedPastInvoices.size === 0}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                Create Approved Invoices ({approvedPastInvoices.size})
+              </button>
             </div>
           </div>
         </div>
@@ -2028,6 +2062,7 @@ return'<div class="s">'+l+'</div>';
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
               <p className="text-gray-600">Track and manage rental payments</p>
+              <p className="text-xs text-gray-400 mt-1">Version: 2.1.0</p>
               </div>
               <button
                 onClick={() => {

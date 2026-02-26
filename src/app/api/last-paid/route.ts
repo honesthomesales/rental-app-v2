@@ -52,7 +52,7 @@ export async function GET() {
     })
 
     // Fetch invoice details for all referenced invoices
-    let invoiceMap = new Map<string, any>()
+    const invoiceMap = new Map<string, any>()
     if (invoiceIds.size > 0) {
       const { data: invoices, error: invError } = await supabaseServer
         .from('RENT_invoices')

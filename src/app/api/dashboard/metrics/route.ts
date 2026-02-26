@@ -91,45 +91,63 @@ export async function GET() {
     console.log('Potential income from unoccupied properties:', potentialIncome)
     console.log('Total potential income:', monthlyIncome + potentialIncome)
 
-    // OPTIMIZED: Fetch late payments using batch query instead of N+1 pattern
+    // Fetch late payments by recalculating balance from actual RENT_payments
+    // (matches Payments page logic instead of trusting stored balance_due)
     let latePayments = 0
     let totalOwed = 0
 
     if (activeLeases && activeLeases.length > 0) {
-      // Get all lease IDs and their start dates
       const leaseIds = activeLeases.map(lease => lease.id)
       const leaseStartDates = new Map(activeLeases.map(lease => [lease.id, lease.lease_start_date]))
       
-      // OPTIMIZED: Single batch query for all unpaid invoices across all active leases
-      const { data: allUnpaidInvoices, error: invoicesError } = await supabaseServer
-        .from('RENT_invoices')
-        .select('id, lease_id, due_date, balance_due, status')
-        .in('lease_id', leaseIds)
-        .eq('status', 'OPEN')
-        .gt('balance_due', 0)
-        .lte('due_date', today)
+      // Fetch OPEN invoices and all payments for these leases in parallel
+      const [invoicesResult, paymentsResult] = await Promise.all([
+        supabaseServer
+          .from('RENT_invoices')
+          .select('id, lease_id, due_date, amount_total, status')
+          .in('lease_id', leaseIds)
+          .eq('status', 'OPEN')
+          .lte('due_date', today),
+        supabaseServer
+          .from('RENT_payments')
+          .select('invoice_id, amount')
+          .in('lease_id', leaseIds)
+          .not('invoice_id', 'is', null)
+      ])
 
-      if (invoicesError) {
-        console.error('Error fetching unpaid invoices:', invoicesError)
-      } else if (allUnpaidInvoices && allUnpaidInvoices.length > 0) {
-        // Filter invoices that are within each lease's start date range
-        const validInvoices = allUnpaidInvoices.filter(inv => {
-          const leaseStartDate = leaseStartDates.get(inv.lease_id)
-          return leaseStartDate && inv.due_date >= leaseStartDate
-        })
+      if (invoicesResult.error) {
+        console.error('Error fetching unpaid invoices:', invoicesResult.error)
+      } else if (invoicesResult.data && invoicesResult.data.length > 0) {
+        // Group payments by invoice_id to recalculate actual paid amounts
+        const paymentsByInvoice = new Map<string, number>()
+        if (paymentsResult.data) {
+          paymentsResult.data.forEach((p: any) => {
+            if (p.invoice_id) {
+              paymentsByInvoice.set(
+                p.invoice_id,
+                (paymentsByInvoice.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0)
+              )
+            }
+          })
+        }
 
-        // Count late payments (invoices past due with outstanding balance)
-        const lateInvoices = validInvoices.filter(inv => 
-          new Date(inv.due_date) < new Date(today)
-        )
-        latePayments = lateInvoices.length
-        
-        // Calculate total owed
-        totalOwed = validInvoices.reduce((sum, inv) => 
-          sum + parseFloat(inv.balance_due || 0), 0
-        )
+        // Filter to valid invoices and recalculate balance_due from payments
+        const validInvoices = invoicesResult.data
+          .filter(inv => {
+            const leaseStartDate = leaseStartDates.get(inv.lease_id)
+            return leaseStartDate && inv.due_date >= leaseStartDate
+          })
+          .map(inv => {
+            const actualPaid = paymentsByInvoice.get(inv.id) || 0
+            const amountTotal = parseFloat(inv.amount_total as any || 0)
+            return { ...inv, recalculated_balance: amountTotal - actualPaid }
+          })
+          .filter(inv => inv.recalculated_balance > 0)
 
-        console.log(`Found ${latePayments} late invoices and $${totalOwed.toFixed(2)} total owed across ${activeLeases.length} active leases`)
+        latePayments = validInvoices.length
+        totalOwed = validInvoices.reduce((sum, inv) => sum + inv.recalculated_balance, 0)
+
+        console.log(`Found ${latePayments} late invoices and $${totalOwed.toFixed(2)} total owed across ${activeLeases.length} active leases (recalculated from payments)`)
       }
     }
 

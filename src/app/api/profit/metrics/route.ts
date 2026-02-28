@@ -120,33 +120,27 @@ export async function GET(request: Request) {
         } else {
           console.log('No invoices found for date range:', startOfMonth, 'to', endOfMonth)
           // If no invoices, try to get expected rent from leases
+          // Match Payments page logic: filter by status only, no date range check
           const { data: leases, error: leasesError } = await supabaseServer
             .from('RENT_leases')
-            .select('rent, rent_cadence, lease_start_date, lease_end_date')
-            .in('status', ['occupied', 'active'])
+            .select('rent, rent_cadence')
+            .in('status', ['occupied', 'active', 'sold'])
           
           if (!leasesError && leases) {
             // Calculate expected rent based on active leases and their cadence
+            // Match Payments page: no date range filtering
             leases.forEach((lease: any) => {
-              const leaseStart = new Date(lease.lease_start_date)
-              const leaseEnd = lease.lease_end_date ? new Date(lease.lease_end_date) : new Date(endOfMonth)
-              const monthStart = new Date(startOfMonth)
-              const monthEnd = new Date(endOfMonth)
+              const rent = Number(lease.rent) || 0
+              const cadence = lease.rent_cadence?.toLowerCase()
               
-              // Only count if lease is active during this month
-                if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
-                  const rent = Number(lease.rent) || 0
-                  const cadence = lease.rent_cadence?.toLowerCase()
-                  
-                  // Calculate monthly equivalent based on cadence
-                  if (cadence === 'monthly') {
-                    expectedRent += rent
-                  } else if (cadence === 'biweekly') {
-                    expectedRent += (rent * 26) / 12 // 26 payments per year / 12 months
-                  } else if (cadence === 'weekly') {
-                    expectedRent += (rent * 52) / 12 // 52 payments per year / 12 months
-                  }
-                }
+              // Calculate monthly equivalent based on cadence
+              if (cadence === 'monthly') {
+                expectedRent += rent
+              } else if (cadence === 'biweekly') {
+                expectedRent += (rent * 26) / 12 // 26 payments per year / 12 months
+              } else if (cadence === 'weekly') {
+                expectedRent += (rent * 52) / 12 // 52 payments per year / 12 months
+              }
             })
           }
         }
@@ -277,7 +271,8 @@ export async function GET(request: Request) {
           })) || []
           
           // Filter active leases for expected rent calculation
-          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied' || l.status === 'active')
+          // Match Payments page logic: include occupied, active, and sold
+          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied' || l.status === 'active' || l.status === 'sold')
         
           // OPTIMIZED: Use Maps for O(1) lookups instead of filtering arrays
           const paymentsByPropertyMap = new Map<string, number>()

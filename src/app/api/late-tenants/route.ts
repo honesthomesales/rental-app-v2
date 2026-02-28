@@ -58,7 +58,8 @@ export async function GET(request: Request) {
     console.log('🔍 ========== END TODAY VALUE DEBUG ==========')
     
     // Fetch occupied leases with property and tenant data
-    // Handle both new status ('occupied') and legacy status ('active')
+    // Handle both new status ('occupied') and legacy status ('active'), plus 'sold'
+    // Match Payments page logic: filter by status only
     const { data: leases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select(`
@@ -66,7 +67,7 @@ export async function GET(request: Request) {
         RENT_properties(*),
         RENT_tenants(*)
       `)
-      .in('status', ['occupied', 'active'])
+      .in('status', ['occupied', 'active', 'sold'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)
@@ -74,13 +75,10 @@ export async function GET(request: Request) {
 
     console.log('Found active leases:', leases?.length || 0)
     
-    // Filter out leases where property is retired
-    const activePropertyLeases = leases?.filter(lease => {
-      const property = lease.RENT_properties
-      return !property || property.status === 'active' || property.status === null
-    }) || []
+    // Match Payments page logic: filter by status only, no date range or property status filter
+    const activePropertyLeases = leases || []
     
-    console.log('Active leases with non-retired properties:', activePropertyLeases.length)
+    console.log('Active leases (matching payments page logic):', activePropertyLeases.length)
     
     // Process each lease EXACTLY like Payments page does (lines 441-603)
     const lateTenantsRows: any[] = []

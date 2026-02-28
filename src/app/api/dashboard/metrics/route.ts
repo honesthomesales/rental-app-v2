@@ -17,18 +17,18 @@ export async function GET() {
       throw new Error(`Error fetching properties: ${propertiesError.message}`)
     }
 
-    // Fetch occupied properties (properties with active leases based on date range)
+    // Fetch occupied properties (properties with active leases)
+    // Match Payments page logic: filter by status only, no date range check
     const currentDate = new Date().toISOString().split('T')[0]
     const today = currentDate
     
     // OPTIMIZED: Fetch occupied leases once with all needed data
-    // Handle both new status ('occupied') and legacy status ('active')
+    // Handle both new status ('occupied') and legacy status ('active'), plus 'sold'
+    // Match Payments page: filter by status only, no date range
     const { data: activeLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select('id, property_id, lease_start_date, lease_end_date, rent, rent_cadence')
-      .in('status', ['occupied', 'active'])
-      .lte('lease_start_date', currentDate)
-      .or(`lease_end_date.is.null,lease_end_date.gte.${currentDate}`)
+      .in('status', ['occupied', 'active', 'sold'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)

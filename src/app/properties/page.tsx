@@ -12,6 +12,7 @@ type PropertyWithLease = Property & {
   cadence?: string
   tenantName?: string
   isOccupied?: boolean
+  leaseStatus?: string | null
 }
 
 export default function PropertiesPage() {
@@ -105,36 +106,32 @@ export default function PropertiesPage() {
       }
       
       // Merge property data with lease data
-      const currentDate = new Date()
+      // Show all lease statuses (occupied, active, sold, empty)
       const propertiesWithLease = data.map((property: Property) => {
-        // Find lease where current date is between lease_start_date and lease_end_date AND status is 'occupied' or 'active'
-        const activeLease = leaseData.find((lease: any) => {
-          if (lease.property_id !== property.id) return false
-          // Handle both new status ('occupied') and legacy status ('active')
-          if (lease.status !== 'occupied' && lease.status !== 'active') return false // Only consider occupied leases
-          
-          const startDate = new Date(lease.lease_start_date)
-          const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
-          
-          // Check if current date is within lease period
-          const isWithinLeasePeriod = currentDate >= startDate && (!endDate || currentDate <= endDate)
-          
-          return isWithinLeasePeriod
-        })
+        // Find any lease for this property - show all statuses
+        const anyLease = leaseData.find((l: any) => l.property_id === property.id)
+        
+        // Check if lease is active (occupied, active, or sold) for isOccupied flag
+        const isActiveLease = anyLease && (
+          anyLease.status === 'occupied' || 
+          anyLease.status === 'active' || 
+          anyLease.status === 'sold'
+        )
         
         // Try different field names for tenant name
-        const tenantName = activeLease?.RENT_tenants?.full_name || 
-                          (activeLease?.RENT_tenants?.first_name && activeLease?.RENT_tenants?.last_name ? 
-                            `${activeLease.RENT_tenants.first_name} ${activeLease.RENT_tenants.last_name}` : 
+        const tenantName = anyLease?.RENT_tenants?.full_name || 
+                          (anyLease?.RENT_tenants?.first_name && anyLease?.RENT_tenants?.last_name ? 
+                            `${anyLease.RENT_tenants.first_name} ${anyLease.RENT_tenants.last_name}` : 
                             'Vacant')
         
         return {
           ...property,
-          cadence: activeLease?.rent_cadence || 'N/A',
+          cadence: anyLease?.rent_cadence || 'N/A',
           tenantName: tenantName,
-          isOccupied: !!activeLease,
-          // Show lease rent if occupied, otherwise show property rent_value
-          displayRent: activeLease ? activeLease.rent : property.rent_value
+          isOccupied: !!isActiveLease, // Only true if status is occupied/active/sold
+          leaseStatus: anyLease?.status || null, // Show all lease statuses
+          // Show lease rent if has lease, otherwise show property rent_value
+          displayRent: anyLease ? anyLease.rent : property.rent_value
         }
       })
       
@@ -441,6 +438,9 @@ export default function PropertiesPage() {
                   </div>
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Lease Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -485,6 +485,21 @@ export default function PropertiesPage() {
                       }`}>
                         {property.isOccupied ? 'Occupied' : 'Unoccupied'}
                       </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {property.leaseStatus ? (
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full capitalize ${
+                          property.leaseStatus === 'occupied' || property.leaseStatus === 'active'
+                            ? 'bg-green-100 text-green-800'
+                            : property.leaseStatus === 'sold'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {property.leaseStatus}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">No lease</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">

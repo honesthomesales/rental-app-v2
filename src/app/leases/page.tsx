@@ -163,7 +163,7 @@ export default function LeasesPage() {
         rent: parseFloat(formData.get('rent') as string) || 0,
         rent_cadence: formData.get('rent_cadence') as string,
         rent_due_day: parseInt(formData.get('rent_due_day') as string) || 1,
-        status: 'occupied'
+        status: formData.get('status') as string || 'occupied'
       }
 
       console.log('Submitting lease:', leaseData)
@@ -644,6 +644,22 @@ export default function LeasesPage() {
                     placeholder="1"
                   />
                 </div>
+
+                {/* Status */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
+                  <select
+                    name="status"
+                    required
+                    defaultValue="occupied"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="occupied">Occupied</option>
+                    <option value="active">Active</option>
+                    <option value="sold">Sold</option>
+                    <option value="empty">Empty</option>
+                  </select>
+                </div>
               </div>
 
               {/* Form Actions */}
@@ -848,6 +864,8 @@ export default function LeasesPage() {
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     >
                       <option value="occupied">Occupied</option>
+                      <option value="active">Active</option>
+                      <option value="sold">Sold</option>
                       <option value="empty">Empty</option>
                     </select>
                   </div>

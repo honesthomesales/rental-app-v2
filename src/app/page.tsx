@@ -47,7 +47,7 @@ export default function Dashboard() {
   const [emptyPropertiesSortDirection, setEmptyPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
   // Properties with Tenants Modal filtering and sorting
   const [occupiedPropertiesTypeFilter, setOccupiedPropertiesTypeFilter] = useState<string>('all')
-  const [occupiedPropertiesSortField, setOccupiedPropertiesSortField] = useState<'property' | 'address' | 'type'>('property')
+  const [occupiedPropertiesSortField, setOccupiedPropertiesSortField] = useState<'property' | 'address' | 'type' | 'hasTenants'>('property')
   const [occupiedPropertiesSortDirection, setOccupiedPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
   
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
@@ -185,11 +185,12 @@ export default function Dashboard() {
           potentialProps.sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
           setPotentialIncomeProperties(potentialProps)
           
-          // Calculate occupied properties for modal
-          const occupiedProps = propertiesData.filter((property: any) => 
-            occupiedPropertyIds.has(property.id)
-          )
-          setOccupiedProperties(occupiedProps)
+          // Calculate occupied properties for modal - show all properties with hasTenants flag
+          const allPropsWithTenants = propertiesData.map((property: any) => ({
+            ...property,
+            hasTenants: occupiedPropertyIds.has(property.id)
+          }))
+          setOccupiedProperties(allPropsWithTenants)
           
           // Calculate monthly income leases (leases with tenants with rent info)
           const incomeLeases = leasesData.filter((lease: any) => {
@@ -1585,7 +1586,7 @@ export default function Dashboard() {
             <div className="px-6 py-4 overflow-y-auto flex-1">
               {occupiedProperties.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  No occupied properties found.
+                  No properties found.
                 </div>
               ) : (
                 <>
@@ -1615,6 +1616,7 @@ export default function Dashboard() {
                         <option value="property">Property</option>
                         <option value="address">Address</option>
                         <option value="type">Type</option>
+                        <option value="hasTenants">Has Tenants</option>
                       </select>
                       <button
                         onClick={() => setOccupiedPropertiesSortDirection(occupiedPropertiesSortDirection === 'asc' ? 'desc' : 'asc')}
@@ -1656,6 +1658,15 @@ export default function Dashboard() {
                           >
                             Type {occupiedPropertiesSortField === 'type' && (occupiedPropertiesSortDirection === 'asc' ? '↑' : '↓')}
                           </th>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setOccupiedPropertiesSortField('hasTenants')
+                              setOccupiedPropertiesSortDirection(occupiedPropertiesSortField === 'hasTenants' && occupiedPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Has Tenants {occupiedPropertiesSortField === 'hasTenants' && (occupiedPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -1684,6 +1695,11 @@ export default function Dashboard() {
                                 aValue = (a.property_type || '').toLowerCase()
                                 bValue = (b.property_type || '').toLowerCase()
                                 break
+                              case 'hasTenants':
+                                // Sort by hasTenants: true comes before false in ascending
+                                aValue = a.hasTenants ? 1 : 0
+                                bValue = b.hasTenants ? 1 : 0
+                                break
                               default:
                                 return 0
                             }
@@ -1706,6 +1722,15 @@ export default function Dashboard() {
                                   {property.property_type || 'N/A'}
                                 </span>
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  property.hasTenants 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {property.hasTenants ? 'Yes' : 'No'}
+                                </span>
+                              </td>
                             </tr>
                           ))
                         })()}
@@ -1716,16 +1741,16 @@ export default function Dashboard() {
                             return (property.property_type || '').toLowerCase() === occupiedPropertiesTypeFilter.toLowerCase()
                           })
                           
-                          return filteredProperties.length > 0 ? (
+                          return (
                             <tr className="bg-gray-100 font-semibold">
-                              <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                Total Properties with Tenants
+                              <td colSpan={3} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                Total Properties
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
-                                {filteredProperties.length}
+                                {occupiedProperties.length}
                               </td>
                             </tr>
-                          ) : null
+                          )
                         })()}
                       </tbody>
                     </table>

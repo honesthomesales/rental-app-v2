@@ -5,7 +5,9 @@ import { normalizeCadence } from '@/lib/rent/cadence'
 // Cache leases for 60 seconds - they don't change frequently
 export const revalidate = 60
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Accept query parameters (like cache-busting timestamps) but ignore them
+  // This prevents errors when query params are added to the URL
   try {
     const { data: leases, error } = await supabaseServer
       .from('RENT_leases')

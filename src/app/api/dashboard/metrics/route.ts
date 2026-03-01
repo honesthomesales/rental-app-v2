@@ -4,7 +4,9 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Accept query parameters (like cache-busting timestamps) but ignore them
+  // This prevents errors when query params are added to the URL
   try {
     // Fetch total properties (excluding retired)
     // Use .neq() to exclude retired - this will include null (not set) and active

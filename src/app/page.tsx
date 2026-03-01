@@ -186,7 +186,20 @@ export default function Dashboard() {
           setPotentialIncomeProperties(potentialProps)
           
           // Calculate occupied properties for modal - show all properties with hasTenants flag
-          const allPropsWithTenants = propertiesData.map((property: any) => ({
+          // But filter out sold properties and "other" type to match dashboard count
+          // Get sold property IDs from leases (same logic as dashboard API)
+          const soldPropertyIds = new Set(
+            leasesData
+              ?.filter((lease: any) => lease.status === 'sold')
+              .map((lease: any) => lease.property_id)
+          )
+          
+          // Filter properties to match dashboard (exclude sold and "other" type)
+          const validProperties = propertiesData.filter((property: any) => 
+            !soldPropertyIds.has(property.id) && property.property_type !== 'other'
+          )
+          
+          const allPropsWithTenants = validProperties.map((property: any) => ({
             ...property,
             hasTenants: occupiedPropertyIds.has(property.id)
           }))

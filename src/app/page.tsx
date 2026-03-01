@@ -15,6 +15,7 @@ import {
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [properties, setProperties] = useState<any[]>([])
   const [showInsuranceSection, setShowInsuranceSection] = useState(false)
   const [showTaxSection, setShowTaxSection] = useState(false)

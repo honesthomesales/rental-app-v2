@@ -22,13 +22,12 @@ export async function GET() {
     const currentDate = new Date().toISOString().split('T')[0]
     const today = currentDate
     
-    // OPTIMIZED: Fetch occupied leases once with all needed data
-    // Handle both new status ('occupied') and legacy status ('active'), plus 'sold'
+    // OPTIMIZED: Fetch leases with tenants once with all needed data
     // Match Payments page: filter by status only, no date range
     const { data: activeLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select('id, property_id, lease_start_date, lease_end_date, rent, rent_cadence')
-      .in('status', ['occupied', 'active', 'sold'])
+      .in('status', ['occupied', 'sold'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)

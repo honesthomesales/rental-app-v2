@@ -27,10 +27,9 @@ export async function GET() {
     if (leases && leases.length > 0) {
       for (const lease of leases) {
         // If lease has an end date and it's in the past, and status is 'occupied', mark as 'empty'
-        // Also handle legacy 'active' status for migration
         if (lease.lease_end_date && 
             lease.lease_end_date < today && 
-            (lease.status === 'occupied' || lease.status === 'active')) {
+            lease.status === 'occupied') {
           expiredLeaseIds.push(lease.id)
         }
       }
@@ -173,10 +172,9 @@ export async function PUT(request: Request) {
     const today = new Date().toISOString().split('T')[0]
     const leaseEndDate = updateData.lease_end_date !== undefined ? updateData.lease_end_date : currentLease.lease_end_date
     if (leaseEndDate && leaseEndDate < today) {
-      // Only auto-expire if status is currently 'occupied'/'active' or not being explicitly set
-      // Handle both new status ('occupied') and legacy status ('active')
-      const isCurrentlyOccupied = currentLease.status === 'occupied' || currentLease.status === 'active'
-      if (!updateData.status || updateData.status === 'occupied' || updateData.status === 'active' || isCurrentlyOccupied) {
+      // Only auto-expire if status is currently 'occupied' or not being explicitly set
+      const isCurrentlyOccupied = currentLease.status === 'occupied'
+      if (!updateData.status || updateData.status === 'occupied' || isCurrentlyOccupied) {
         updateData.status = 'empty'
         console.log(`Auto-expiring lease ${id} to 'empty' status (end date ${leaseEndDate} is in the past)`)
       }

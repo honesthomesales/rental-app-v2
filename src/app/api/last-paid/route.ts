@@ -144,7 +144,7 @@ export async function GET() {
       // Find the active lease for cadence info
       const activeLease = leases?.find(l =>
         l.property_id === property.id &&
-        (l.status === 'occupied' || l.status === 'active')
+        l.status === 'occupied'
       )
       return {
         property_id: property.id,

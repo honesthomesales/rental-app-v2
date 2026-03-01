@@ -261,10 +261,25 @@ export default function LeasesPage() {
     switch (status) {
       case 'occupied':
         return 'bg-green-100 text-green-800'
+      case 'sold':
+        return 'bg-purple-100 text-purple-800'
       case 'empty':
         return 'bg-gray-100 text-gray-800'
       default:
         return 'bg-gray-100 text-gray-800'
+    }
+  }
+  
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case 'occupied':
+        return 'Has Tenants'
+      case 'sold':
+        return 'Sold'
+      case 'empty':
+        return 'Empty'
+      default:
+        return status || 'Has Tenants'
     }
   }
 
@@ -342,8 +357,7 @@ export default function LeasesPage() {
                 className="px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="all">All Status</option>
-                <option value="occupied">Occupied</option>
-                <option value="active">Active</option>
+                <option value="occupied">Has Tenants</option>
                 <option value="sold">Sold</option>
                 <option value="empty">Empty</option>
               </select>
@@ -497,8 +511,8 @@ export default function LeasesPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(lease.status || 'active')}`}>
-                      {lease.status || 'occupied'}
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(lease.status || 'occupied')}`}>
+                      {getStatusDisplay(lease.status || 'occupied')}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -656,10 +670,9 @@ export default function LeasesPage() {
                     defaultValue="occupied"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="occupied">Occupied</option>
-                    <option value="active">Active</option>
-                    <option value="sold">Sold</option>
                     <option value="empty">Empty</option>
+                    <option value="occupied">Has Tenants</option>
+                    <option value="sold">Sold</option>
                   </select>
                 </div>
               </div>
@@ -865,10 +878,9 @@ export default function LeasesPage() {
                       defaultValue={editingLease.status || 'occupied'}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                     >
-                      <option value="occupied">Occupied</option>
-                      <option value="active">Active</option>
-                      <option value="sold">Sold</option>
                       <option value="empty">Empty</option>
+                      <option value="occupied">Has Tenants</option>
+                      <option value="sold">Sold</option>
                     </select>
                   </div>
                   <div>

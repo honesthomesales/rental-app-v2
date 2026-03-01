@@ -108,9 +108,8 @@ export default function Dashboard() {
           }
           
           leasesData.forEach((lease: any) => {
-            // Check if lease is occupied (status = 'occupied', legacy 'active', or 'sold')
-            // Handle both new status ('occupied') and legacy status ('active'), plus 'sold'
-            const isOccupied = lease.status === 'occupied' || lease.status === 'active' || lease.status === 'sold'
+            // Check if lease has tenants (status = 'occupied' or 'sold')
+            const isOccupied = lease.status === 'occupied' || lease.status === 'sold'
             if (isOccupied && lease.property_id) {
               const startDate = new Date(lease.lease_start_date)
               const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
@@ -171,9 +170,9 @@ export default function Dashboard() {
           )
           setOccupiedProperties(occupiedProps)
           
-          // Calculate monthly income leases (occupied leases with rent info)
+          // Calculate monthly income leases (leases with tenants with rent info)
           const incomeLeases = leasesData.filter((lease: any) => {
-            const isOccupied = lease.status === 'occupied' || lease.status === 'active' || lease.status === 'sold'
+            const isOccupied = lease.status === 'occupied' || lease.status === 'sold'
             if (!isOccupied || !lease.property_id) return false
             const startDate = new Date(lease.lease_start_date)
             const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
@@ -580,7 +579,7 @@ export default function Dashboard() {
               <HomeIcon className="h-8 w-8 text-blue-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Occupied / Total Properties</p>
+              <p className="text-sm font-medium text-gray-500">Has Tenants / Total Properties</p>
               <p className="text-2xl font-semibold text-gray-900">
                 {metrics?.occupiedProperties || 0} / {metrics?.totalProperties || 0}
               </p>
@@ -1456,13 +1455,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Occupied Properties Modal */}
+      {/* Properties with Tenants Modal */}
       {showOccupiedModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Occupied Properties</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Properties with Tenants</h2>
                 <p className="text-sm text-gray-600 mt-1">Properties with active leases</p>
               </div>
               <button
@@ -1513,7 +1512,7 @@ export default function Dashboard() {
                       {occupiedProperties.length > 0 && (
                         <tr className="bg-gray-100 font-semibold">
                           <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            Total Occupied Properties
+                            Total Properties with Tenants
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
                             {occupiedProperties.length}

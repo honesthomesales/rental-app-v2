@@ -85,7 +85,7 @@ export async function GET(request: Request) {
         RENT_properties(*),
         RENT_tenants(*)
       `)
-      .in('status', ['occupied', 'active'])
+      .in('status', ['occupied'])
           .lte('lease_start_date', endDate)
           .or(`lease_end_date.is.null,lease_end_date.gte.${startDate}`)
         

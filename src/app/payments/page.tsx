@@ -456,7 +456,7 @@ return'<div class="s">'+l+'</div>';
       
       const leasesWithData: LeaseRow[] = await Promise.all(
         data
-          .filter((lease: any) => lease.status === 'occupied' || lease.status === 'active' || lease.status === 'sold')
+          .filter((lease: any) => lease.status === 'occupied' || lease.status === 'sold')
           .map(async (leaseData: any) => {
             // Fetch ALL invoices for this lease (no date filter to show history)
             const invoicesResponse = await fetch(

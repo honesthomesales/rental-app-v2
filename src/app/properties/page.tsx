@@ -112,10 +112,9 @@ export default function PropertiesPage() {
         // Find any lease for this property - show all statuses
         const anyLease = leaseData.find((l: any) => l.property_id === property.id)
         
-        // Check if lease is active (occupied, active, or sold) for isOccupied flag
+        // Check if lease has tenants (occupied or sold) for isOccupied flag
         const isActiveLease = anyLease && (
           anyLease.status === 'occupied' || 
-          anyLease.status === 'active' || 
           anyLease.status === 'sold'
         )
         
@@ -211,7 +210,7 @@ export default function PropertiesPage() {
         },
         body: JSON.stringify({
           id: property.id,
-          status: 'active'
+          status: 'occupied'
         })
       })
 
@@ -459,7 +458,7 @@ export default function PropertiesPage() {
                   onClick={() => handleSort('isOccupied')}
                 >
                   <div className="flex items-center">
-                    Occupied
+                    Status
                     {sortField === 'isOccupied' && (
                       <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                     )}
@@ -511,7 +510,7 @@ export default function PropertiesPage() {
                           ? 'bg-green-100 text-green-800' 
                           : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {property.isOccupied ? 'Occupied' : 'Empty'}
+                        {property.isOccupied ? 'Has Tenants' : 'Empty'}
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
@@ -544,7 +543,7 @@ export default function PropertiesPage() {
                             }
                           }}
                           className={`px-2 py-1 text-xs font-medium rounded border-0 capitalize focus:ring-2 focus:ring-blue-500 ${
-                            property.leaseStatus === 'occupied' || property.leaseStatus === 'active'
+                            property.leaseStatus === 'occupied'
                               ? 'bg-green-100 text-green-800'
                               : property.leaseStatus === 'sold'
                               ? 'bg-purple-100 text-purple-800'
@@ -552,8 +551,7 @@ export default function PropertiesPage() {
                           }`}
                         >
                           <option value="empty">Empty</option>
-                          <option value="occupied">Occupied</option>
-                          <option value="active">Active</option>
+                          <option value="occupied">Has Tenants</option>
                           <option value="sold">Sold</option>
                         </select>
                       ) : (
@@ -794,8 +792,7 @@ export default function PropertiesPage() {
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                   >
                     <option value="empty">Empty</option>
-                    <option value="occupied">Occupied</option>
-                    <option value="active">Active</option>
+                    <option value="occupied">Has Tenants</option>
                     <option value="sold">Sold</option>
                   </select>
                   <p className="mt-1 text-xs text-gray-500">Updates the lease status for this property</p>

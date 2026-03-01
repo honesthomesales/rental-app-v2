@@ -45,6 +45,10 @@ export default function Dashboard() {
   // Empty Properties Modal sorting
   const [emptyPropertiesSortField, setEmptyPropertiesSortField] = useState<'property' | 'address' | 'rent'>('property')
   const [emptyPropertiesSortDirection, setEmptyPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
+  // Properties with Tenants Modal filtering and sorting
+  const [occupiedPropertiesTypeFilter, setOccupiedPropertiesTypeFilter] = useState<string>('all')
+  const [occupiedPropertiesSortField, setOccupiedPropertiesSortField] = useState<'property' | 'address' | 'type'>('property')
+  const [occupiedPropertiesSortDirection, setOccupiedPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
   
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
@@ -1584,50 +1588,149 @@ export default function Dashboard() {
                   No occupied properties found.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Property
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Address
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Type
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {occupiedProperties.map((property) => (
-                        <tr key={property.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{property.address || 'N/A'}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                              {property.property_type || 'N/A'}
-                            </span>
-                          </td>
+                <>
+                  {/* Filter and Sort Controls */}
+                  <div className="mb-4 flex flex-wrap gap-4 items-center">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Filter by Type:</label>
+                      <select
+                        value={occupiedPropertiesTypeFilter}
+                        onChange={(e) => setOccupiedPropertiesTypeFilter(e.target.value)}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="all">All</option>
+                        <option value="house">House</option>
+                        <option value="doublewide">Doublewide</option>
+                        <option value="singlewide">Singlewide</option>
+                        <option value="loan">Loan</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Sort by:</label>
+                      <select
+                        value={occupiedPropertiesSortField}
+                        onChange={(e) => setOccupiedPropertiesSortField(e.target.value as 'property' | 'address' | 'type')}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="property">Property</option>
+                        <option value="address">Address</option>
+                        <option value="type">Type</option>
+                      </select>
+                      <button
+                        onClick={() => setOccupiedPropertiesSortDirection(occupiedPropertiesSortDirection === 'asc' ? 'desc' : 'asc')}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                        title={occupiedPropertiesSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                      >
+                        {occupiedPropertiesSortDirection === 'asc' ? '↑' : '↓'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setOccupiedPropertiesSortField('property')
+                              setOccupiedPropertiesSortDirection(occupiedPropertiesSortField === 'property' && occupiedPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Property {occupiedPropertiesSortField === 'property' && (occupiedPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setOccupiedPropertiesSortField('address')
+                              setOccupiedPropertiesSortDirection(occupiedPropertiesSortField === 'address' && occupiedPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Address {occupiedPropertiesSortField === 'address' && (occupiedPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setOccupiedPropertiesSortField('type')
+                              setOccupiedPropertiesSortDirection(occupiedPropertiesSortField === 'type' && occupiedPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Type {occupiedPropertiesSortField === 'type' && (occupiedPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
                         </tr>
-                      ))}
-                      {occupiedProperties.length > 0 && (
-                        <tr className="bg-gray-100 font-semibold">
-                          <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            Total Properties with Tenants
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
-                            {occupiedProperties.length}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {(() => {
+                          // Filter by type
+                          let filteredProperties = occupiedProperties.filter(property => {
+                            if (occupiedPropertiesTypeFilter === 'all') return true
+                            return (property.property_type || '').toLowerCase() === occupiedPropertiesTypeFilter.toLowerCase()
+                          })
+                          
+                          // Sort properties
+                          filteredProperties = [...filteredProperties].sort((a, b) => {
+                            let aValue: any
+                            let bValue: any
+                            
+                            switch (occupiedPropertiesSortField) {
+                              case 'property':
+                                aValue = (a.name || '').toLowerCase()
+                                bValue = (b.name || '').toLowerCase()
+                                break
+                              case 'address':
+                                aValue = (a.address || '').toLowerCase()
+                                bValue = (b.address || '').toLowerCase()
+                                break
+                              case 'type':
+                                aValue = (a.property_type || '').toLowerCase()
+                                bValue = (b.property_type || '').toLowerCase()
+                                break
+                              default:
+                                return 0
+                            }
+                            
+                            if (aValue < bValue) return occupiedPropertiesSortDirection === 'asc' ? -1 : 1
+                            if (aValue > bValue) return occupiedPropertiesSortDirection === 'asc' ? 1 : -1
+                            return 0
+                          })
+                          
+                          return filteredProperties.map((property) => (
+                            <tr key={property.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-500">{property.address || 'N/A'}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                                  {property.property_type || 'N/A'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        })()}
+                        {(() => {
+                          // Calculate total from filtered properties
+                          const filteredProperties = occupiedProperties.filter(property => {
+                            if (occupiedPropertiesTypeFilter === 'all') return true
+                            return (property.property_type || '').toLowerCase() === occupiedPropertiesTypeFilter.toLowerCase()
+                          })
+                          
+                          return filteredProperties.length > 0 ? (
+                            <tr className="bg-gray-100 font-semibold">
+                              <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                Total Properties with Tenants
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
+                                {filteredProperties.length}
+                              </td>
+                            </tr>
+                          ) : null
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
 

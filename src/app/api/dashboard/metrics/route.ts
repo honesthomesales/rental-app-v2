@@ -36,10 +36,10 @@ export async function GET(request: Request) {
         .map(lease => lease.property_id)
     )
 
-    // Filter out properties with "sold" status leases
+    // Filter out properties with "sold" status leases and "other" property type
     // Include all other properties (including those with no lease)
     const validProperties = allProperties?.filter(
-      property => !soldPropertyIds.has(property.id)
+      property => !soldPropertyIds.has(property.id) && property.property_type !== 'other'
     ) || []
 
     // Fetch occupied properties (properties with active leases)

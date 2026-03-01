@@ -707,6 +707,7 @@ export default function PropertiesPage() {
                     <option value="doublewide">Double Wide</option>
                     <option value="singlewide">Single Wide</option>
                     <option value="loan">Loan</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div>

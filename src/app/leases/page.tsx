@@ -343,6 +343,8 @@ export default function LeasesPage() {
               >
                 <option value="all">All Status</option>
                 <option value="occupied">Occupied</option>
+                <option value="active">Active</option>
+                <option value="sold">Sold</option>
                 <option value="empty">Empty</option>
               </select>
             </div>

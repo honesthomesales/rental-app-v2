@@ -78,7 +78,7 @@ export default function Dashboard() {
         })
         setTaxSelectedProperties(colorStates)
         
-          // Calculate potential income properties (unoccupied with rent_value)
+          // Calculate potential income properties (empty with rent_value)
         if (data && propertiesData && leasesResponse.ok) {
           const leasesData = await leasesResponse.json()
           
@@ -108,9 +108,9 @@ export default function Dashboard() {
           }
           
           leasesData.forEach((lease: any) => {
-            // Check if lease is occupied (status = 'occupied' or legacy 'active' and within date range)
-            // Handle both new status ('occupied') and legacy status ('active')
-            const isOccupied = lease.status === 'occupied' || lease.status === 'active'
+            // Check if lease is occupied (status = 'occupied', legacy 'active', or 'sold')
+            // Handle both new status ('occupied') and legacy status ('active'), plus 'sold'
+            const isOccupied = lease.status === 'occupied' || lease.status === 'active' || lease.status === 'sold'
             if (isOccupied && lease.property_id) {
               const startDate = new Date(lease.lease_start_date)
               const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
@@ -139,8 +139,8 @@ export default function Dashboard() {
             }
           })
           
-          // Filter unoccupied properties with rent_value
-          // A property is unoccupied if it's not in the occupiedPropertyIds set
+          // Filter empty properties with rent_value
+          // A property is empty if it's not in the occupiedPropertyIds set
           const potentialProps = propertiesData.filter((property: any) => {
             const isOccupied = occupiedPropertyIds.has(property.id)
             const hasRentValue = property.rent_value && property.rent_value > 0
@@ -173,7 +173,7 @@ export default function Dashboard() {
           
           // Calculate monthly income leases (occupied leases with rent info)
           const incomeLeases = leasesData.filter((lease: any) => {
-            const isOccupied = lease.status === 'occupied' || lease.status === 'active'
+            const isOccupied = lease.status === 'occupied' || lease.status === 'active' || lease.status === 'sold'
             if (!isOccupied || !lease.property_id) return false
             const startDate = new Date(lease.lease_start_date)
             const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
@@ -617,7 +617,7 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-gray-500">Potential Income</p>
               <p className="text-2xl font-semibold text-gray-900">${metrics?.totalPotentialIncome?.toLocaleString() || 0}</p>
               <p className="text-xs text-gray-500 mt-1">
-                Unoccupied: ${metrics?.potentialIncome?.toLocaleString() || 0}
+                Empty: ${metrics?.potentialIncome?.toLocaleString() || 0}
               </p>
               <p className="text-xs text-indigo-600 mt-1 font-medium">Click to view/edit</p>
             </div>
@@ -737,7 +737,7 @@ export default function Dashboard() {
           <div className="mt-4">
             {potentialIncomeProperties.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No unoccupied properties with potential income found.
+                No empty properties with potential income found.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1316,7 +1316,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Unoccupied Properties - Potential Rent</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Empty Properties - Potential Rent</h2>
                 <p className="text-sm text-gray-600 mt-1">Edit rent_value to update potential income</p>
               </div>
               <button
@@ -1333,7 +1333,7 @@ export default function Dashboard() {
             <div className="px-6 py-4 overflow-y-auto flex-1">
               {potentialIncomeProperties.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  No unoccupied properties with potential income found.
+                  No empty properties with potential income found.
                 </div>
               ) : (
                 <div className="overflow-x-auto">

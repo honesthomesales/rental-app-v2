@@ -70,25 +70,25 @@ export async function GET() {
 
     console.log('Calculated monthly income from active leases:', monthlyIncome)
 
-    // Calculate potential income from unoccupied properties
+    // Calculate potential income from empty properties
     let potentialIncome = 0
     const occupiedPropertyIds = new Set(activeLeases?.map(lease => lease.property_id))
     
     // Find properties without active leases that have rent_value set
-    const unoccupiedProperties = allProperties?.filter(property => 
+    const emptyProperties = allProperties?.filter(property => 
       !occupiedPropertyIds.has(property.id) && 
       property.rent_value && 
       property.rent_value > 0
     ) || []
 
-    console.log('Unoccupied properties with rent_value:', unoccupiedProperties.length)
+    console.log('Empty properties with rent_value:', emptyProperties.length)
     
-    // Sum up the rent_value from unoccupied properties
-    potentialIncome = unoccupiedProperties.reduce((sum, property) => 
+    // Sum up the rent_value from empty properties
+    potentialIncome = emptyProperties.reduce((sum, property) => 
       sum + (property.rent_value || 0), 0
     )
 
-    console.log('Potential income from unoccupied properties:', potentialIncome)
+    console.log('Potential income from empty properties:', potentialIncome)
     console.log('Total potential income:', monthlyIncome + potentialIncome)
 
     // Fetch late payments by recalculating balance from actual RENT_payments

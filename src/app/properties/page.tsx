@@ -13,6 +13,7 @@ type PropertyWithLease = Property & {
   tenantName?: string
   isOccupied?: boolean
   leaseStatus?: string | null
+  leaseId?: string | null
 }
 
 export default function PropertiesPage() {
@@ -130,6 +131,7 @@ export default function PropertiesPage() {
           tenantName: tenantName,
           isOccupied: !!isActiveLease, // Only true if status is occupied/active/sold
           leaseStatus: anyLease?.status || null, // Show all lease statuses
+          leaseId: anyLease?.id || null, // Store lease ID for updates
           // Show lease rent if has lease, otherwise show property rent_value
           displayRent: anyLease ? anyLease.rent : property.rent_value
         }
@@ -224,22 +226,48 @@ export default function PropertiesPage() {
     }
   }
 
-  const handleSaveProperty = async (propertyData: Partial<PropertyWithLease>) => {
+  const handleSaveProperty = async (propertyData: Partial<PropertyWithLease> & { lease_status?: string }) => {
     try {
       const url = '/api/properties'
       const method = editingProperty ? 'PUT' : 'POST'
+      
+      // Extract lease_status from propertyData
+      const { lease_status, ...propertyUpdateData } = propertyData
       
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(editingProperty ? { id: editingProperty.id, ...propertyData } : propertyData)
+        body: JSON.stringify(editingProperty ? { id: editingProperty.id, ...propertyUpdateData } : propertyUpdateData)
       })
 
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || `Failed to ${editingProperty ? 'update' : 'create'} property`)
+      }
+
+      // If lease_status was provided, update the lease
+      if (lease_status && editingProperty?.leaseId) {
+        try {
+          const leaseResponse = await fetch('/api/leases', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              id: editingProperty.leaseId,
+              status: lease_status
+            })
+          })
+
+          if (!leaseResponse.ok) {
+            console.warn('Failed to update lease status, but property was saved')
+          }
+        } catch (leaseError) {
+          console.error('Error updating lease status:', leaseError)
+          // Don't fail the whole operation if lease update fails
+        }
       }
 
       // Refresh the properties list
@@ -483,20 +511,51 @@ export default function PropertiesPage() {
                           ? 'bg-green-100 text-green-800' 
                           : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {property.isOccupied ? 'Occupied' : 'Unoccupied'}
+                        {property.isOccupied ? 'Occupied' : 'Empty'}
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {property.leaseStatus ? (
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full capitalize ${
-                          property.leaseStatus === 'occupied' || property.leaseStatus === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : property.leaseStatus === 'sold'
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {property.leaseStatus}
-                        </span>
+                        <select
+                          value={property.leaseStatus}
+                          onChange={async (e) => {
+                            if (property.leaseId) {
+                              try {
+                                const response = await fetch('/api/leases', {
+                                  method: 'PUT',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({
+                                    id: property.leaseId,
+                                    status: e.target.value
+                                  })
+                                })
+
+                                if (response.ok) {
+                                  await fetchProperties()
+                                } else {
+                                  alert('Failed to update lease status')
+                                }
+                              } catch (error) {
+                                console.error('Error updating lease status:', error)
+                                alert('Failed to update lease status')
+                              }
+                            }
+                          }}
+                          className={`px-2 py-1 text-xs font-medium rounded border-0 capitalize focus:ring-2 focus:ring-blue-500 ${
+                            property.leaseStatus === 'occupied' || property.leaseStatus === 'active'
+                              ? 'bg-green-100 text-green-800'
+                              : property.leaseStatus === 'sold'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          <option value="empty">Empty</option>
+                          <option value="occupied">Occupied</option>
+                          <option value="active">Active</option>
+                          <option value="sold">Sold</option>
+                        </select>
                       ) : (
                         <span className="text-xs text-gray-400">No lease</span>
                       )}
@@ -589,7 +648,7 @@ export default function PropertiesPage() {
                 bathrooms: parseFloat(formData.get('bathrooms') as string) || 0,
                 square_feet: parseInt(formData.get('square_feet') as string) || 0,
                 rent_value: parseFloat(formData.get('rent_value') as string) || 0,
-                is_for_rent: formData.get('is_for_rent') === 'on'
+                lease_status: formData.get('lease_status') as string
               }
               handleSaveProperty(propertyData)
             }}>
@@ -728,15 +787,18 @@ export default function PropertiesPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="is_for_rent"
-                      defaultChecked={editingProperty?.is_for_rent}
-                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Available for Rent</span>
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700">Lease Status</label>
+                  <select
+                    name="lease_status"
+                    defaultValue={editingProperty?.leaseStatus || 'empty'}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value="empty">Empty</option>
+                    <option value="occupied">Occupied</option>
+                    <option value="active">Active</option>
+                    <option value="sold">Sold</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">Updates the lease status for this property</p>
                 </div>
               </div>
               <div className="mt-6 flex justify-end space-x-3">

@@ -8,7 +8,8 @@ import {
   ExclamationTriangleIcon,
   BuildingOfficeIcon,
   XMarkIcon,
-  PencilIcon
+  PencilIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline'
 
 export default function Dashboard() {
@@ -43,15 +44,23 @@ export default function Dashboard() {
     fetchDashboardData()
   }, [])
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (showRefreshing = false) => {
     try {
+      if (showRefreshing) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       console.log('Fetching dashboard data in parallel...')
+      
+      // Add cache-busting timestamp to ensure fresh data
+      const timestamp = Date.now()
       
       // OPTIMIZED: Fetch all data in parallel instead of sequentially
       const [metricsResponse, propertiesResponse, leasesResponse] = await Promise.all([
-        fetch('/api/dashboard/metrics'),
-        fetch('/api/properties'),
-        fetch('/api/leases')
+        fetch(`/api/dashboard/metrics?t=${timestamp}`),
+        fetch(`/api/properties?t=${timestamp}`),
+        fetch(`/api/leases?t=${timestamp}`)
       ])
 
       // Process metrics
@@ -203,6 +212,7 @@ export default function Dashboard() {
       })
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -563,9 +573,20 @@ export default function Dashboard() {
 
   return (
     <div className="p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard 1.4</h1>
-        <p className="text-gray-600 mt-2">Rental properties overview</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Dashboard 1.4</h1>
+          <p className="text-gray-600 mt-2">Rental properties overview</p>
+        </div>
+        <button
+          onClick={() => fetchDashboardData(true)}
+          disabled={refreshing}
+          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          title="Refresh dashboard data"
+        >
+          <ArrowPathIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+        </button>
       </div>
 
       {/* Key Metrics */}

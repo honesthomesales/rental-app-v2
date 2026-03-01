@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 
-// Cache this route for 60 seconds to improve performance
-export const revalidate = 60
+// Cache this route for 5 seconds to balance performance and freshness
+export const revalidate = 5
 
 export async function GET() {
   try {

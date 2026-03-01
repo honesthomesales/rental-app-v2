@@ -664,6 +664,12 @@ export default function Dashboard() {
                     ${metrics?.potentialProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                   </span>
                 </div>
+                <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                  <span className="text-gray-600">Potential with No House Debt:</span>{' '}
+                  <span className={metrics?.potentialProfitNoHouseDebt && metrics.potentialProfitNoHouseDebt >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    ${metrics?.potentialProfitNoHouseDebt?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

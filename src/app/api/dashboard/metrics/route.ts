@@ -204,19 +204,29 @@ export async function GET(request: Request) {
       ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
     
     // Get total payments from expenses table (all expenses, not filtered by month)
+    // Need to fetch balance field to exclude expenses with balance > 0 for potential calculation
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
-      .select('amount, interest_rate')
+      .select('amount, interest_rate, balance')
     
     if (expensesError) {
       console.error('Error fetching expenses for debt calculation:', expensesError)
     }
     
+    // Calculate total payments (all expenses, excluding one-time)
     const totalPayments = expenses
       ?.filter(exp => exp.interest_rate !== -9.9999) // Exclude one-time expenses
       .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
     
+    // Calculate potential payments (excluding expenses with balance > 0)
+    // If House Debt is paid, expenses with balance > 0 would be reduced to zero
+    const potentialPayments = expenses
+      ?.filter(exp => exp.interest_rate !== -9.9999) // Exclude one-time expenses
+      .filter(expense => (Number(expense.balance) || 0) <= 0) // Exclude expenses with balance > 0
+      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+    
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
+    const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
     
     // Get one-time expenses (interest_rate = -9.9999) - these are otherExpenses
     // For dashboard, we'll use all one-time expenses (not filtered by month like profit page)
@@ -226,12 +236,15 @@ export async function GET(request: Request) {
       .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
     
     const totalDebt = totalFixedExpenses + otherExpenses
+    const potentialDebt = potentialFixedExpenses + otherExpenses
 
     // Calculate profit
     // Current profit = monthly income - total debt
     // Potential profit = (monthly income + potential income) - total debt
+    // Potential with No House Debt = (monthly income + potential income) - potential debt
     const currentProfit = monthlyIncome - totalDebt
     const potentialProfit = (monthlyIncome + potentialIncome) - totalDebt
+    const potentialProfitNoHouseDebt = (monthlyIncome + potentialIncome) - potentialDebt
     
     console.log('Debt calculation:', {
       totalInsurance,
@@ -257,7 +270,8 @@ export async function GET(request: Request) {
       propertyTypeBreakdown,
       totalDebt,
       currentProfit,
-      potentialProfit
+      potentialProfit,
+      potentialProfitNoHouseDebt
     }
 
     return NextResponse.json(metrics)

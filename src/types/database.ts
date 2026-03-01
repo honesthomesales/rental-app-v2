@@ -18,7 +18,7 @@ export interface Property {
   insurance_provider?: string
   insurance_premium?: number
   owner_name?: string
-  property_type?: 'house' | 'doublewide' | 'singlewide' | 'loan'
+  property_type?: 'house' | 'doublewide' | 'singlewide' | 'loan' | 'other'
   Sell_Price?: number
   Interest_Rate?: number
   property_tax?: number

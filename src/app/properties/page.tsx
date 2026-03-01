@@ -57,22 +57,26 @@ export default function PropertiesPage() {
       let aValue: any = a[sortField]
       let bValue: any = b[sortField]
 
+      // Handle null/undefined values first
+      if (aValue == null) aValue = ''
+      if (bValue == null) bValue = ''
+
       // Handle different data types
-      if (typeof aValue === 'string') {
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
         aValue = aValue.toLowerCase()
         bValue = bValue.toLowerCase()
-      } else if (typeof aValue === 'boolean') {
+      } else if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
         // For boolean values, convert to numbers (false = 0, true = 1)
         aValue = aValue ? 1 : 0
         bValue = bValue ? 1 : 0
-      } else if (typeof aValue === 'number') {
+      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
         // Numbers are already comparable
         aValue = aValue || 0
         bValue = bValue || 0
       } else {
-        // Handle undefined/null values
-        aValue = aValue || ''
-        bValue = bValue || ''
+        // Mixed types or other: convert both to strings for comparison
+        aValue = String(aValue || '').toLowerCase()
+        bValue = String(bValue || '').toLowerCase()
       }
 
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1

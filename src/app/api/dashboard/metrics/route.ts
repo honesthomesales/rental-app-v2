@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   // Accept query parameters (like cache-busting timestamps) but ignore them
   // This prevents errors when query params are added to the URL
   try {
-    // Fetch total properties (excluding retired)
+    // Fetch all properties (excluding retired)
     // Use .neq() to exclude retired - this will include null (not set) and active
     const { data: allProperties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
@@ -19,6 +19,29 @@ export async function GET(request: Request) {
       throw new Error(`Error fetching properties: ${propertiesError.message}`)
     }
 
+    // Fetch all leases to identify properties with "sold" status
+    // We need to exclude properties that have leases with "sold" status
+    const { data: allLeases, error: allLeasesError } = await supabaseServer
+      .from('RENT_leases')
+      .select('id, property_id, status')
+
+    if (allLeasesError) {
+      throw new Error(`Error fetching all leases: ${allLeasesError.message}`)
+    }
+
+    // Create a set of property IDs that have "sold" status leases
+    const soldPropertyIds = new Set(
+      allLeases
+        ?.filter(lease => lease.status === 'sold')
+        .map(lease => lease.property_id)
+    )
+
+    // Filter out properties with "sold" status leases
+    // Include all other properties (including those with no lease)
+    const validProperties = allProperties?.filter(
+      property => !soldPropertyIds.has(property.id)
+    ) || []
+
     // Fetch occupied properties (properties with active leases)
     // Match Payments page logic: filter by status only, no date range check
     const currentDate = new Date().toISOString().split('T')[0]
@@ -26,10 +49,11 @@ export async function GET(request: Request) {
     
     // OPTIMIZED: Fetch leases with tenants once with all needed data
     // Match Payments page: filter by status only, no date range
+    // Only get leases with "occupied" status (not "sold")
     const { data: activeLeases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select('id, property_id, lease_start_date, lease_end_date, rent, rent_cadence')
-      .in('status', ['occupied', 'sold'])
+      .in('status', ['occupied'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)
@@ -76,7 +100,8 @@ export async function GET(request: Request) {
     const occupiedPropertyIds = new Set(activeLeases?.map(lease => lease.property_id))
     
     // Find properties without active leases that have rent_value set
-    const emptyProperties = allProperties?.filter(property => 
+    // Only consider valid properties (not sold)
+    const emptyProperties = validProperties?.filter(property => 
       !occupiedPropertyIds.has(property.id) && 
       property.rent_value && 
       property.rent_value > 0
@@ -152,7 +177,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Calculate property type breakdown from allProperties
+    // Calculate property type breakdown from validProperties (excluding sold)
     const propertyTypeBreakdown = {
       house: 0,
       doublewide: 0,
@@ -160,7 +185,7 @@ export async function GET(request: Request) {
       loan: 0
     }
 
-    allProperties?.forEach(property => {
+    validProperties?.forEach(property => {
       const type = property.property_type
       if (type === 'house') propertyTypeBreakdown.house++
       else if (type === 'doublewide') propertyTypeBreakdown.doublewide++
@@ -172,10 +197,10 @@ export async function GET(request: Request) {
     // Total debt = totalFixedExpenses + otherExpenses
     // totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     // Note: Insurance and taxes are annual, so we use them as-is (they represent monthly equivalent)
-    const totalInsurance = allProperties
+    const totalInsurance = validProperties
       ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
     
-    const totalTaxes = allProperties
+    const totalTaxes = validProperties
       ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
     
     // Get total payments from expenses table (all expenses, not filtered by month)
@@ -222,7 +247,7 @@ export async function GET(request: Request) {
     })
 
     const metrics = {
-      totalProperties: allProperties?.length || 0,
+      totalProperties: validProperties?.length || 0,
       occupiedProperties,
       monthlyIncome,
       potentialIncome,

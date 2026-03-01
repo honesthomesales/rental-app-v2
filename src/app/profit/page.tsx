@@ -247,9 +247,19 @@ export default function ProfitPage() {
             </div>
             
             <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-              <div className="text-sm text-gray-600 mb-1">Total Fixed Expenses</div>
-              <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(monthlyMetrics?.fixedExpenses?.total || 0)}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-600 mb-1">Total Fixed Expenses</div>
+                  <div className="text-2xl font-bold text-red-600">
+                    {formatCurrency(monthlyMetrics?.fixedExpenses?.total || 0)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-600 mb-1">Potential Fixed Expenses</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {formatCurrency(monthlyMetrics?.fixedExpenses?.potential || 0)}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -387,6 +397,17 @@ export default function ProfitPage() {
                 return (
                   <div className={`text-6xl font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formatCurrency(profit)}
+                  </div>
+                )
+              })()}
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200 text-center">
+              <div className="text-sm text-gray-600 mb-2">Potential if House Debt is paid</div>
+              {(() => {
+                const potentialProfit = monthlyMetrics?.potentialProfit || 0
+                return (
+                  <div className={`text-4xl font-bold ${potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(potentialProfit)}
                   </div>
                 )
               })()}

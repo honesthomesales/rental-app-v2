@@ -48,20 +48,29 @@ export async function GET(request: Request) {
     console.log('Total taxes:', totalTaxes)
     
     // Get total payments from expenses table (all expenses, not filtered by month)
+    // Need to fetch balance field to exclude expenses with balance > 0 for potential calculation
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
-      .select('amount')
+      .select('amount, balance')
     
     if (expensesError) {
       console.error('Error fetching expenses:', expensesError)
       throw expensesError
     }
     
+    // Calculate total payments (all expenses)
     const totalPayments = expenses
       ?.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
     
+    // Calculate potential payments (excluding expenses with balance > 0)
+    // If House Debt is paid, expenses with balance > 0 would be reduced to zero
+    const potentialPayments = expenses
+      ?.filter(expense => (Number(expense.balance) || 0) <= 0)
+      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+    
     console.log('Expenses found:', expenses?.length || 0)
     console.log('Total payments from expenses:', totalPayments)
+    console.log('Potential payments (excluding balance > 0):', potentialPayments)
     
     // Get rent collected from payments (more reliable than invoices)
     let rentCollected = 0
@@ -189,7 +198,9 @@ export async function GET(request: Request) {
       ?.reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
     
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
+    const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
     const totalDebt = totalFixedExpenses + otherExpenses
+    const potentialDebt = potentialFixedExpenses + otherExpenses
     
     const totalIncome = rentCollected + miscIncome
     
@@ -425,12 +436,16 @@ export async function GET(request: Request) {
       // Continue with 0 if calculation fails
     }
     
+    // Calculate potential profit if House Debt is paid (expenses with balance > 0 reduced to zero)
+    const potentialProfit = totalIncome - potentialDebt
+    
     const metrics = {
       fixedExpenses: {
         insurance: Math.round(totalInsurance * 100) / 100,
         taxes: Math.round(totalTaxes * 100) / 100,
         totalPayments: Math.round(totalPayments * 100) / 100,
-        total: Math.round(totalFixedExpenses * 100) / 100
+        total: Math.round(totalFixedExpenses * 100) / 100,
+        potential: Math.round(potentialFixedExpenses * 100) / 100
       },
       oneTimeExpenseIncome: {
         expenses: {
@@ -440,8 +455,10 @@ export async function GET(request: Request) {
           miscIncome: Math.round(miscIncome * 100) / 100
         },
         totalIncome: Math.round(totalIncome * 100) / 100,
-        totalDebt: Math.round(totalDebt * 100) / 100
+        totalDebt: Math.round(totalDebt * 100) / 100,
+        potentialDebt: Math.round(potentialDebt * 100) / 100
       },
+      potentialProfit: Math.round(potentialProfit * 100) / 100,
       propertyDetails: propertyDetails.map((p: any) => ({
         property_id: p.property_id,
         property_name: p.property_name,

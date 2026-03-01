@@ -38,6 +38,13 @@ export default function Dashboard() {
   const [monthlyIncomeLeases, setMonthlyIncomeLeases] = useState<any[]>([])
   const [taxSelectedProperties, setTaxSelectedProperties] = useState<Map<string, number>>(new Map())
   const [editingRentValue, setEditingRentValue] = useState<{propertyId: string, value: string} | null>(null)
+  // Monthly Income Modal filtering and sorting
+  const [monthlyIncomeCadenceFilter, setMonthlyIncomeCadenceFilter] = useState<string>('all')
+  const [monthlyIncomeSortField, setMonthlyIncomeSortField] = useState<'property' | 'tenant' | 'rent'>('property')
+  const [monthlyIncomeSortDirection, setMonthlyIncomeSortDirection] = useState<'asc' | 'desc'>('asc')
+  // Empty Properties Modal sorting
+  const [emptyPropertiesSortField, setEmptyPropertiesSortField] = useState<'property' | 'address' | 'rent'>('property')
+  const [emptyPropertiesSortDirection, setEmptyPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
   
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
@@ -1363,26 +1370,95 @@ export default function Dashboard() {
                   No empty properties with potential income found.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Property
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Address
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Potential Rent (Monthly)
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {potentialIncomeProperties.map((property) => (
+                <>
+                  {/* Sort Controls */}
+                  <div className="mb-4 flex flex-wrap gap-4 items-center">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Sort by:</label>
+                      <select
+                        value={emptyPropertiesSortField}
+                        onChange={(e) => setEmptyPropertiesSortField(e.target.value as 'property' | 'address' | 'rent')}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="property">Property</option>
+                        <option value="address">Address</option>
+                        <option value="rent">Rent</option>
+                      </select>
+                      <button
+                        onClick={() => setEmptyPropertiesSortDirection(emptyPropertiesSortDirection === 'asc' ? 'desc' : 'asc')}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                        title={emptyPropertiesSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                      >
+                        {emptyPropertiesSortDirection === 'asc' ? '↑' : '↓'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setEmptyPropertiesSortField('property')
+                              setEmptyPropertiesSortDirection(emptyPropertiesSortField === 'property' && emptyPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Property {emptyPropertiesSortField === 'property' && (emptyPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setEmptyPropertiesSortField('address')
+                              setEmptyPropertiesSortDirection(emptyPropertiesSortField === 'address' && emptyPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Address {emptyPropertiesSortField === 'address' && (emptyPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th 
+                            className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setEmptyPropertiesSortField('rent')
+                              setEmptyPropertiesSortDirection(emptyPropertiesSortField === 'rent' && emptyPropertiesSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Potential Rent (Monthly) {emptyPropertiesSortField === 'rent' && (emptyPropertiesSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {(() => {
+                          // Sort properties
+                          const sortedProperties = [...potentialIncomeProperties].sort((a, b) => {
+                            let aValue: any
+                            let bValue: any
+                            
+                            switch (emptyPropertiesSortField) {
+                              case 'property':
+                                aValue = (a.name || '').toLowerCase()
+                                bValue = (b.name || '').toLowerCase()
+                                break
+                              case 'address':
+                                aValue = (a.address || '').toLowerCase()
+                                bValue = (b.address || '').toLowerCase()
+                                break
+                              case 'rent':
+                                aValue = a.rent_value || 0
+                                bValue = b.rent_value || 0
+                                break
+                              default:
+                                return 0
+                            }
+                            
+                            if (aValue < bValue) return emptyPropertiesSortDirection === 'asc' ? -1 : 1
+                            if (aValue > bValue) return emptyPropertiesSortDirection === 'asc' ? 1 : -1
+                            return 0
+                          })
+                          
+                          return sortedProperties.map((property) => (
                         <tr key={property.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
@@ -1449,22 +1525,24 @@ export default function Dashboard() {
                               <PencilIcon className="h-4 w-4" />
                             </button>
                           </td>
-                        </tr>
-                      ))}
-                      {potentialIncomeProperties.length > 0 && (
-                        <tr className="bg-gray-100 font-semibold">
-                          <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            Total Potential Income
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600">
-                            ${potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td></td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                          </tr>
+                          ))
+                        })()}
+                        {potentialIncomeProperties.length > 0 && (
+                          <tr className="bg-gray-100 font-semibold">
+                            <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              Total Potential Income
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600">
+                              ${potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td></td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
 
@@ -1588,29 +1666,125 @@ export default function Dashboard() {
                   No active leases found.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Property
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Tenant
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Rent
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Cadence
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Monthly Income
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {monthlyIncomeLeases.map((lease) => {
+                <>
+                  {/* Filter and Sort Controls */}
+                  <div className="mb-4 flex flex-wrap gap-4 items-center">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Filter by Cadence:</label>
+                      <select
+                        value={monthlyIncomeCadenceFilter}
+                        onChange={(e) => setMonthlyIncomeCadenceFilter(e.target.value)}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="all">All</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="bi-weekly">Bi-Weekly</option>
+                        <option value="biweekly">Biweekly</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Sort by:</label>
+                      <select
+                        value={monthlyIncomeSortField}
+                        onChange={(e) => setMonthlyIncomeSortField(e.target.value as 'property' | 'tenant' | 'rent')}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="property">Property</option>
+                        <option value="tenant">Tenant</option>
+                        <option value="rent">Rent</option>
+                      </select>
+                      <button
+                        onClick={() => setMonthlyIncomeSortDirection(monthlyIncomeSortDirection === 'asc' ? 'desc' : 'asc')}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                        title={monthlyIncomeSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                      >
+                        {monthlyIncomeSortDirection === 'asc' ? '↑' : '↓'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setMonthlyIncomeSortField('property')
+                              setMonthlyIncomeSortDirection(monthlyIncomeSortField === 'property' && monthlyIncomeSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Property {monthlyIncomeSortField === 'property' && (monthlyIncomeSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setMonthlyIncomeSortField('tenant')
+                              setMonthlyIncomeSortDirection(monthlyIncomeSortField === 'tenant' && monthlyIncomeSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Tenant {monthlyIncomeSortField === 'tenant' && (monthlyIncomeSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th 
+                            className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                            onClick={() => {
+                              setMonthlyIncomeSortField('rent')
+                              setMonthlyIncomeSortDirection(monthlyIncomeSortField === 'rent' && monthlyIncomeSortDirection === 'asc' ? 'desc' : 'asc')
+                            }}
+                          >
+                            Rent {monthlyIncomeSortField === 'rent' && (monthlyIncomeSortDirection === 'asc' ? '↑' : '↓')}
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cadence
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Monthly Income
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {(() => {
+                          // Filter by cadence
+                          let filteredLeases = monthlyIncomeLeases.filter(lease => {
+                            if (monthlyIncomeCadenceFilter === 'all') return true
+                            const cadence = (lease.rent_cadence || 'monthly').toLowerCase()
+                            return cadence === monthlyIncomeCadenceFilter.toLowerCase()
+                          })
+                          
+                          // Sort leases
+                          filteredLeases = [...filteredLeases].sort((a, b) => {
+                            let aValue: any
+                            let bValue: any
+                            
+                            switch (monthlyIncomeSortField) {
+                              case 'property':
+                                aValue = (a.RENT_properties?.name || a.RENT_properties?.address || '').toLowerCase()
+                                bValue = (b.RENT_properties?.name || b.RENT_properties?.address || '').toLowerCase()
+                                break
+                              case 'tenant':
+                                aValue = (a.RENT_tenants?.full_name || 
+                                         (a.RENT_tenants?.first_name && a.RENT_tenants?.last_name ? 
+                                           `${a.RENT_tenants.first_name} ${a.RENT_tenants.last_name}` : 
+                                           'N/A')).toLowerCase()
+                                bValue = (b.RENT_tenants?.full_name || 
+                                         (b.RENT_tenants?.first_name && b.RENT_tenants?.last_name ? 
+                                           `${b.RENT_tenants.first_name} ${b.RENT_tenants.last_name}` : 
+                                           'N/A')).toLowerCase()
+                                break
+                              case 'rent':
+                                aValue = a.rent || 0
+                                bValue = b.rent || 0
+                                break
+                              default:
+                                return 0
+                            }
+                            
+                            if (aValue < bValue) return monthlyIncomeSortDirection === 'asc' ? -1 : 1
+                            if (aValue > bValue) return monthlyIncomeSortDirection === 'asc' ? 1 : -1
+                            return 0
+                          })
+                          
+                          return filteredLeases.map((lease) => {
                         const rent = lease.rent || 0
                         const cadence = lease.rent_cadence || 'monthly'
                         let monthlyIncome = 0
@@ -1659,38 +1833,50 @@ export default function Dashboard() {
                             </td>
                           </tr>
                         )
-                      })}
-                      {monthlyIncomeLeases.length > 0 && (
-                        <tr className="bg-gray-100 font-semibold">
-                          <td colSpan={4} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            Total Monthly Income
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-green-600">
-                            ${monthlyIncomeLeases.reduce((sum, lease) => {
-                              const rent = lease.rent || 0
-                              const cadence = lease.rent_cadence || 'monthly'
-                              let monthlyIncome = 0
-                              switch (cadence.toLowerCase()) {
-                                case 'weekly':
-                                  monthlyIncome = rent * 4
-                                  break
-                                case 'bi-weekly':
-                                case 'biweekly':
-                                  monthlyIncome = rent * 2
-                                  break
-                                case 'monthly':
-                                default:
-                                  monthlyIncome = rent
-                                  break
-                              }
-                              return sum + monthlyIncome
-                            }, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                          })
+                        })()}
+                        {(() => {
+                          // Calculate total from filtered leases
+                          const filteredLeases = monthlyIncomeLeases.filter(lease => {
+                            if (monthlyIncomeCadenceFilter === 'all') return true
+                            const cadence = (lease.rent_cadence || 'monthly').toLowerCase()
+                            return cadence === monthlyIncomeCadenceFilter.toLowerCase()
+                          })
+                          const total = filteredLeases.reduce((sum, lease) => {
+                            const rent = lease.rent || 0
+                            const cadence = lease.rent_cadence || 'monthly'
+                            let monthlyIncome = 0
+                            switch (cadence.toLowerCase()) {
+                              case 'weekly':
+                                monthlyIncome = rent * 4
+                                break
+                              case 'bi-weekly':
+                              case 'biweekly':
+                                monthlyIncome = rent * 2
+                                break
+                              case 'monthly':
+                              default:
+                                monthlyIncome = rent
+                                break
+                            }
+                            return sum + monthlyIncome
+                          }, 0)
+                          
+                          return filteredLeases.length > 0 ? (
+                            <tr className="bg-gray-100 font-semibold">
+                              <td colSpan={4} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                Total Monthly Income
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-green-600">
+                                ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ) : null
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
 

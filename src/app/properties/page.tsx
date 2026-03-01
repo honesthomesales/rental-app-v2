@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Property } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 
-type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'isOccupied' | 'is_for_rent'
+type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'leaseStatus' | 'is_for_rent'
 type SortDirection = 'asc' | 'desc'
 
 type PropertyWithLease = Property & {
@@ -455,17 +455,14 @@ export default function PropertiesPage() {
                 </th>
                 <th 
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('isOccupied')}
+                  onClick={() => handleSort('leaseStatus')}
                 >
                   <div className="flex items-center">
-                    Status
-                    {sortField === 'isOccupied' && (
+                    Lease Status
+                    {sortField === 'leaseStatus' && (
                       <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                     )}
                   </div>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Lease Status
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -503,15 +500,6 @@ export default function PropertiesPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {property.tenantName}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        property.isOccupied 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {property.isOccupied ? 'Has Tenants' : 'Empty'}
-                      </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {property.leaseStatus ? (

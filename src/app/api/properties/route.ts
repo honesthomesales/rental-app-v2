@@ -120,6 +120,8 @@ export async function PUT(request: Request) {
 
     if (error) {
       console.error('Supabase error updating property:', error)
+      console.error('Full error object:', JSON.stringify(error, null, 2))
+      console.error('Update data that failed:', JSON.stringify(cleanUpdateData, null, 2))
       
       // Check if the error is about missing column
       if (error.message && (error.message.includes('column') && error.message.includes('does not exist') || error.message.includes('status'))) {
@@ -132,8 +134,25 @@ export async function PUT(request: Request) {
         )
       }
       
+      // Check if it's a constraint violation
+      if (error.message && (error.message.includes('check') || error.message.includes('constraint') || error.message.includes('violates'))) {
+        return NextResponse.json(
+          { 
+            error: 'Database constraint violation', 
+            details: error.message,
+            hint: 'The property_type value may not be allowed. Please run the SQL script add-other-property-type.sql in your Supabase SQL editor to allow "other" as a property type.'
+          },
+          { status: 500 }
+        )
+      }
+      
       return NextResponse.json(
-        { error: 'Database error', details: error.message },
+        { 
+          error: 'Database error', 
+          details: error.message,
+          code: error.code,
+          hint: error.hint
+        },
         { status: 500 }
       )
     }

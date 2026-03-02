@@ -130,10 +130,11 @@ export async function GET(request: Request) {
           console.log('No invoices found for date range:', startOfMonth, 'to', endOfMonth)
           // If no invoices, try to get expected rent from leases
           // Match Payments page logic: filter by status only, no date range check
+          // Only include 'occupied' status (exclude 'sold' for money calculations)
           const { data: leases, error: leasesError } = await supabaseServer
             .from('RENT_leases')
             .select('rent, rent_cadence')
-            .in('status', ['occupied', 'sold'])
+            .in('status', ['occupied'])
           
           if (!leasesError && leases) {
             // Calculate expected rent based on active leases and their cadence
@@ -282,8 +283,8 @@ export async function GET(request: Request) {
           })) || []
           
           // Filter leases with tenants for expected rent calculation
-          // Match Payments page logic: include occupied and sold
-          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied' || l.status === 'sold')
+          // Only include 'occupied' status (exclude 'sold' for money calculations)
+          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied')
         
           // OPTIMIZED: Use Maps for O(1) lookups instead of filtering arrays
           const paymentsByPropertyMap = new Map<string, number>()

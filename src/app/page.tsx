@@ -206,8 +206,9 @@ export default function Dashboard() {
           setOccupiedProperties(allPropsWithTenants)
           
           // Calculate monthly income leases (leases with tenants with rent info)
+          // Only include 'occupied' status (exclude 'sold' for money calculations)
           const incomeLeases = leasesData.filter((lease: any) => {
-            const isOccupied = lease.status === 'occupied' || lease.status === 'sold'
+            const isOccupied = lease.status === 'occupied'
             if (!isOccupied || !lease.property_id) return false
             const startDate = new Date(lease.lease_start_date)
             const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null

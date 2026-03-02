@@ -59,6 +59,7 @@ export async function GET(request: Request) {
     
     // Fetch leases with tenants with property and tenant data
     // Match Payments page logic: filter by status only
+    // Only include 'occupied' status (exclude 'sold' for money calculations)
     const { data: leases, error: leasesError } = await supabaseServer
       .from('RENT_leases')
       .select(`
@@ -66,7 +67,7 @@ export async function GET(request: Request) {
         RENT_properties(*),
         RENT_tenants(*)
       `)
-      .in('status', ['occupied', 'sold'])
+      .in('status', ['occupied'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)

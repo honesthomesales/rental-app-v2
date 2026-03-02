@@ -36,6 +36,27 @@ export async function GET(request: Request) {
     
     console.log('Properties found:', properties?.length || 0)
     
+    // Fetch all leases to identify properties with "sold" status (matching dashboard)
+    const { data: allLeases, error: allLeasesError } = await supabaseServer
+      .from('RENT_leases')
+      .select('id, property_id, status')
+
+    if (allLeasesError) {
+      console.error('Error fetching all leases:', allLeasesError)
+    }
+
+    // Create a set of property IDs that have "sold" status leases
+    const soldPropertyIds = new Set(
+      allLeases
+        ?.filter(lease => lease.status === 'sold')
+        .map(lease => lease.property_id)
+    )
+
+    // Filter out properties with "sold" status leases and "other" property type (matching dashboard)
+    const validProperties = properties?.filter(
+      property => !soldPropertyIds.has(property.id) && property.property_type !== 'other'
+    ) || []
+    
     // Calculate total insurance (monthly equivalent: annual premium / 12)
     // Profit page shows monthly profit, so use monthly equivalents
     const totalInsurance = (validProperties

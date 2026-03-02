@@ -184,12 +184,9 @@ export async function GET(request: Request) {
     const propertyDetails: any[] = []
     
     try {
-      // Get all properties
-      const { data: allProperties, error: propsError } = await supabaseServer
-        .from('RENT_properties')
-        .select('id, name, address')
-      
-      if (!propsError && allProperties) {
+      // Use validProperties (already filtered to exclude sold and other type)
+      // This ensures we only show properties that match dashboard logic
+      if (validProperties && validProperties.length > 0) {
         // OPTIMIZED: Fetch all data in parallel
         const [paymentsResult, invoicesResult, leasesResult, miscIncomeResult] = await Promise.all([
           supabaseServer
@@ -280,19 +277,18 @@ export async function GET(request: Request) {
           })
           
           // Build property details using efficient Map lookups
-          console.log('Building property details. Total properties:', allProperties?.length || 0)
+          // Calculate expected rent from active leases (matching dashboard logic exactly)
+          console.log('Building property details. Total valid properties:', validProperties?.length || 0)
           console.log('Payments by property count:', paymentsByProperty?.length || 0)
-          console.log('Invoices with leases count:', invoicesWithLeases?.length || 0)
           console.log('Misc income by property count:', miscIncomeByProperty?.length || 0)
           
-          allProperties.forEach((property: any) => {
+          validProperties.forEach((property: any) => {
             const rentCollectedForProperty = paymentsByPropertyMap.get(property.id) || 0
-            let expectedRentForProperty = invoicesByPropertyMap.get(property.id) || 0
+            let expectedRentForProperty = 0
             const miscIncomeForProperty = miscIncomeByPropertyMap.get(property.id) || 0
             
-            // If no invoices, calculate from active leases for this property
-            // Match dashboard calculation exactly
-            if (expectedRentForProperty === 0 && activeLeases) {
+            // Calculate expected rent from active leases for this property (matching dashboard logic)
+            if (activeLeases) {
               const propertyLeases = activeLeases.filter((l: any) => l.property_id === property.id)
               propertyLeases.forEach((lease: any) => {
                 const leaseStart = new Date(lease.lease_start_date)
@@ -300,6 +296,7 @@ export async function GET(request: Request) {
                 const monthStart = new Date(startOfMonth)
                 const monthEnd = new Date(endOfMonth)
                 
+                // Only include if lease is active during this month
                 if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
                   const rent = Number(lease.rent) || 0
                   const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'

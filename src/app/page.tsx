@@ -703,28 +703,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Late Payments and Total Owed Combined */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <ExclamationTriangleIcon className="h-8 w-8 text-red-600" />
-            </div>
-            <div className="ml-4 flex-1">
-              <p className="text-sm font-medium text-gray-500">Late Payments & Total Owed</p>
-              <div className="mt-1">
-                <p className="text-xl font-semibold text-gray-900">
-                  {metrics?.latePayments || 0} payments
-                </p>
-                <p className="text-xl font-semibold text-gray-900">
-                  ${metrics?.totalOwed?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Property Type Breakdown */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Type Breakdown</h2>

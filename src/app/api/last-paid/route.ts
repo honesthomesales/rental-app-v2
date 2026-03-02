@@ -85,29 +85,6 @@ export async function GET() {
       leases.forEach(l => leaseMap.set(l.id, l))
     }
 
-    // Fetch ALL payments to recalculate invoice balances (matching payments page logic)
-    const { data: allPayments, error: allPaymentsError } = await supabaseServer
-      .from('RENT_payments')
-      .select('invoice_id, amount, lease_id')
-      .not('invoice_id', 'is', null)
-
-    if (allPaymentsError) {
-      console.error('Error fetching all payments for balance calculation:', allPaymentsError)
-    }
-
-    // Group payments by invoice_id for balance recalculation (matching payments page logic)
-    const paymentsByInvoice = new Map<string, any[]>()
-    if (allPayments) {
-      allPayments.forEach(p => {
-        if (p.invoice_id) {
-          if (!paymentsByInvoice.has(p.invoice_id)) {
-            paymentsByInvoice.set(p.invoice_id, [])
-          }
-          paymentsByInvoice.get(p.invoice_id)!.push(p)
-        }
-      })
-    }
-
     // Calculate total owed per lease (matching payments page logic exactly)
     const today = new Date().toISOString().split('T')[0]
     const totalOwedByLease = new Map<string, number>()
@@ -116,7 +93,31 @@ export async function GET() {
     // For each occupied lease, calculate total owed the same way as payments page
     if (leases && !leasesError) {
       for (const lease of leases) {
-        // Fetch ALL invoices for this lease (matching payments page)
+        // Fetch payments for this specific lease (matching payments page: /api/payments?leaseId=...)
+        const { data: leasePayments, error: leasePaymentsError } = await supabaseServer
+          .from('RENT_payments')
+          .select('invoice_id, amount')
+          .eq('lease_id', lease.id)
+          .not('invoice_id', 'is', null)
+
+        if (leasePaymentsError) {
+          console.error(`Error fetching payments for lease ${lease.id}:`, leasePaymentsError)
+        }
+
+        // Group payments by invoice_id for this lease (matching payments page logic)
+        const paymentsByInvoice = new Map<string, any[]>()
+        if (leasePayments) {
+          leasePayments.forEach(p => {
+            if (p.invoice_id) {
+              if (!paymentsByInvoice.has(p.invoice_id)) {
+                paymentsByInvoice.set(p.invoice_id, [])
+              }
+              paymentsByInvoice.get(p.invoice_id)!.push(p)
+            }
+          })
+        }
+
+        // Fetch ALL invoices for this lease (matching payments page: /api/invoices?leaseId=...&to=...)
         const { data: leaseInvoices, error: leaseInvError } = await supabaseServer
           .from('RENT_invoices')
           .select(`
@@ -133,9 +134,12 @@ export async function GET() {
           `)
           .eq('lease_id', lease.id)
           .lte('due_date', today)
+          .order('due_date', { ascending: false })
 
         if (leaseInvError) {
           console.error(`Error fetching invoices for lease ${lease.id}:`, leaseInvError)
+          totalOwedByLease.set(lease.id, 0)
+          allInvoicesByLease.set(lease.id, [])
           continue
         }
 
@@ -176,6 +180,21 @@ export async function GET() {
           sum + parseFloat(inv.balance_due as any || 0), 0
         )
 
+        // Debug logging for 110 McDowell
+        if (lease.property_id && propertyIds.includes(lease.property_id)) {
+          const property = properties.find(p => p.id === lease.property_id)
+          if (property && (property.address?.toLowerCase().includes('mcdowell') || property.name?.toLowerCase().includes('mcdowell'))) {
+            console.log(`Last-Paid API - Lease ${lease.id} (${property.address}): totalOwed=${totalOwed}, unpaidCount=${unpaidInvoices.length}, validInvoices=${validInvoices.length}`)
+            console.log(`Last-Paid API - Unpaid invoices:`, unpaidInvoices.map(inv => ({
+              id: inv.id,
+              due_date: inv.due_date,
+              amount_total: inv.amount_total,
+              balance_due: inv.balance_due,
+              status: inv.status
+            })))
+          }
+        }
+
         totalOwedByLease.set(lease.id, totalOwed)
         allInvoicesByLease.set(lease.id, invoicesWithRecalculatedBalance)
       }
@@ -200,13 +219,28 @@ export async function GET() {
     })
     
     // Also add invoices from invoiceMap (for payments that might not be in occupied leases)
+    // Fetch all payments to recalculate balance for these invoices
+    const { data: allPayments, error: allPaymentsError } = await supabaseServer
+      .from('RENT_payments')
+      .select('invoice_id, amount')
+      .not('invoice_id', 'is', null)
+
+    const allPaymentsByInvoice = new Map<string, number>()
+    if (!allPaymentsError && allPayments) {
+      allPayments.forEach(p => {
+        if (p.invoice_id) {
+          allPaymentsByInvoice.set(
+            p.invoice_id,
+            (allPaymentsByInvoice.get(p.invoice_id) || 0) + parseFloat(p.amount as any || 0)
+          )
+        }
+      })
+    }
+
     invoiceMap.forEach((inv, id) => {
       if (!fullInvoiceMap.has(id)) {
         // Recalculate balance for this invoice
-        const linkedPayments = paymentsByInvoice.get(id) || []
-        const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
-          sum + parseFloat(payment.amount || 0), 0
-        )
+        const actualPaid = allPaymentsByInvoice.get(id) || 0
         const amountTotal = parseFloat(inv.amount_total as any || 0)
         fullInvoiceMap.set(id, {
           ...inv,

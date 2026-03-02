@@ -916,6 +916,272 @@ export default function LastPaidPage() {
           </div>
         </div>
       )}
+
+      {/* Generate Forms Modal */}
+      {showGenerateModal && selectedPropertyForGenerate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Generate Legal Forms</h2>
+              <button
+                onClick={() => {
+                  setShowGenerateModal(false)
+                  setSelectedPropertyForGenerate(null)
+                  setSelectedCounty('')
+                  setFormType('notice')
+                  setEjectmentReason('nonpayment')
+                  setViolationDescription('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Property / Tenant
+                </label>
+                <input
+                  type="text"
+                  value={`${selectedPropertyForGenerate.property_name} - ${selectedPropertyForGenerate.payments[0]?.tenant_name || ''}`}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  County
+                </label>
+                <select
+                  value={selectedCounty}
+                  onChange={(e) => setSelectedCounty(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select county...</option>
+                  <option value="Spartanburg">Spartanburg</option>
+                  <option value="Greenville">Greenville</option>
+                  <option value="Anderson">Anderson</option>
+                  <option value="Cherokee">Cherokee</option>
+                  <option value="Union">Union</option>
+                  <option value="Saluda">Saluda</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Form Type
+                </label>
+                <select
+                  value={formType}
+                  onChange={(e) => setFormType(e.target.value as 'notice' | 'ejectment' | 'both')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="notice">7-Day Notice</option>
+                  <option value="ejectment">Application for Ejectment</option>
+                  <option value="both">Both (Notice + Ejectment)</option>
+                </select>
+              </div>
+
+              {(formType === 'ejectment' || formType === 'both') && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Reason for Ejectment
+                    </label>
+                    <select
+                      value={ejectmentReason}
+                      onChange={(e) => setEjectmentReason(e.target.value as 'nonpayment' | 'endtenancy' | 'violation')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="nonpayment">Tenant fails or refuses to pay rent when due</option>
+                      <option value="endtenancy">Term of tenancy or occupancy has ended</option>
+                      <option value="violation">Terms or conditions of the lease have been violated</option>
+                    </select>
+                  </div>
+
+                  {ejectmentReason === 'violation' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Description of Violation
+                      </label>
+                      <textarea
+                        value={violationDescription}
+                        onChange={(e) => setViolationDescription(e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Describe the lease violation..."
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Download Format
+                </label>
+                <select
+                  value={downloadFormat}
+                  onChange={(e) => setDownloadFormat(e.target.value as 'pdf' | 'docx')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="pdf">PDF</option>
+                  <option value="docx">Word (DOCX)</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-gray-200 flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowGenerateModal(false)
+                    setSelectedPropertyForGenerate(null)
+                    setSelectedCounty('')
+                    setFormType('notice')
+                    setEjectmentReason('nonpayment')
+                    setViolationDescription('')
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleGenerateForms}
+                  disabled={generatingForm || !selectedCounty}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {generatingForm ? 'Generating...' : 'Generate Forms'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generated Forms Display Modal */}
+      {showFormsModal && generatedForms && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Generated Forms</h2>
+              <button
+                onClick={() => {
+                  setShowFormsModal(false)
+                  setGeneratedForms(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-6">
+              {generatedForms.notice && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">7-Day Notice</h3>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.notice}</pre>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={() => {
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf')
+                        } else {
+                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx')
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download Notice ({downloadFormat.toUpperCase()})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {generatedForms.ejectment && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Application for Ejectment (SCCA/732)</h3>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
+                  </div>
+                  <div className="mt-3 flex justify-end space-x-2">
+                    {generatedForms.ejectmentHTML && (
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([generatedForms.ejectmentHTML], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Application-for-Ejectment.html'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View HTML
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.ejectment, 'Application-for-Ejectment.pdf', generatedForms.ejectmentHTML)
+                        } else {
+                          downloadAsWord(generatedForms.ejectment, 'Application-for-Ejectment.docx')
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download ({downloadFormat.toUpperCase()})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {generatedForms.affidavit && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Affidavit of Item of Account (SCCA/716)</h3>
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.affidavit}</pre>
+                  </div>
+                  <div className="mt-3 flex justify-end space-x-2">
+                    {generatedForms.affidavitHTML && (
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([generatedForms.affidavitHTML], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'Affidavit-of-Item-of-Account.html'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View HTML
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (downloadFormat === 'pdf') {
+                          downloadAsPDF(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.pdf', generatedForms.affidavitHTML)
+                        } else {
+                          downloadAsWord(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.docx')
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download ({downloadFormat.toUpperCase()})
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

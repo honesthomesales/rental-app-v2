@@ -83,10 +83,20 @@ export async function GET() {
       leases.forEach(l => leaseMap.set(l.id, l))
     }
 
-    // Also fetch payments linked to invoices to recalculate invoice balance
+    // Fetch ALL payments to recalculate invoice balances
+    const { data: allPayments, error: allPaymentsError } = await supabaseServer
+      .from('RENT_payments')
+      .select('invoice_id, amount')
+      .not('invoice_id', 'is', null)
+
+    if (allPaymentsError) {
+      console.error('Error fetching all payments for balance calculation:', allPaymentsError)
+    }
+
+    // Calculate payments by invoice for balance recalculation
     const paymentsByInvoice = new Map<string, number>()
-    if (payments) {
-      payments.forEach(p => {
+    if (allPayments) {
+      allPayments.forEach(p => {
         if (p.invoice_id) {
           paymentsByInvoice.set(
             p.invoice_id,
@@ -96,7 +106,48 @@ export async function GET() {
       })
     }
 
-    // Group payments by property_id and take last 4
+    // Fetch ALL invoices for properties to calculate total owed
+    const today = new Date().toISOString().split('T')[0]
+    const { data: allInvoices, error: invoicesError } = await supabaseServer
+      .from('RENT_invoices')
+      .select(`
+        id,
+        property_id,
+        lease_id,
+        due_date,
+        period_start,
+        period_end,
+        amount_total,
+        amount_rent,
+        amount_late,
+        status
+      `)
+      .in('property_id', propertyIds)
+      .eq('status', 'OPEN')
+      .lt('due_date', today)
+
+    if (invoicesError) {
+      console.error('Error fetching invoices for total owed:', invoicesError)
+    }
+
+    // Calculate total owed per property (unpaid invoices before today)
+    const totalOwedByProperty = new Map<string, number>()
+    if (allInvoices) {
+      allInvoices.forEach(invoice => {
+        if (!invoice.property_id) return
+        const actualPaid = paymentsByInvoice.get(invoice.id) || 0
+        const amountTotal = parseFloat(invoice.amount_total as any || 0)
+        const balanceDue = amountTotal - actualPaid
+        if (balanceDue > 0) {
+          totalOwedByProperty.set(
+            invoice.property_id,
+            (totalOwedByProperty.get(invoice.property_id) || 0) + balanceDue
+          )
+        }
+      })
+    }
+
+    // Group payments by property_id and take last 4 (for display in details)
     const paymentsByProperty = new Map<string, any[]>()
     payments?.forEach(p => {
       if (!p.property_id) return
@@ -141,6 +192,7 @@ export async function GET() {
     // Build response grouped by property
     const result = properties.map(property => {
       const recentPayments = paymentsByProperty.get(property.id) || []
+      const totalOwed = totalOwedByProperty.get(property.id) || 0
       // Find the active lease for cadence info
       const activeLease = leases?.find(l =>
         l.property_id === property.id &&
@@ -153,6 +205,8 @@ export async function GET() {
         property_type: property.property_type,
         cadence: activeLease?.rent_cadence || null,
         rent: activeLease?.rent || null,
+        lease_id: activeLease?.id || null,
+        totalOwed: totalOwed,
         payments: recentPayments
       }
     })

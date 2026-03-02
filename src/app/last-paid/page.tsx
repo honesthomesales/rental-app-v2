@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
+import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface PaymentInvoice {
   id: string
@@ -60,6 +62,16 @@ export default function LastPaidPage() {
   const [paymentType, setPaymentType] = useState('Rent')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
+  const [selectedPropertyForGenerate, setSelectedPropertyForGenerate] = useState<PropertyPayments | null>(null)
+  const [selectedCounty, setSelectedCounty] = useState('')
+  const [generatingForm, setGeneratingForm] = useState(false)
+  const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
+  const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
+  const [violationDescription, setViolationDescription] = useState('')
+  const [generatedForms, setGeneratedForms] = useState<any>(null)
+  const [showFormsModal, setShowFormsModal] = useState(false)
+  const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
 
   useEffect(() => {
     fetchData()
@@ -285,6 +297,63 @@ export default function LastPaidPage() {
     }
   }
 
+  const handleGenerateForms = async () => {
+    if (!selectedPropertyForGenerate || !selectedCounty) {
+      alert('Please select a property and county')
+      return
+    }
+
+    if (!selectedPropertyForGenerate.lease_id) {
+      alert('No active lease found for this property')
+      return
+    }
+
+    if (formType === 'ejectment' || formType === 'both') {
+      if (ejectmentReason === 'nonpayment' && !selectedPropertyForGenerate.totalOwed) {
+        alert('No amount owed found for this tenant')
+        return
+      }
+      if (ejectmentReason === 'violation' && !violationDescription.trim()) {
+        alert('Please provide a description of the lease violation')
+        return
+      }
+    }
+
+    try {
+      setGeneratingForm(true)
+
+      const response = await fetch('/api/generate-ejectment-forms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tenantId: `${selectedPropertyForGenerate.property_name} - ${selectedPropertyForGenerate.payments[0]?.tenant_name || ''}`,
+          county: selectedCounty,
+          formType,
+          ejectmentReason,
+          violationDescription,
+          leaseId: selectedPropertyForGenerate.lease_id,
+        }),
+      })
+
+      if (response.ok) {
+        const forms = await response.json()
+        setGeneratedForms(forms)
+        setShowGenerateModal(false)
+        setShowFormsModal(true)
+      } else {
+        const errorData = await response.json()
+        alert(`Error generating forms: ${errorData.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error generating forms:', error)
+      alert('Failed to generate forms. Please try again.')
+    } finally {
+      setGeneratingForm(false)
+    }
+  }
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -501,12 +570,25 @@ export default function LastPaidPage() {
                       {formatCurrency(property.totalOwed)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => setExpandedProperty(isExpanded ? null : property.property_id)}
-                        className="px-3 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                      >
-                        {isExpanded ? 'Hide' : 'Detail'}
-                      </button>
+                      <div className="flex justify-center gap-2">
+                        <button
+                          onClick={() => setExpandedProperty(isExpanded ? null : property.property_id)}
+                          className="px-3 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                        >
+                          {isExpanded ? 'Hide' : 'Detail'}
+                        </button>
+                        {property.lease_id && (
+                          <button
+                            onClick={() => {
+                              setSelectedPropertyForGenerate(property)
+                              setShowGenerateModal(true)
+                            }}
+                            className="px-3 py-1 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                          >
+                            Forms
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )

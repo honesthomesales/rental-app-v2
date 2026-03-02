@@ -27,7 +27,7 @@ const navigation = [
   { name: 'Expenses', href: '/expenses', icon: ReceiptPercentIcon },
   { name: 'Deals', href: '/deals', icon: ShoppingBagIcon },
   { name: 'Last Paid', href: '/last-paid', icon: ClockIcon },
-  { name: 'Late Tenants', href: '/late-tenants', icon: ExclamationTriangleIcon },
+  // { name: 'Late Tenants', href: '/late-tenants', icon: ExclamationTriangleIcon }, // Hidden from menu but code kept
   { name: 'Profit', href: '/profit', icon: ChartBarIcon },
 ]
 

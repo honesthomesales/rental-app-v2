@@ -408,8 +408,23 @@ export default function LastPaidPage() {
         case 'cadence':
           return dir * (a.cadence || '').localeCompare(b.cadence || '')
         case 'lastPaid': {
-          const dateA = a.payments[0]?.payment_date || ''
-          const dateB = b.payments[0]?.payment_date || ''
+          // Find most recent paid payment for each property
+          const getLastPaidDate = (prop: PropertyPayments) => {
+            const paidPayments = prop.payments.filter((p: PaymentEntry) => {
+              if (!p.invoice) return false
+              const balance = parseFloat(p.invoice.recalculated_balance as any || 0)
+              return balance <= 0 && p.amount > 0
+            })
+            if (paidPayments.length === 0) return ''
+            paidPayments.sort((a: PaymentEntry, b: PaymentEntry) => {
+              const dateA = new Date(a.payment_date).getTime()
+              const dateB = new Date(b.payment_date).getTime()
+              return dateB - dateA
+            })
+            return paidPayments[0]?.payment_date || ''
+          }
+          const dateA = getLastPaidDate(a)
+          const dateB = getLastPaidDate(b)
           return dir * dateA.localeCompare(dateB)
         }
         case 'totalOwed': {
@@ -540,7 +555,22 @@ export default function LastPaidPage() {
               </tr>
             ) : (
               filteredAndSorted.map((property) => {
-                const lastPayment = property.payments[0]
+                // Find the most recent paid payment (where invoice balance <= 0)
+                const paidPayments = property.payments.filter((p: PaymentEntry) => {
+                  if (!p.invoice) return false
+                  const balance = parseFloat(p.invoice.recalculated_balance as any || 0)
+                  return balance <= 0 && p.amount > 0 // Only actual payments, not unpaid invoice placeholders
+                })
+                
+                // Sort paid payments by date (most recent first)
+                paidPayments.sort((a: PaymentEntry, b: PaymentEntry) => {
+                  const dateA = new Date(a.payment_date).getTime()
+                  const dateB = new Date(b.payment_date).getTime()
+                  return dateB - dateA
+                })
+                
+                const lastPaidPayment = paidPayments[0]
+                const lastPayment = property.payments[0] // For tenant name display
                 const isExpanded = expandedProperty === property.property_id
 
                 return (
@@ -564,7 +594,7 @@ export default function LastPaidPage() {
                       {cadenceBadge(property.cadence)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {formatDate(lastPayment?.payment_date)}
+                      {lastPaidPayment ? formatDate(lastPaidPayment.payment_date) : 'Never'}
                     </td>
                     <td className={`px-4 py-3 text-sm text-right font-medium ${property.totalOwed > 0 ? 'text-red-700' : 'text-green-700'}`}>
                       {formatCurrency(property.totalOwed)}

@@ -58,13 +58,15 @@ export async function GET(request: Request) {
     ) || []
     
     // Calculate total insurance (monthly equivalent: annual premium / 12)
+    // Use ALL properties for insurance (sold properties still have insurance)
     // Profit page shows monthly profit, so use monthly equivalents
-    const totalInsurance = (validProperties
+    const totalInsurance = (properties
       ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0) / 12
     
     // Calculate total taxes (monthly equivalent: annual tax / 12)
+    // Use ALL properties for taxes (sold properties still have taxes)
     // Profit page shows monthly profit, so use monthly equivalents
-    const totalTaxes = (validProperties
+    const totalTaxes = (properties
       ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0) / 12
     
     console.log('Total insurance:', totalInsurance)

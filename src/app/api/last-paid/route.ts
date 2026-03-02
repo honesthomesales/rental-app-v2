@@ -249,22 +249,125 @@ export async function GET() {
       }
     })
 
-    // Group payments by property_id and take last 4 (for display in details)
-    // Use full invoice map to get proper invoice information
+    // For each property, get:
+    // 1. All unpaid past invoices (status='OPEN', balance_due > 0, due_date < today) - these are unpaid past payments
+    // 2. Last 4 paid payments (where invoice balance <= 0)
     const paymentsByProperty = new Map<string, any[]>()
-    payments?.forEach(p => {
-      if (!p.property_id) return
-      const list = paymentsByProperty.get(p.property_id) || []
-      if (list.length < 4) {
-        // Get invoice from full invoice map (has recalculated balance)
-        const invoice = p.invoice_id ? fullInvoiceMap.get(p.invoice_id) : null
+    
+    // Process each property
+    properties.forEach(property => {
+      const propertyPayments: any[] = []
+      
+      // Find the active lease for this property
+      const activeLease = leases?.find(l =>
+        l.property_id === property.id &&
+        l.status === 'occupied'
+      )
+      
+      if (!activeLease) {
+        paymentsByProperty.set(property.id, [])
+        return
+      }
+      
+      // Get all invoices for this lease (from allInvoicesByLease)
+      const leaseInvoices = allInvoicesByLease.get(activeLease.id) || []
+      
+      // 1. Get all unpaid past invoices (due_date < today, balance > 0)
+      const unpaidPastInvoices = leaseInvoices.filter((inv: any) => {
+        const dueDate = new Date(inv.due_date)
+        const todayDate = new Date(today)
+        todayDate.setHours(0, 0, 0, 0)
+        return inv.status === 'OPEN' && 
+               parseFloat(inv.balance_due as any || 0) > 0 &&
+               dueDate < todayDate
+      })
+      
+      // For each unpaid past invoice, create a payment entry (even if no payment exists)
+      unpaidPastInvoices.forEach((invoice: any) => {
+        // Find payments linked to this invoice
+        const invoicePayments = payments?.filter(p => p.invoice_id === invoice.id) || []
         
+        if (invoicePayments.length > 0) {
+          // If there are payments, create entries for them
+          invoicePayments.forEach((p: any) => {
+            const lease = p.lease_id ? leaseMap.get(p.lease_id) : null
+            const tenantData = lease?.RENT_tenants
+            const tenantName = tenantData?.full_name ||
+              `${tenantData?.first_name || ''} ${tenantData?.last_name || ''}`.trim() || null
+            
+            propertyPayments.push({
+              id: p.id,
+              payment_date: p.payment_date,
+              amount: p.amount,
+              payment_type: p.payment_type,
+              notes: p.notes,
+              tenant_name: tenantName,
+              invoice: {
+                id: invoice.id,
+                due_date: invoice.due_date,
+                period_start: invoice.period_start,
+                period_end: invoice.period_end,
+                amount_total: invoice.amount_total,
+                amount_rent: invoice.amount_rent,
+                amount_late: invoice.amount_late,
+                status: invoice.balance_due <= 0 ? 'PAID' : invoice.status,
+                recalculated_balance: invoice.balance_due
+              }
+            })
+          })
+        } else {
+          // If no payments exist, create a placeholder entry for the unpaid invoice
+          const lease = activeLease
+          const tenantData = lease?.RENT_tenants
+          const tenantName = tenantData?.full_name ||
+            `${tenantData?.first_name || ''} ${tenantData?.last_name || ''}`.trim() || null
+          
+          propertyPayments.push({
+            id: `unpaid-${invoice.id}`,
+            payment_date: invoice.due_date, // Use due_date as payment_date for unpaid invoices
+            amount: 0,
+            payment_type: 'Unpaid',
+            notes: '',
+            tenant_name: tenantName,
+            invoice: {
+              id: invoice.id,
+              due_date: invoice.due_date,
+              period_start: invoice.period_start,
+              period_end: invoice.period_end,
+              amount_total: invoice.amount_total,
+              amount_rent: invoice.amount_rent,
+              amount_late: invoice.amount_late,
+              status: invoice.balance_due <= 0 ? 'PAID' : invoice.status,
+              recalculated_balance: invoice.balance_due
+            }
+          })
+        }
+      })
+      
+      // 2. Get last 4 paid payments (where invoice balance <= 0)
+      const paidPayments = payments
+        ?.filter(p => {
+          if (!p.property_id || p.property_id !== property.id) return false
+          const invoice = p.invoice_id ? fullInvoiceMap.get(p.invoice_id) : null
+          if (!invoice) return false
+          return parseFloat(invoice.recalculated_balance as any || 0) <= 0
+        })
+        .sort((a, b) => {
+          const dateA = new Date(a.payment_date).getTime()
+          const dateB = new Date(b.payment_date).getTime()
+          return dateB - dateA // Most recent first
+        })
+        .slice(0, 4) || []
+      
+      // Add paid payments to the list
+      paidPayments.forEach((p: any) => {
+        const invoice = p.invoice_id ? fullInvoiceMap.get(p.invoice_id) : null
         const lease = p.lease_id ? leaseMap.get(p.lease_id) : null
         const tenantData = lease?.RENT_tenants
         const tenantName = tenantData?.full_name ||
           `${tenantData?.first_name || ''} ${tenantData?.last_name || ''}`.trim() || null
-
-        list.push({
+        
+        propertyPayments.push({
           id: p.id,
           payment_date: p.payment_date,
           amount: p.amount,
@@ -279,12 +382,24 @@ export async function GET() {
             amount_total: invoice.amount_total,
             amount_rent: invoice.amount_rent,
             amount_late: invoice.amount_late,
-            status: invoice.status,
+            status: invoice.recalculated_balance <= 0 ? 'PAID' : invoice.status,
             recalculated_balance: invoice.recalculated_balance
           } : null
         })
-        paymentsByProperty.set(p.property_id, list)
-      }
+      })
+      
+      // Sort all payments by date (most recent first), with unpaid past invoices first
+      propertyPayments.sort((a, b) => {
+        // Unpaid invoices (with amount 0) should come first
+        if (a.amount === 0 && b.amount !== 0) return -1
+        if (a.amount !== 0 && b.amount === 0) return 1
+        // Then sort by date (most recent first)
+        const dateA = new Date(a.payment_date).getTime()
+        const dateB = new Date(b.payment_date).getTime()
+        return dateB - dateA
+      })
+      
+      paymentsByProperty.set(property.id, propertyPayments)
     })
 
     // Build response grouped by property

@@ -546,7 +546,12 @@ export default function LastPaidPage() {
                   </button>
                 </div>
 
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Last {property.payments.length} Payment{property.payments.length !== 1 ? 's' : ''}</h3>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                  {property.payments.filter(p => (p.invoice?.recalculated_balance || 0) > 0).length > 0 && (
+                    <span>Unpaid Past Payments & </span>
+                  )}
+                  Last 4 Paid Payments ({property.payments.length} total)
+                </h3>
 
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -579,7 +584,13 @@ export default function LastPaidPage() {
                           {payment.invoice ? formatCurrency(payment.invoice.amount_total) : '-'}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          {payment.invoice ? invoiceStatusBadge(payment.invoice.status) : '-'}
+                          {payment.invoice ? (
+                            (() => {
+                              const balance = parseFloat(payment.invoice.recalculated_balance as any || 0)
+                              const status = balance <= 0 ? 'PAID' : payment.invoice.status
+                              return invoiceStatusBadge(status)
+                            })()
+                          ) : '-'}
                         </td>
                         <td className="px-3 py-2 text-sm text-right">
                           {payment.invoice ? (

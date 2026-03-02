@@ -36,13 +36,15 @@ export async function GET(request: Request) {
     
     console.log('Properties found:', properties?.length || 0)
     
-    // Calculate total insurance (full annual premium) - same as dashboard
-    const totalInsurance = properties
-      ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
+    // Calculate total insurance (monthly equivalent: annual premium / 12)
+    // Profit page shows monthly profit, so use monthly equivalents
+    const totalInsurance = (validProperties
+      ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0) / 12
     
-    // Calculate total taxes (full annual tax) - same as dashboard
-    const totalTaxes = properties
-      ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
+    // Calculate total taxes (monthly equivalent: annual tax / 12)
+    // Profit page shows monthly profit, so use monthly equivalents
+    const totalTaxes = (validProperties
+      ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0) / 12
     
     console.log('Total insurance:', totalInsurance)
     console.log('Total taxes:', totalTaxes)

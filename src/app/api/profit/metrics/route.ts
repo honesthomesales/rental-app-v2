@@ -99,61 +99,36 @@ export async function GET(request: Request) {
         }
       }
       
-      // Get expected rent from invoices (due in this month)
-      const { data: invoices, error: invoicesError } = await supabaseServer
-        .from('RENT_invoices')
-        .select('*')
-        .gte('due_date', startOfMonth)
-        .lte('due_date', endOfMonth)
+      // Calculate expected rent from active leases (matching dashboard logic exactly)
+      // Match Payments page logic: filter by status only, no date range check
+      // Only include 'occupied' status (exclude 'sold' for money calculations)
+      const { data: leases, error: leasesError } = await supabaseServer
+        .from('RENT_leases')
+        .select('rent, rent_cadence')
+        .in('status', ['occupied'])
       
-      if (invoicesError) {
-        console.error('Error fetching invoices:', invoicesError)
-        console.error('Error details:', JSON.stringify(invoicesError, null, 2))
-      } else {
-        console.log('Successfully fetched', invoices?.length || 0, 'invoices')
-        
-        if (invoices && invoices.length > 0) {
-          // Log first invoice to see structure
-          console.log('Sample invoice structure:', JSON.stringify(invoices[0], null, 2))
+      if (!leasesError && leases) {
+        // Calculate expected rent based on active leases and their cadence
+        // Match Dashboard logic EXACTLY: weekly * 4, biweekly * 2, monthly * 1
+        leases.forEach((lease: any) => {
+          const rent = Number(lease.rent) || 0
+          const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
           
-          // Try different field name combinations for expected rent
-          invoices.forEach((invoice: any) => {
-            // Try amount_total first, then amount, then sum of amount_rent + amount_late + amount_other
-            const expected = Number(invoice.amount_total) || 
-                            Number(invoice.amount) || 
-                            ((Number(invoice.amount_rent) || 0) + 
-                             (Number(invoice.amount_late) || 0) + 
-                             (Number(invoice.amount_other) || 0))
-            expectedRent += expected
-          })
-        } else {
-          console.log('No invoices found for date range:', startOfMonth, 'to', endOfMonth)
-          // If no invoices, try to get expected rent from leases
-          // Match Payments page logic: filter by status only, no date range check
-          // Only include 'occupied' status (exclude 'sold' for money calculations)
-          const { data: leases, error: leasesError } = await supabaseServer
-            .from('RENT_leases')
-            .select('rent, rent_cadence')
-            .in('status', ['occupied'])
-          
-          if (!leasesError && leases) {
-            // Calculate expected rent based on active leases and their cadence
-            // Match Payments page: no date range filtering
-            leases.forEach((lease: any) => {
-              const rent = Number(lease.rent) || 0
-              const cadence = lease.rent_cadence?.toLowerCase()
-              
-              // Calculate monthly equivalent based on cadence
-              if (cadence === 'monthly') {
-                expectedRent += rent
-              } else if (cadence === 'biweekly') {
-                expectedRent += (rent * 26) / 12 // 26 payments per year / 12 months
-              } else if (cadence === 'weekly') {
-                expectedRent += (rent * 52) / 12 // 52 payments per year / 12 months
-              }
-            })
+          // Match dashboard calculation exactly
+          switch (cadence) {
+            case 'weekly':
+              expectedRent += rent * 4 // Weekly rent * 4 weeks per month
+              break
+            case 'bi-weekly':
+            case 'biweekly':
+              expectedRent += rent * 2 // Bi-weekly rent * 2 periods per month
+              break
+            case 'monthly':
+            default:
+              expectedRent += rent // Monthly rent as-is
+              break
           }
-        }
+        })
       }
     } catch (error) {
       console.error('Error fetching rent data:', error)
@@ -294,16 +269,9 @@ export async function GET(request: Request) {
             paymentsByPropertyMap.set(propId, (paymentsByPropertyMap.get(propId) || 0) + (parseFloat(p.amount) || 0))
           })
           
+          // Don't use invoices for expected rent - calculate from leases instead (matching dashboard)
+          // This ensures we match the dashboard calculation exactly
           const invoicesByPropertyMap = new Map<string, number>()
-          invoicesWithLeases?.forEach((inv: any) => {
-            const propId = inv.property_id || 'no-property'
-            const expected = Number(inv.amount_total) || 
-                            Number(inv.amount) || 
-                            ((Number(inv.amount_rent) || 0) + 
-                             (Number(inv.amount_late) || 0) + 
-                             (Number(inv.amount_other) || 0))
-            invoicesByPropertyMap.set(propId, (invoicesByPropertyMap.get(propId) || 0) + expected)
-          })
           
           const miscIncomeByPropertyMap = new Map<string, number>()
           miscIncomeByProperty?.forEach((m: any) => {
@@ -323,6 +291,7 @@ export async function GET(request: Request) {
             const miscIncomeForProperty = miscIncomeByPropertyMap.get(property.id) || 0
             
             // If no invoices, calculate from active leases for this property
+            // Match dashboard calculation exactly
             if (expectedRentForProperty === 0 && activeLeases) {
               const propertyLeases = activeLeases.filter((l: any) => l.property_id === property.id)
               propertyLeases.forEach((lease: any) => {
@@ -333,15 +302,21 @@ export async function GET(request: Request) {
                 
                 if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
                   const rent = Number(lease.rent) || 0
-                  const cadence = lease.rent_cadence?.toLowerCase()
+                  const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
                   
-                  // Calculate monthly equivalent based on cadence
-                  if (cadence === 'monthly') {
-                    expectedRentForProperty += rent
-                  } else if (cadence === 'biweekly') {
-                    expectedRentForProperty += (rent * 26) / 12 // 26 payments per year / 12 months
-                  } else if (cadence === 'weekly') {
-                    expectedRentForProperty += (rent * 52) / 12 // 52 payments per year / 12 months
+                  // Match dashboard calculation exactly
+                  switch (cadence) {
+                    case 'weekly':
+                      expectedRentForProperty += rent * 4 // Weekly rent * 4 weeks per month
+                      break
+                    case 'bi-weekly':
+                    case 'biweekly':
+                      expectedRentForProperty += rent * 2 // Bi-weekly rent * 2 periods per month
+                      break
+                    case 'monthly':
+                    default:
+                      expectedRentForProperty += rent // Monthly rent as-is
+                      break
                   }
                 }
               })

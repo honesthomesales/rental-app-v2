@@ -73,6 +73,7 @@ export async function GET() {
         tenant_id,
         rent,
         rent_cadence,
+        rent_due_day,
         status,
         lease_start_date,
         RENT_tenants(id, full_name, first_name, last_name)
@@ -420,6 +421,7 @@ export async function GET() {
         property_type: property.property_type,
         cadence: activeLease?.rent_cadence || null,
         rent: activeLease?.rent || null,
+        rent_due_day: activeLease?.rent_due_day || null,
         lease_id: activeLease?.id || null,
         totalOwed: totalOwed,
         payments: recentPayments

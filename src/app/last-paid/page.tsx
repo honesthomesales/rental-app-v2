@@ -33,6 +33,7 @@ interface PropertyPayments {
   property_type: string
   cadence: string | null
   rent: number | null
+  rent_due_day: number | null
   lease_id: string | null
   totalOwed: number
   payments: PaymentEntry[]
@@ -553,10 +554,71 @@ export default function LastPaidPage() {
     return dateStr
   }
 
+  // Check if a Friday is the active Friday for a monthly property
+  // Monthly properties only have one active Friday per month (closest to rent_due_day)
+  const isActiveFridayForMonthly = (fridayDateStr: string, property: PropertyPayments, allFridays: string[]) => {
+    const fridayDate = new Date(fridayDateStr + 'T00:00:00')
+    const rentDueDay = property.rent_due_day ?? 1
+    
+    // Get all Fridays in the same month
+    const monthFridays = allFridays.filter(f => {
+      const fDate = new Date(f + 'T00:00:00')
+      return fDate.getFullYear() === fridayDate.getFullYear() && 
+             fDate.getMonth() === fridayDate.getMonth()
+    })
+    
+    if (monthFridays.length === 0) return false
+    
+    // Find the Friday closest to rent_due_day (preferring before)
+    let closestFriday: string | null = null
+    
+    // First, check for exact match
+    const exactMatch = monthFridays.find(f => {
+      const fDate = new Date(f + 'T00:00:00')
+      return fDate.getDate() === rentDueDay
+    })
+    if (exactMatch) {
+      closestFriday = exactMatch
+    } else {
+      // Prefer Friday that comes BEFORE rent_due_day
+      const fridaysBefore = monthFridays.filter(f => {
+        const fDate = new Date(f + 'T00:00:00')
+        return fDate.getDate() <= rentDueDay
+      })
+      if (fridaysBefore.length > 0) {
+        closestFriday = fridaysBefore.reduce((closest, current) => {
+          const currentDate = new Date(current + 'T00:00:00')
+          const closestDate = new Date(closest + 'T00:00:00')
+          const currentDist = Math.abs(currentDate.getDate() - rentDueDay)
+          const closestDist = Math.abs(closestDate.getDate() - rentDueDay)
+          return currentDist < closestDist ? current : closest
+        })
+      } else {
+        // If no Friday before, choose closest overall
+        closestFriday = monthFridays.reduce((closest, current) => {
+          const currentDate = new Date(current + 'T00:00:00')
+          const closestDate = new Date(closest + 'T00:00:00')
+          const currentDist = Math.abs(currentDate.getDate() - rentDueDay)
+          const closestDist = Math.abs(closestDate.getDate() - rentDueDay)
+          return currentDist < closestDist ? current : closest
+        })
+      }
+    }
+    
+    return closestFriday === fridayDateStr
+  }
+
   // Get invoice status for a Friday date using the same logic as table view
   // This matches invoices to Friday periods based on invoice period_start/period_end
-  const getInvoiceForFriday = (property: PropertyPayments, fridayDateStr: string, cadence: string) => {
+  const getInvoiceForFriday = (property: PropertyPayments, fridayDateStr: string, cadence: string, allFridays: string[]) => {
     const fridayDate = new Date(fridayDateStr + 'T00:00:00')
+    
+    // For monthly properties, only show on the active Friday
+    if (cadence === 'monthly') {
+      if (!isActiveFridayForMonthly(fridayDateStr, property, allFridays)) {
+        return null // Not the active Friday for this month
+      }
+    }
     
     // Calculate the period for this Friday based on cadence
     let periodStart = new Date(fridayDate)
@@ -574,6 +636,10 @@ export default function LastPaidPage() {
       periodEnd = new Date(fridayDate.getFullYear(), fridayDate.getMonth() + 1, 0)
     }
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Period calculation',data:{property:property.property_name,fridayDate:fridayDateStr,cadence,periodStart:periodStart.toISOString().split('T')[0],periodEnd:periodEnd.toISOString().split('T')[0],totalPayments:property.payments.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     // Find invoices where the invoice period overlaps with this Friday's period
     // Use the same logic as table view - look at property.payments and their invoices
     const matchingPayments = property.payments.filter(p => {
@@ -583,8 +649,20 @@ export default function LastPaidPage() {
       const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
       
       // Check if invoice period overlaps with Friday's period
-      return invoiceStart <= periodEnd && invoiceEnd >= periodStart
+      const overlaps = invoiceStart <= periodEnd && invoiceEnd >= periodStart
+      
+      // #region agent log
+      if (overlaps) {
+        fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Invoice overlap match',data:{property:property.property_name,fridayDate:fridayDateStr,invoiceId:p.invoice.id,invoiceStart:p.invoice.period_start,invoiceEnd:p.invoice.period_end,periodStart:periodStart.toISOString().split('T')[0],periodEnd:periodEnd.toISOString().split('T')[0],overlaps},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+      }
+      // #endregion
+      
+      return overlaps
     })
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Matching payments found',data:{property:property.property_name,fridayDate:fridayDateStr,matchingCount:matchingPayments.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     
     if (matchingPayments.length === 0) {
       return null
@@ -601,7 +679,15 @@ export default function LastPaidPage() {
     // For now, return the first matching invoice (or we could aggregate if multiple)
     // In practice, there should be one invoice per period
     const invoices = Array.from(invoiceMap.values())
-    return invoices.length > 0 ? invoices[0] : null
+    const selectedInvoice = invoices.length > 0 ? invoices[0] : null
+    
+    // #region agent log
+    if (selectedInvoice) {
+      fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Selected invoice',data:{property:property.property_name,fridayDate:fridayDateStr,invoiceId:selectedInvoice.id,invoiceTotal:selectedInvoice.amount_total,recalculatedBalance:selectedInvoice.recalculated_balance,invoiceStatus:selectedInvoice.status,totalInvoices:invoices.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+    }
+    // #endregion
+    
+    return selectedInvoice
   }
 
   // Get cell value and color for grid view using same logic as table view
@@ -616,7 +702,7 @@ export default function LastPaidPage() {
     }
     
     // Get the invoice for this Friday using the same logic as table view
-    const invoice = getInvoiceForFriday(property, fridayDateStr, cadence)
+    const invoice = getInvoiceForFriday(property, fridayDateStr, cadence, gridDateColumns)
     
     if (!invoice) {
       // No invoice for this period - show as not applicable
@@ -633,9 +719,14 @@ export default function LastPaidPage() {
     const amountTotal = parseFloat(invoice.amount_total as any || 0)
     
     // Check if there are any payments for this invoice
-    const hasPayments = property.payments.some(p => 
+    const invoicePayments = property.payments.filter(p => 
       p.invoice?.id === invoice.id && parseFloat(p.amount as any || 0) > 0
     )
+    const hasPayments = invoicePayments.length > 0
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getGridCellValue',message:'Status determination',data:{property:property.property_name,fridayDate:fridayDateStr,invoiceId:invoice.id,balance,amountTotal,hasPayments,paymentCount:invoicePayments.length,status:balance <= 0 && hasPayments ? 'paid' : balance > 0 && hasPayments ? 'partial' : balance > 0 ? 'unpaid' : 'unknown'},timestamp:Date.now(),runId:'debug1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     
     if (balance <= 0 && hasPayments) {
       // Paid: same logic as table view (balance <= 0 means PAID)

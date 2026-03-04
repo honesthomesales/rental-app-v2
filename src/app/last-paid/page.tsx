@@ -565,48 +565,18 @@ export default function LastPaidPage() {
     periodStart.setDate(fridayDate.getDate() - 13) // 14 days before Friday
     const periodEnd = new Date(fridayDate)
     
-    // Find invoices that overlap with this period
+    // Find invoices where period_end falls in this Friday's bi-weekly period
     const matchingInvoices = property.payments
       .filter(p => {
         if (!p.invoice) return false
-        const invoiceStart = new Date(p.invoice.period_start + 'T00:00:00')
         const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
-        return invoiceStart <= periodEnd && invoiceEnd >= periodStart
+        // Check if invoice period_end is in this Friday's bi-weekly period
+        return invoiceEnd >= periodStart && invoiceEnd <= periodEnd
       })
       .map(p => p.invoice!)
     
-    if (matchingInvoices.length === 0) return false
-    
-    // Get unique invoices
-    const invoiceMap = new Map<string, PaymentInvoice>()
-    matchingInvoices.forEach(inv => {
-      if (!invoiceMap.has(inv.id)) {
-        invoiceMap.set(inv.id, inv)
-      }
-    })
-    
-    // For each invoice, find which Friday's period contains the invoice's period_end
-    // That Friday is the active one for this invoice
-    for (const invoice of invoiceMap.values()) {
-      const invoiceEnd = new Date(invoice.period_end + 'T00:00:00')
-      
-      // Find the Friday whose period contains the invoice's period_end
-      for (const f of allFridays) {
-        const fDate = new Date(f + 'T00:00:00')
-        const fPeriodStart = new Date(fDate)
-        fPeriodStart.setDate(fDate.getDate() - 13)
-        const fPeriodEnd = new Date(fDate)
-        
-        // If invoice period_end is in this Friday's period, this is the active Friday
-        if (invoiceEnd >= fPeriodStart && invoiceEnd <= fPeriodEnd) {
-          if (f === fridayDateStr) {
-            return true // This is the active Friday for this invoice
-          }
-        }
-      }
-    }
-    
-    return false
+    // If we found an invoice for this period, this is the active Friday
+    return matchingInvoices.length > 0
   }
 
   // Check if a Friday is the active Friday for a monthly property
@@ -704,24 +674,64 @@ export default function LastPaidPage() {
     }
     
     // For bi-weekly, only show on the active Friday for that bi-weekly period
+    // The active Friday is the one whose period_end is closest to the invoice's period_end
     if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      if (!isActiveFridayForBiWeekly(fridayDateStr, property, allFridays)) {
-        return null // Not the active Friday for this bi-weekly period - show "----"
+      // Find all invoices for this property
+      const allInvoices = property.payments
+        .filter(p => p.invoice)
+        .map(p => p.invoice!)
+      
+      // Get unique invoices
+      const invoiceMap = new Map<string, PaymentInvoice>()
+      allInvoices.forEach(inv => {
+        if (!invoiceMap.has(inv.id)) {
+          invoiceMap.set(inv.id, inv)
+        }
+      })
+      
+      // For each invoice, find which Friday's period_end is closest to the invoice's period_end
+      // Only show the invoice on that Friday
+      for (const invoice of invoiceMap.values()) {
+        const invoiceEnd = new Date(invoice.period_end + 'T00:00:00')
+        
+        // Find the Friday whose period_end is closest to the invoice's period_end
+        let closestFriday: string | null = null
+        let minDistance = Infinity
+        
+        for (const f of allFridays) {
+          const fDate = new Date(f + 'T00:00:00')
+          const distance = Math.abs(fDate.getTime() - invoiceEnd.getTime())
+          
+          // Check if invoice period_end falls within this Friday's bi-weekly period
+          const periodStart = new Date(fDate)
+          periodStart.setDate(fDate.getDate() - 13) // 14 days before Friday
+          const periodEnd = new Date(fDate)
+          
+          if (invoiceEnd >= periodStart && invoiceEnd <= periodEnd) {
+            if (distance < minDistance) {
+              minDistance = distance
+              closestFriday = f
+            }
+          }
+        }
+        
+        // If this Friday is the closest one for this invoice, return the invoice
+        if (closestFriday === fridayDateStr) {
+          return invoice
+        }
       }
+      
+      // No invoice found for this Friday
+      return null
     }
     
-    // For weekly and bi-weekly, use period overlap matching
-    // Calculate the period for this Friday based on cadence
+    // For weekly, use period overlap matching
+    // Calculate the period for this Friday
     let periodStart = new Date(fridayDate)
     let periodEnd = new Date(fridayDate)
     
-    if (cadence === 'weekly') {
-      // Weekly: Saturday (6 days before Friday) to Friday
-      periodStart.setDate(fridayDate.getDate() - 6)
-    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      // Bi-weekly: Saturday (13 days before Friday) to Friday
-      periodStart.setDate(fridayDate.getDate() - 13)
-    }
+    // Weekly: Saturday (6 days before Friday) to Friday
+    periodStart.setDate(fridayDate.getDate() - 6)
     
     // Find invoices where the invoice period overlaps with this Friday's period
     // Use the same logic as table view - look at property.payments and their invoices
@@ -810,15 +820,8 @@ export default function LastPaidPage() {
         color: 'bg-red-200', // red for zero owed
         textColor: 'text-gray-900'
       }
-    } else if (balance <= 0 && hasPayments) {
-      // Fully paid: balance <= 0 means fully paid - show payment amount in green
-      return {
-        value: formatCurrency(totalPaid),
-        color: 'bg-green-200', // green for fully paid
-        textColor: 'text-gray-900'
-      }
-    } else if (hasPayments && totalPaid >= amountTotal) {
-      // Fully paid: payment amount >= owed - show payment amount in green
+    } else if (hasPayments && (balance <= 0 || totalPaid >= amountTotal)) {
+      // Fully paid: balance <= 0 OR payment amount >= owed - show payment amount in green
       return {
         value: formatCurrency(totalPaid),
         color: 'bg-green-200', // green for fully paid

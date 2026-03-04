@@ -822,9 +822,12 @@ export default function LastPaidPage() {
     const amountTotal = parseFloat(invoice.amount_total as any || 0)
     
     // Check if there are any payments for this invoice
-    const invoicePayments = property.payments.filter(p => 
-      p.invoice?.id === invoice.id && parseFloat(p.amount as any || 0) > 0
-    )
+    // Look for payments that match the invoice ID, including those with amount > 0
+    const invoicePayments = property.payments.filter(p => {
+      const paymentInvoiceId = p.invoice?.id
+      const paymentAmount = parseFloat(p.amount as any || 0)
+      return paymentInvoiceId === invoice.id && paymentAmount > 0
+    })
     const hasPayments = invoicePayments.length > 0
     const totalPaid = invoicePayments.reduce((sum, p) => sum + parseFloat(p.amount as any || 0), 0)
     
@@ -840,7 +843,10 @@ export default function LastPaidPage() {
         totalPaid,
         hasPayments,
         invoiceId: invoice.id,
-        isFullyPaid: balance <= 0 || totalPaid >= amountTotal
+        isFullyPaid: balance <= 0 || totalPaid >= amountTotal,
+        invoicePayments: invoicePayments.map(p => ({ id: p.id, amount: p.amount, invoiceId: p.invoice?.id })),
+        allPaymentsForProperty: property.payments.length,
+        paymentsWithInvoice: property.payments.filter(p => p.invoice?.id).map(p => ({ id: p.id, invoiceId: p.invoice?.id, amount: p.amount }))
       })
     }
     

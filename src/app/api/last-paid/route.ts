@@ -345,7 +345,8 @@ export async function GET() {
         }
       })
       
-      // 2. Get last 4 paid payments (where invoice balance <= 0)
+      // 2. Get last 4 paid payments (where invoice balance <= 0) for table view
+      // But for grid view, we need ALL invoices, so we'll add all invoices below
       const paidPayments = payments
         ?.filter(p => {
           if (!p.property_id || p.property_id !== property.id) return false
@@ -387,6 +388,71 @@ export async function GET() {
             recalculated_balance: invoice.recalculated_balance
           } : null
         })
+      })
+      
+      // 3. Add ALL other invoices for this lease (for grid view)
+      // These are invoices that aren't already in propertyPayments
+      const invoiceIdsInPayments = new Set(propertyPayments.map((p: any) => p.invoice?.id).filter(Boolean))
+      const allOtherInvoices = leaseInvoices.filter((inv: any) => !invoiceIdsInPayments.has(inv.id))
+      
+      // For each invoice, find all payments linked to it (from ALL payments, not just recent ones)
+      allOtherInvoices.forEach((invoice: any) => {
+        // Find all payments for this invoice from the full payments array
+        const invoicePayments = payments?.filter(p => 
+          p.invoice_id === invoice.id && 
+          (p.property_id === property.id || (p.lease_id && p.lease_id === activeLease?.id))
+        ) || []
+        
+        const lease = activeLease
+        const tenantData = lease?.RENT_tenants
+        const tenantName = tenantData?.full_name ||
+          `${tenantData?.first_name || ''} ${tenantData?.last_name || ''}`.trim() || null
+        
+        if (invoicePayments.length > 0) {
+          // Add all payments for this invoice
+          invoicePayments.forEach((p: any) => {
+            propertyPayments.push({
+              id: p.id,
+              payment_date: p.payment_date,
+              amount: p.amount,
+              payment_type: p.payment_type,
+              notes: p.notes,
+              tenant_name: tenantName,
+              invoice: {
+                id: invoice.id,
+                due_date: invoice.due_date,
+                period_start: invoice.period_start,
+                period_end: invoice.period_end,
+                amount_total: invoice.amount_total,
+                amount_rent: invoice.amount_rent,
+                amount_late: invoice.amount_late,
+                status: invoice.balance_due <= 0 ? 'PAID' : invoice.status,
+                recalculated_balance: invoice.balance_due
+              }
+            })
+          })
+        } else {
+          // Invoice with no payments - add as placeholder
+          propertyPayments.push({
+            id: `invoice-${invoice.id}`,
+            payment_date: invoice.due_date,
+            amount: 0,
+            payment_type: 'Invoice',
+            notes: '',
+            tenant_name: tenantName,
+            invoice: {
+              id: invoice.id,
+              due_date: invoice.due_date,
+              period_start: invoice.period_start,
+              period_end: invoice.period_end,
+              amount_total: invoice.amount_total,
+              amount_rent: invoice.amount_rent,
+              amount_late: invoice.amount_late,
+              status: invoice.balance_due <= 0 ? 'PAID' : invoice.status,
+              recalculated_balance: invoice.balance_due
+            }
+          })
+        }
       })
       
       // Sort all payments by date (most recent first), with unpaid past invoices first

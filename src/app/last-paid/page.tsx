@@ -447,25 +447,51 @@ export default function LastPaidPage() {
     return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">-</span>
   }
 
-  // Calculate date columns for grid view (last 9 unique payment dates)
-  const gridDateColumns = useMemo(() => {
-    const allDates = new Set<string>()
-    filteredAndSorted.forEach(property => {
-      property.payments.forEach(payment => {
-        if (payment.payment_date) {
-          allDates.add(payment.payment_date)
-        }
-      })
-    })
+  // Determine the least cadence (most frequent) among filtered properties
+  const gridCadence = useMemo(() => {
+    if (filteredAndSorted.length === 0) return 'weekly'
     
-    const sortedDates = Array.from(allDates)
-      .map(date => new Date(date + 'T00:00:00'))
-      .sort((a, b) => b.getTime() - a.getTime())
-      .slice(0, 9)
-      .map(date => date.toISOString().split('T')[0])
+    const cadences = filteredAndSorted
+      .map(p => p.cadence?.toLowerCase() || '')
+      .filter(c => c)
     
-    return sortedDates
+    if (cadences.some(c => c === 'weekly')) return 'weekly'
+    if (cadences.some(c => c === 'biweekly' || c === 'bi-weekly')) return 'biweekly'
+    if (cadences.some(c => c === 'monthly')) return 'monthly'
+    return 'weekly' // default
   }, [filteredAndSorted])
+
+  // Calculate date columns for grid view based on least cadence
+  const gridDateColumns = useMemo(() => {
+    const today = new Date()
+    const dates: string[] = []
+    
+    if (gridCadence === 'weekly') {
+      // Generate last 9 weeks (going back from today)
+      for (let i = 0; i < 9; i++) {
+        const date = new Date(today)
+        date.setDate(date.getDate() - (i * 7))
+        dates.push(date.toISOString().split('T')[0])
+      }
+    } else if (gridCadence === 'biweekly') {
+      // Generate last 9 bi-weekly periods (every 14 days)
+      for (let i = 0; i < 9; i++) {
+        const date = new Date(today)
+        date.setDate(date.getDate() - (i * 14))
+        dates.push(date.toISOString().split('T')[0])
+      }
+    } else {
+      // Monthly - generate last 9 months
+      for (let i = 0; i < 9; i++) {
+        const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
+        dates.push(date.toISOString().split('T')[0])
+      }
+    }
+    
+    return dates.sort((a, b) => {
+      return new Date(b).getTime() - new Date(a).getTime()
+    })
+  }, [gridCadence])
 
   // Format date for grid header (M/D format)
   const formatGridDate = (dateStr: string) => {
@@ -475,103 +501,166 @@ export default function LastPaidPage() {
     return `${month}/${day}`
   }
 
+  // Get which period a date belongs to based on cadence
+  const getPeriodKey = (dateStr: string, cadence: string) => {
+    const date = new Date(dateStr + 'T00:00:00')
+    const c = cadence.toLowerCase()
+    
+    if (c === 'weekly') {
+      // Week period: Monday to Sunday
+      const dayOfWeek = date.getDay()
+      const monday = new Date(date)
+      monday.setDate(date.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+      return monday.toISOString().split('T')[0]
+    } else if (c === 'biweekly' || c === 'bi-weekly') {
+      // Bi-weekly: find the start of the 2-week period
+      // Use a simple approach: round down to nearest 14 days from a reference
+      const reference = new Date('2024-01-01') // Reference date
+      const daysSinceRef = Math.floor((date.getTime() - reference.getTime()) / (1000 * 60 * 60 * 24))
+      const periodStart = new Date(reference)
+      periodStart.setDate(reference.getDate() + Math.floor(daysSinceRef / 14) * 14)
+      return periodStart.toISOString().split('T')[0]
+    } else if (c === 'monthly') {
+      // Monthly: first day of the month
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+    }
+    return dateStr
+  }
+
+  // Get period status for a property
+  const getPeriodStatus = (property: PropertyPayments, periodKey: string, cadence: string) => {
+    const periodStart = new Date(periodKey + 'T00:00:00')
+    let periodEnd = new Date(periodStart)
+    
+    if (cadence === 'weekly') {
+      periodEnd.setDate(periodStart.getDate() + 6)
+    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
+      periodEnd.setDate(periodStart.getDate() + 13)
+    } else if (cadence === 'monthly') {
+      periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 1, 0)
+    }
+    
+    // Find all invoices that overlap with this period
+    const periodInvoices = property.payments
+      .filter(p => {
+        if (!p.invoice) return false
+        const invoiceStart = new Date(p.invoice.period_start + 'T00:00:00')
+        const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
+        
+        // Check if invoice period overlaps with our period
+        return invoiceStart <= periodEnd && invoiceEnd >= periodStart
+      })
+      .map(p => p.invoice!)
+    
+    // Remove duplicates by invoice ID
+    const uniqueInvoices = new Map<string, PaymentInvoice>()
+    periodInvoices.forEach(inv => {
+      if (!uniqueInvoices.has(inv.id)) {
+        uniqueInvoices.set(inv.id, inv)
+      }
+    })
+    
+    // Get all payments for these invoices
+    const invoiceIds = Array.from(uniqueInvoices.keys())
+    const periodPayments = property.payments.filter(p => 
+      p.invoice && invoiceIds.includes(p.invoice.id)
+    )
+    
+    if (uniqueInvoices.size === 0) {
+      return { status: 'not-applicable', total: 0, paid: 0, balance: 0 }
+    }
+    
+    // Calculate total owed and paid for this period
+    let totalOwed = 0
+    let totalPaid = 0
+    
+    uniqueInvoices.forEach(inv => {
+      const invoiceTotal = parseFloat(inv.amount_total as any || 0)
+      totalOwed += invoiceTotal
+      
+      // Sum payments for this invoice
+      const invoicePayments = periodPayments.filter(p => p.invoice?.id === inv.id)
+      const invoicePaid = invoicePayments.reduce((sum, p) => 
+        sum + parseFloat(p.amount as any || 0), 0
+      )
+      totalPaid += invoicePaid
+    })
+    
+    const balance = totalOwed - totalPaid
+    
+    if (balance <= 0 && totalPaid > 0) {
+      return { status: 'paid', total: totalOwed, paid: totalPaid, balance: balance }
+    } else if (balance > 0 && totalPaid > 0) {
+      return { status: 'partial', total: totalOwed, paid: totalPaid, balance: balance }
+    } else {
+      return { status: 'unpaid', total: totalOwed, paid: totalPaid, balance: balance }
+    }
+  }
+
   // Get cell value and color for grid view
   const getGridCellValue = (property: PropertyPayments, dateStr: string) => {
     const cadence = property.cadence?.toLowerCase() || ''
+    if (!cadence) {
+      return {
+        value: '----',
+        color: 'bg-green-200',
+        textColor: 'text-gray-600'
+      }
+    }
+    
+    const periodKey = getPeriodKey(dateStr, cadence)
+    const periodStatus = getPeriodStatus(property, periodKey, cadence)
+    
+    // Check if this date is within the period for this cadence
     const date = new Date(dateStr + 'T00:00:00')
+    const periodStart = new Date(periodKey + 'T00:00:00')
+    let periodEnd = new Date(periodStart)
     
-    // Find payment for this date (exact match)
-    const payment = property.payments.find(p => {
-      const paymentDate = new Date(p.payment_date + 'T00:00:00')
-      return paymentDate.toISOString().split('T')[0] === dateStr
-    })
+    if (cadence === 'weekly') {
+      periodEnd.setDate(periodStart.getDate() + 6)
+    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
+      periodEnd.setDate(periodStart.getDate() + 13)
+    } else if (cadence === 'monthly') {
+      periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 1, 0)
+    }
     
-    if (payment) {
-      const invoice = payment.invoice
-      const amount = parseFloat(payment.amount as any || 0)
-      
-      if (invoice) {
-        const balance = parseFloat(invoice.recalculated_balance as any || 0)
-        
-        // Paid (balance <= 0 and amount > 0) - light green
-        if (balance <= 0 && amount > 0) {
-          // Format: show as number if whole, otherwise currency
-          const displayValue = amount % 1 === 0 ? amount.toString() : formatCurrency(amount)
-          return {
-            value: displayValue,
-            color: 'bg-green-100', // light green
-            textColor: 'text-gray-900'
-          }
-        }
-        
-        // Unpaid invoice (balance > 0) - red
-        if (balance > 0) {
-          return {
-            value: formatCurrency(balance),
-            color: 'bg-red-200', // red
-            textColor: 'text-gray-900'
-          }
-        }
-      }
-      
-      // Has payment but no invoice - light green
-      if (amount > 0) {
-        const displayValue = amount % 1 === 0 ? amount.toString() : formatCurrency(amount)
-        return {
-          value: displayValue,
-          color: 'bg-green-100', // light green
-          textColor: 'text-gray-900'
-        }
-      }
-      
-      // Payment with 0 amount (unpaid placeholder) - red
+    const isInPeriod = date >= periodStart && date <= periodEnd
+    
+    if (!isInPeriod) {
+      // Date is not in this property's period - show as not applicable
       return {
-        value: '$0',
-        color: 'bg-red-200', // red
-        textColor: 'text-gray-900'
+        value: '----',
+        color: 'bg-green-200', // darker green
+        textColor: 'text-gray-600'
       }
     }
     
-    // No payment found - determine if date is applicable for this cadence
-    // This is a simplified check. In a full implementation, we'd need:
-    // - Lease start date to calculate anchor dates
-    // - Rent due day for monthly cadence
-    // - Payment history to determine pattern
-    
-    // For now, use a heuristic: check if other properties with same cadence have payments on nearby dates
-    const hasNearbyPayments = filteredAndSorted
-      .filter(p => {
-        const pCadence = p.cadence?.toLowerCase() || ''
-        return pCadence === cadence && p.property_id !== property.property_id
-      })
-      .some(p => {
-        return p.payments.some(pay => {
-          const payDate = new Date(pay.payment_date + 'T00:00:00')
-          const daysDiff = Math.abs((payDate.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-          // Check if payment is within cadence period
-          if (cadence === 'weekly') return daysDiff <= 3 // Within 3 days
-          if (cadence === 'biweekly' || cadence === 'bi-weekly') return daysDiff <= 7 // Within 7 days
-          if (cadence === 'monthly') return daysDiff <= 15 // Within 15 days
-          return false
-        })
-      })
-    
-    // If other properties with same cadence have payments around this date,
-    // this property should too (missing payment - red)
-    // Otherwise, it's likely not applicable (darker green with ----)
-    if (hasNearbyPayments) {
+    // Date is in period - show period status
+    if (periodStatus.status === 'paid') {
       return {
-        value: '',
-        color: 'bg-red-200', // red - missing payment
+        value: '----',
+        color: 'bg-green-200', // darker green for paid periods
+        textColor: 'text-gray-600'
+      }
+    } else if (periodStatus.status === 'unpaid') {
+      return {
+        value: periodStatus.total > 0 ? formatCurrency(periodStatus.total) : '',
+        color: 'bg-red-200', // red for unpaid
         textColor: 'text-gray-900'
       }
-    }
-    
-    // Not applicable for this cadence - darker green with ----
-    return {
-      value: '----',
-      color: 'bg-green-200', // darker green
-      textColor: 'text-gray-600'
+    } else if (periodStatus.status === 'partial') {
+      return {
+        value: formatCurrency(periodStatus.balance),
+        color: 'bg-yellow-200', // yellow for partially paid
+        textColor: 'text-gray-900'
+      }
+    } else {
+      // not-applicable
+      return {
+        value: '----',
+        color: 'bg-green-200', // darker green
+        textColor: 'text-gray-600'
+      }
     }
   }
 

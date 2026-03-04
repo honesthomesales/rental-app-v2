@@ -783,9 +783,6 @@ export default function LastPaidPage() {
       return invoiceStart <= periodEnd && invoiceEnd >= periodStart
     })
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Matching payments found',data:{property:property.property_name,fridayDate:fridayDateStr,matchingCount:matchingPayments.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     
     if (matchingPayments.length === 0) {
       return null
@@ -804,11 +801,6 @@ export default function LastPaidPage() {
     const invoices = Array.from(invoiceMap.values())
     const selectedInvoice = invoices.length > 0 ? invoices[0] : null
     
-    // #region agent log
-    if (selectedInvoice) {
-      fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Selected invoice',data:{property:property.property_name,fridayDate:fridayDateStr,invoiceId:selectedInvoice.id,invoiceTotal:selectedInvoice.amount_total,recalculatedBalance:selectedInvoice.recalculated_balance,invoiceStatus:selectedInvoice.status,totalInvoices:invoices.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-    }
-    // #endregion
     
     return selectedInvoice
   }
@@ -854,21 +846,6 @@ export default function LastPaidPage() {
     // Red only when zero or no invoice for that date
     // Show amounts when period had a payment (not "----" when paid)
     
-    // Debug logging for specific issues
-    if (property.property_name === '101 longstaff' && fridayDateStr === '2026-02-13') {
-      console.log('DEBUG 101 longstaff 2/13:', {
-        balance,
-        amountTotal,
-        totalPaid,
-        hasPayments,
-        invoiceId: invoice.id,
-        isFullyPaid: balance <= 0 || totalPaid >= amountTotal,
-        invoicePayments: invoicePayments.map(p => ({ id: p.id, amount: p.amount, invoiceId: p.invoice?.id })),
-        allPaymentsForProperty: property.payments.length,
-        paymentsWithInvoice: property.payments.filter(p => p.invoice?.id).map(p => ({ id: p.id, invoiceId: p.invoice?.id, amount: p.amount }))
-      })
-    }
-    
     if (amountTotal === 0) {
       // Zero owed - show red
       return {
@@ -902,9 +879,9 @@ export default function LastPaidPage() {
       }
     } else if (balance > 0 && !hasPayments) {
       // Unpaid: balance > 0 and no payments
-      // Show total amount in red
+      // Show "----" in red (don't show amount)
       return {
-        value: formatCurrency(amountTotal),
+        value: '----',
         color: 'bg-red-200', // red for unpaid
         textColor: 'text-gray-900'
       }

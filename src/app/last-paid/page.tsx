@@ -553,89 +553,59 @@ export default function LastPaidPage() {
     return dateStr
   }
 
-  // Get period status for a property
-  // periodKey is the Friday date for weekly/bi-weekly, or first of month for monthly
-  const getPeriodStatus = (property: PropertyPayments, periodKey: string, cadence: string) => {
-    const periodKeyDate = new Date(periodKey + 'T00:00:00')
-    let periodStart = new Date(periodKeyDate)
-    let periodEnd = new Date(periodKeyDate)
+  // Get invoice status for a Friday date using the same logic as table view
+  // This matches invoices to Friday periods based on invoice period_start/period_end
+  const getInvoiceForFriday = (property: PropertyPayments, fridayDateStr: string, cadence: string) => {
+    const fridayDate = new Date(fridayDateStr + 'T00:00:00')
+    
+    // Calculate the period for this Friday based on cadence
+    let periodStart = new Date(fridayDate)
+    let periodEnd = new Date(fridayDate)
     
     if (cadence === 'weekly') {
-      // Weekly period: Saturday (day before Friday) to Friday
-      periodStart.setDate(periodKeyDate.getDate() - 6) // Previous Saturday
-      periodEnd = new Date(periodKeyDate) // Friday
+      // Weekly: Saturday (6 days before Friday) to Friday
+      periodStart.setDate(fridayDate.getDate() - 6)
     } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      // Bi-weekly period: Saturday (14 days before Friday) to Friday
-      periodStart.setDate(periodKeyDate.getDate() - 13) // 14 days before Friday
-      periodEnd = new Date(periodKeyDate) // Friday
+      // Bi-weekly: Saturday (13 days before Friday) to Friday
+      periodStart.setDate(fridayDate.getDate() - 13)
     } else if (cadence === 'monthly') {
-      // Monthly period: first day to last day of month
-      periodStart = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth(), 1)
-      periodEnd = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth() + 1, 0)
+      // Monthly: first day of month to last day of month
+      periodStart = new Date(fridayDate.getFullYear(), fridayDate.getMonth(), 1)
+      periodEnd = new Date(fridayDate.getFullYear(), fridayDate.getMonth() + 1, 0)
     }
     
-    // Find all invoices that overlap with this period
-    const periodInvoices = property.payments
-      .filter(p => {
-        if (!p.invoice) return false
-        const invoiceStart = new Date(p.invoice.period_start + 'T00:00:00')
-        const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
-        
-        // Check if invoice period overlaps with our period
-        return invoiceStart <= periodEnd && invoiceEnd >= periodStart
-      })
-      .map(p => p.invoice!)
+    // Find invoices where the invoice period overlaps with this Friday's period
+    // Use the same logic as table view - look at property.payments and their invoices
+    const matchingPayments = property.payments.filter(p => {
+      if (!p.invoice) return false
+      
+      const invoiceStart = new Date(p.invoice.period_start + 'T00:00:00')
+      const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
+      
+      // Check if invoice period overlaps with Friday's period
+      return invoiceStart <= periodEnd && invoiceEnd >= periodStart
+    })
     
-    // Remove duplicates by invoice ID
-    const uniqueInvoices = new Map<string, PaymentInvoice>()
-    periodInvoices.forEach(inv => {
-      if (!uniqueInvoices.has(inv.id)) {
-        uniqueInvoices.set(inv.id, inv)
+    if (matchingPayments.length === 0) {
+      return null
+    }
+    
+    // Get unique invoices (same invoice might have multiple payments)
+    const invoiceMap = new Map<string, PaymentInvoice>()
+    matchingPayments.forEach(p => {
+      if (p.invoice && !invoiceMap.has(p.invoice.id)) {
+        invoiceMap.set(p.invoice.id, p.invoice)
       }
     })
     
-    // Get all payments for these invoices
-    const invoiceIds = Array.from(uniqueInvoices.keys())
-    const periodPayments = property.payments.filter(p => 
-      p.invoice && invoiceIds.includes(p.invoice.id)
-    )
-    
-    if (uniqueInvoices.size === 0) {
-      return { status: 'not-applicable', total: 0, paid: 0, balance: 0 }
-    }
-    
-    // Calculate total owed and paid for this period
-    let totalOwed = 0
-    let totalPaid = 0
-    
-    uniqueInvoices.forEach(inv => {
-      const invoiceTotal = parseFloat(inv.amount_total as any || 0)
-      totalOwed += invoiceTotal
-      
-      // Sum payments for this invoice
-      const invoicePayments = periodPayments.filter(p => p.invoice?.id === inv.id)
-      const invoicePaid = invoicePayments.reduce((sum, p) => 
-        sum + parseFloat(p.amount as any || 0), 0
-      )
-      totalPaid += invoicePaid
-    })
-    
-    const balance = totalOwed - totalPaid
-    
-    // Determine status: paid if balance <= 0 and we have payments
-    if (balance <= 0 && totalPaid > 0) {
-      return { status: 'paid', total: totalOwed, paid: totalPaid, balance: balance }
-    } else if (balance > 0 && totalPaid > 0) {
-      return { status: 'partial', total: totalOwed, paid: totalPaid, balance: balance }
-    } else if (totalOwed > 0) {
-      return { status: 'unpaid', total: totalOwed, paid: totalPaid, balance: balance }
-    } else {
-      return { status: 'not-applicable', total: 0, paid: 0, balance: 0 }
-    }
+    // For now, return the first matching invoice (or we could aggregate if multiple)
+    // In practice, there should be one invoice per period
+    const invoices = Array.from(invoiceMap.values())
+    return invoices.length > 0 ? invoices[0] : null
   }
 
-  // Get cell value and color for grid view
-  const getGridCellValue = (property: PropertyPayments, dateStr: string) => {
+  // Get cell value and color for grid view using same logic as table view
+  const getGridCellValue = (property: PropertyPayments, fridayDateStr: string) => {
     const cadence = property.cadence?.toLowerCase() || ''
     if (!cadence) {
       return {
@@ -645,35 +615,11 @@ export default function LastPaidPage() {
       }
     }
     
-    // Get the period key for this date based on property's cadence
-    const periodKey = getPeriodKey(dateStr, cadence)
-    const periodStatus = getPeriodStatus(property, periodKey, cadence)
+    // Get the invoice for this Friday using the same logic as table view
+    const invoice = getInvoiceForFriday(property, fridayDateStr, cadence)
     
-    // Check if this date is within the period for this cadence
-    const date = new Date(dateStr + 'T00:00:00')
-    const periodKeyDate = new Date(periodKey + 'T00:00:00')
-    let periodStart = new Date(periodKeyDate)
-    let periodEnd = new Date(periodKeyDate)
-    
-    if (cadence === 'weekly') {
-      // Weekly period: Saturday to Friday
-      periodStart.setDate(periodKeyDate.getDate() - 6) // Previous Saturday
-      periodEnd = new Date(periodKeyDate) // Friday
-    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      // Bi-weekly period: Saturday (14 days before) to Friday
-      periodStart.setDate(periodKeyDate.getDate() - 13)
-      periodEnd = new Date(periodKeyDate) // Friday
-    } else if (cadence === 'monthly') {
-      // Monthly period: first day to last day of month
-      periodStart = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth(), 1)
-      periodEnd = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth() + 1, 0)
-    }
-    
-    // Check if date falls within this period
-    const isInPeriod = date >= periodStart && date <= periodEnd
-    
-    if (!isInPeriod) {
-      // Date is not in this property's period - show as not applicable
+    if (!invoice) {
+      // No invoice for this period - show as not applicable
       return {
         value: '----',
         color: 'bg-green-200', // darker green
@@ -681,33 +627,45 @@ export default function LastPaidPage() {
       }
     }
     
-    // Date is in period - show period status
-    if (periodStatus.status === 'paid') {
-      // Paid period: all dates show "----" in darker green
+    // Use the same logic as table view to determine status
+    // Table view checks: balance <= 0 ? 'PAID' : invoice.status
+    const balance = parseFloat(invoice.recalculated_balance as any || 0)
+    const amountTotal = parseFloat(invoice.amount_total as any || 0)
+    
+    // Check if there are any payments for this invoice
+    const hasPayments = property.payments.some(p => 
+      p.invoice?.id === invoice.id && parseFloat(p.amount as any || 0) > 0
+    )
+    
+    if (balance <= 0 && hasPayments) {
+      // Paid: same logic as table view (balance <= 0 means PAID)
+      // All dates in this period show "----" in darker green
       return {
         value: '----',
         color: 'bg-green-200', // darker green for paid periods
         textColor: 'text-gray-600'
       }
-    } else if (periodStatus.status === 'unpaid') {
-      // Unpaid period: all dates show amount in red
+    } else if (balance > 0 && hasPayments) {
+      // Partially paid: has payments but balance > 0
+      // All dates show balance in yellow
       return {
-        value: periodStatus.total > 0 ? formatCurrency(periodStatus.total) : '',
-        color: 'bg-red-200', // red for unpaid
-        textColor: 'text-gray-900'
-      }
-    } else if (periodStatus.status === 'partial') {
-      // Partially paid: all dates show balance in yellow
-      return {
-        value: formatCurrency(periodStatus.balance),
+        value: formatCurrency(balance),
         color: 'bg-yellow-200', // yellow for partially paid
         textColor: 'text-gray-900'
       }
+    } else if (balance > 0 && !hasPayments) {
+      // Unpaid: balance > 0 and no payments
+      // All dates show total amount in red
+      return {
+        value: formatCurrency(amountTotal),
+        color: 'bg-red-200', // red for unpaid
+        textColor: 'text-gray-900'
+      }
     } else {
-      // not-applicable (no invoice for this period)
+      // Edge case: no balance and no payments
       return {
         value: '----',
-        color: 'bg-green-200', // darker green
+        color: 'bg-green-200',
         textColor: 'text-gray-600'
       }
     }

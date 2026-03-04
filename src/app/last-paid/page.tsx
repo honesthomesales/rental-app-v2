@@ -727,7 +727,6 @@ export default function LastPaidPage() {
     }
     
     // Use the same logic as table view to determine status
-    // Table view checks: balance <= 0 ? 'PAID' : invoice.status
     const balance = parseFloat(invoice.recalculated_balance as any || 0)
     const amountTotal = parseFloat(invoice.amount_total as any || 0)
     
@@ -736,22 +735,29 @@ export default function LastPaidPage() {
       p.invoice?.id === invoice.id && parseFloat(p.amount as any || 0) > 0
     )
     const hasPayments = invoicePayments.length > 0
+    const totalPaid = invoicePayments.reduce((sum, p) => sum + parseFloat(p.amount as any || 0), 0)
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getGridCellValue',message:'Status determination',data:{property:property.property_name,fridayDate:fridayDateStr,invoiceId:invoice.id,balance,amountTotal,hasPayments,paymentCount:invoicePayments.length,status:balance <= 0 && hasPayments ? 'paid' : balance > 0 && hasPayments ? 'partial' : balance > 0 ? 'unpaid' : 'unknown'},timestamp:Date.now(),runId:'debug1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
+    // Green when payment amount >= owed (fully paid) - show amount
+    // Red only when zero or no invoice for that date
+    // Show amounts when period had a payment (not "----" when paid)
     
-    if (balance <= 0 && hasPayments) {
-      // Paid: same logic as table view (balance <= 0 means PAID)
-      // All dates in this period show "----" in darker green
+    if (amountTotal === 0) {
+      // Zero owed - show red
       return {
-        value: '----',
-        color: 'bg-green-200', // darker green for paid periods
-        textColor: 'text-gray-600'
+        value: formatCurrency(0),
+        color: 'bg-red-200', // red for zero owed
+        textColor: 'text-gray-900'
+      }
+    } else if (hasPayments && totalPaid >= amountTotal) {
+      // Fully paid: payment amount >= owed - show payment amount in green
+      return {
+        value: formatCurrency(totalPaid),
+        color: 'bg-green-200', // green for fully paid
+        textColor: 'text-gray-900'
       }
     } else if (balance > 0 && hasPayments) {
       // Partially paid: has payments but balance > 0
-      // All dates show balance in yellow
+      // Show balance in yellow
       return {
         value: formatCurrency(balance),
         color: 'bg-yellow-200', // yellow for partially paid
@@ -759,18 +765,18 @@ export default function LastPaidPage() {
       }
     } else if (balance > 0 && !hasPayments) {
       // Unpaid: balance > 0 and no payments
-      // All dates show total amount in red
+      // Show total amount in red
       return {
         value: formatCurrency(amountTotal),
         color: 'bg-red-200', // red for unpaid
         textColor: 'text-gray-900'
       }
     } else {
-      // Edge case: no balance and no payments
+      // Edge case: balance is 0 but no payments - show red
       return {
-        value: '----',
-        color: 'bg-green-200',
-        textColor: 'text-gray-600'
+        value: formatCurrency(0),
+        color: 'bg-red-200', // red for zero/no payment
+        textColor: 'text-gray-900'
       }
     }
   }
@@ -989,8 +995,17 @@ export default function LastPaidPage() {
             <table className="min-w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border-b border-gray-200">
-                    Property
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border-b border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('property')}
+                  >
+                    Property{sortIndicator('property')}
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border-b border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('cadence')}
+                  >
+                    Cadence{sortIndicator('cadence')}
                   </th>
                   {gridDateColumns.map((dateStr) => (
                     <th
@@ -1005,22 +1020,19 @@ export default function LastPaidPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAndSorted.length === 0 ? (
                   <tr>
-                    <td colSpan={gridDateColumns.length + 1} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={gridDateColumns.length + 2} className="px-4 py-8 text-center text-gray-500">
                       No payment history found
                     </td>
                   </tr>
                 ) : (
                   filteredAndSorted.map((property) => {
-                    const cadence = property.cadence?.toLowerCase() || ''
-                    const cadenceLabel = cadence === 'weekly' ? 'weekly' : 
-                                       cadence === 'biweekly' || cadence === 'bi-weekly' ? 'bi-Weekly' : 
-                                       cadence === 'monthly' ? 'monthly' : ''
-                    const propertyLabel = `${property.property_name}${cadenceLabel ? ` (${cadenceLabel})` : ''}`
-                    
                     return (
                       <tr key={property.property_id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-200">
-                          {propertyLabel}
+                          {property.property_name}
+                        </td>
+                        <td className="px-4 py-3 border-r border-gray-200">
+                          {cadenceBadge(property.cadence)}
                         </td>
                         {gridDateColumns.map((dateStr) => {
                           const cell = getGridCellValue(property, dateStr)

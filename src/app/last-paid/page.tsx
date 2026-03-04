@@ -1121,6 +1121,12 @@ export default function LastPaidPage() {
                   >
                     Cadence{sortIndicator('cadence')}
                   </th>
+                  <th
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase border-b border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('totalOwed')}
+                  >
+                    Total Owed{sortIndicator('totalOwed')}
+                  </th>
                   {gridDateColumns.map((dateStr) => (
                     <th
                       key={dateStr}
@@ -1129,24 +1135,32 @@ export default function LastPaidPage() {
                       {formatGridDate(dateStr)}
                     </th>
                   ))}
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAndSorted.length === 0 ? (
                   <tr>
-                    <td colSpan={gridDateColumns.length + 2} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={gridDateColumns.length + 4} className="px-4 py-8 text-center text-gray-500">
                       No payment history found
                     </td>
                   </tr>
                 ) : (
                   filteredAndSorted.map((property) => {
+                    const tenantName = property.payments[0]?.tenant_name || '-'
                     return (
                       <tr key={property.property_id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-200">
-                          {property.property_name}
+                        <td className="px-4 py-3 text-sm border-r border-gray-200">
+                          <div className="font-medium text-gray-900">{property.property_name}</div>
+                          <div className="text-xs text-gray-500">{tenantName}</div>
                         </td>
                         <td className="px-4 py-3 border-r border-gray-200">
                           {cadenceBadge(property.cadence)}
+                        </td>
+                        <td className={`px-4 py-3 text-sm text-right font-medium border-r border-gray-200 ${property.totalOwed > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                          {formatCurrency(property.totalOwed)}
                         </td>
                         {gridDateColumns.map((dateStr) => {
                           const cell = getGridCellValue(property, dateStr)
@@ -1159,6 +1173,19 @@ export default function LastPaidPage() {
                             </td>
                           )
                         })}
+                        <td className="px-4 py-3 text-center border-r border-gray-200">
+                          {property.lease_id && (
+                            <button
+                              onClick={() => {
+                                setSelectedPropertyForGenerate(property)
+                                setShowGenerateModal(true)
+                              }}
+                              className="px-3 py-1 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                            >
+                              Notice
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     )
                   })

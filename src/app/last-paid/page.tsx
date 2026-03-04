@@ -613,13 +613,42 @@ export default function LastPaidPage() {
   const getInvoiceForFriday = (property: PropertyPayments, fridayDateStr: string, cadence: string, allFridays: string[]) => {
     const fridayDate = new Date(fridayDateStr + 'T00:00:00')
     
-    // For monthly properties, only show on the active Friday
+    // For monthly properties, ONLY show on the active Friday for that month
+    // All other Fridays should return null (will show "----")
     if (cadence === 'monthly') {
       if (!isActiveFridayForMonthly(fridayDateStr, property, allFridays)) {
-        return null // Not the active Friday for this month
+        return null // Not the active Friday for this month - show "----"
       }
+      // For monthly, match invoice by month (not by period overlap)
+      // Find invoice where period_start month matches this Friday's month
+      const fridayMonth = fridayDate.getMonth()
+      const fridayYear = fridayDate.getFullYear()
+      
+      const matchingPayments = property.payments.filter(p => {
+        if (!p.invoice) return false
+        const invoiceStart = new Date(p.invoice.period_start + 'T00:00:00')
+        // Match if invoice period_start is in the same month/year as this Friday
+        return invoiceStart.getMonth() === fridayMonth && 
+               invoiceStart.getFullYear() === fridayYear
+      })
+      
+      if (matchingPayments.length === 0) {
+        return null
+      }
+      
+      // Get unique invoices
+      const invoiceMap = new Map<string, PaymentInvoice>()
+      matchingPayments.forEach(p => {
+        if (p.invoice && !invoiceMap.has(p.invoice.id)) {
+          invoiceMap.set(p.invoice.id, p.invoice)
+        }
+      })
+      
+      const invoices = Array.from(invoiceMap.values())
+      return invoices.length > 0 ? invoices[0] : null
     }
     
+    // For weekly and bi-weekly, use period overlap matching
     // Calculate the period for this Friday based on cadence
     let periodStart = new Date(fridayDate)
     let periodEnd = new Date(fridayDate)
@@ -630,15 +659,7 @@ export default function LastPaidPage() {
     } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
       // Bi-weekly: Saturday (13 days before Friday) to Friday
       periodStart.setDate(fridayDate.getDate() - 13)
-    } else if (cadence === 'monthly') {
-      // Monthly: first day of month to last day of month
-      periodStart = new Date(fridayDate.getFullYear(), fridayDate.getMonth(), 1)
-      periodEnd = new Date(fridayDate.getFullYear(), fridayDate.getMonth() + 1, 0)
     }
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Period calculation',data:{property:property.property_name,fridayDate:fridayDateStr,cadence,periodStart:periodStart.toISOString().split('T')[0],periodEnd:periodEnd.toISOString().split('T')[0],totalPayments:property.payments.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     
     // Find invoices where the invoice period overlaps with this Friday's period
     // Use the same logic as table view - look at property.payments and their invoices
@@ -649,15 +670,7 @@ export default function LastPaidPage() {
       const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
       
       // Check if invoice period overlaps with Friday's period
-      const overlaps = invoiceStart <= periodEnd && invoiceEnd >= periodStart
-      
-      // #region agent log
-      if (overlaps) {
-        fetch('http://127.0.0.1:7242/ingest/202d67fb-2b25-4832-b379-c272a530673b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'last-paid/page.tsx:getInvoiceForFriday',message:'Invoice overlap match',data:{property:property.property_name,fridayDate:fridayDateStr,invoiceId:p.invoice.id,invoiceStart:p.invoice.period_start,invoiceEnd:p.invoice.period_end,periodStart:periodStart.toISOString().split('T')[0],periodEnd:periodEnd.toISOString().split('T')[0],overlaps},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
-      }
-      // #endregion
-      
-      return overlaps
+      return invoiceStart <= periodEnd && invoiceEnd >= periodStart
     })
     
     // #region agent log

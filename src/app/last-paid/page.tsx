@@ -554,6 +554,61 @@ export default function LastPaidPage() {
     return dateStr
   }
 
+  // Check if a Friday is the active Friday for a bi-weekly property
+  // Bi-weekly properties only have one active Friday per bi-weekly period
+  // The active Friday is the one where the invoice's period_end falls
+  const isActiveFridayForBiWeekly = (fridayDateStr: string, property: PropertyPayments, allFridays: string[]) => {
+    const fridayDate = new Date(fridayDateStr + 'T00:00:00')
+    
+    // Calculate this Friday's bi-weekly period (Saturday 14 days before to Friday)
+    const periodStart = new Date(fridayDate)
+    periodStart.setDate(fridayDate.getDate() - 13) // 14 days before Friday
+    const periodEnd = new Date(fridayDate)
+    
+    // Find invoices that overlap with this period
+    const matchingInvoices = property.payments
+      .filter(p => {
+        if (!p.invoice) return false
+        const invoiceStart = new Date(p.invoice.period_start + 'T00:00:00')
+        const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
+        return invoiceStart <= periodEnd && invoiceEnd >= periodStart
+      })
+      .map(p => p.invoice!)
+    
+    if (matchingInvoices.length === 0) return false
+    
+    // Get unique invoices
+    const invoiceMap = new Map<string, PaymentInvoice>()
+    matchingInvoices.forEach(inv => {
+      if (!invoiceMap.has(inv.id)) {
+        invoiceMap.set(inv.id, inv)
+      }
+    })
+    
+    // For each invoice, find which Friday's period contains the invoice's period_end
+    // That Friday is the active one for this invoice
+    for (const invoice of invoiceMap.values()) {
+      const invoiceEnd = new Date(invoice.period_end + 'T00:00:00')
+      
+      // Find the Friday whose period contains the invoice's period_end
+      for (const f of allFridays) {
+        const fDate = new Date(f + 'T00:00:00')
+        const fPeriodStart = new Date(fDate)
+        fPeriodStart.setDate(fDate.getDate() - 13)
+        const fPeriodEnd = new Date(fDate)
+        
+        // If invoice period_end is in this Friday's period, this is the active Friday
+        if (invoiceEnd >= fPeriodStart && invoiceEnd <= fPeriodEnd) {
+          if (f === fridayDateStr) {
+            return true // This is the active Friday for this invoice
+          }
+        }
+      }
+    }
+    
+    return false
+  }
+
   // Check if a Friday is the active Friday for a monthly property
   // Monthly properties only have one active Friday per month (closest to rent_due_day)
   const isActiveFridayForMonthly = (fridayDateStr: string, property: PropertyPayments, allFridays: string[]) => {
@@ -646,6 +701,13 @@ export default function LastPaidPage() {
       
       const invoices = Array.from(invoiceMap.values())
       return invoices.length > 0 ? invoices[0] : null
+    }
+    
+    // For bi-weekly, only show on the active Friday for that bi-weekly period
+    if (cadence === 'biweekly' || cadence === 'bi-weekly') {
+      if (!isActiveFridayForBiWeekly(fridayDateStr, property, allFridays)) {
+        return null // Not the active Friday for this bi-weekly period - show "----"
+      }
     }
     
     // For weekly and bi-weekly, use period overlap matching
@@ -746,6 +808,13 @@ export default function LastPaidPage() {
       return {
         value: formatCurrency(0),
         color: 'bg-red-200', // red for zero owed
+        textColor: 'text-gray-900'
+      }
+    } else if (balance <= 0 && hasPayments) {
+      // Fully paid: balance <= 0 means fully paid - show payment amount in green
+      return {
+        value: formatCurrency(totalPaid),
+        color: 'bg-green-200', // green for fully paid
         textColor: 'text-gray-900'
       }
     } else if (hasPayments && totalPaid >= amountTotal) {

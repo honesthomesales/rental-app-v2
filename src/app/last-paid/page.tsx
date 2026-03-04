@@ -72,6 +72,7 @@ export default function LastPaidPage() {
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table')
 
   useEffect(() => {
     fetchData()
@@ -446,6 +447,134 @@ export default function LastPaidPage() {
     return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">-</span>
   }
 
+  // Calculate date columns for grid view (last 9 unique payment dates)
+  const gridDateColumns = useMemo(() => {
+    const allDates = new Set<string>()
+    filteredAndSorted.forEach(property => {
+      property.payments.forEach(payment => {
+        if (payment.payment_date) {
+          allDates.add(payment.payment_date)
+        }
+      })
+    })
+    
+    const sortedDates = Array.from(allDates)
+      .map(date => new Date(date + 'T00:00:00'))
+      .sort((a, b) => b.getTime() - a.getTime())
+      .slice(0, 9)
+      .map(date => date.toISOString().split('T')[0])
+    
+    return sortedDates
+  }, [filteredAndSorted])
+
+  // Format date for grid header (M/D format)
+  const formatGridDate = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00')
+    const month = date.getMonth() + 1
+    const day = date.getDate()
+    return `${month}/${day}`
+  }
+
+  // Get cell value and color for grid view
+  const getGridCellValue = (property: PropertyPayments, dateStr: string) => {
+    const cadence = property.cadence?.toLowerCase() || ''
+    const date = new Date(dateStr + 'T00:00:00')
+    
+    // Find payment for this date (exact match)
+    const payment = property.payments.find(p => {
+      const paymentDate = new Date(p.payment_date + 'T00:00:00')
+      return paymentDate.toISOString().split('T')[0] === dateStr
+    })
+    
+    if (payment) {
+      const invoice = payment.invoice
+      const amount = parseFloat(payment.amount as any || 0)
+      
+      if (invoice) {
+        const balance = parseFloat(invoice.recalculated_balance as any || 0)
+        
+        // Paid (balance <= 0 and amount > 0) - light green
+        if (balance <= 0 && amount > 0) {
+          // Format: show as number if whole, otherwise currency
+          const displayValue = amount % 1 === 0 ? amount.toString() : formatCurrency(amount)
+          return {
+            value: displayValue,
+            color: 'bg-green-100', // light green
+            textColor: 'text-gray-900'
+          }
+        }
+        
+        // Unpaid invoice (balance > 0) - red
+        if (balance > 0) {
+          return {
+            value: formatCurrency(balance),
+            color: 'bg-red-200', // red
+            textColor: 'text-gray-900'
+          }
+        }
+      }
+      
+      // Has payment but no invoice - light green
+      if (amount > 0) {
+        const displayValue = amount % 1 === 0 ? amount.toString() : formatCurrency(amount)
+        return {
+          value: displayValue,
+          color: 'bg-green-100', // light green
+          textColor: 'text-gray-900'
+        }
+      }
+      
+      // Payment with 0 amount (unpaid placeholder) - red
+      return {
+        value: '$0',
+        color: 'bg-red-200', // red
+        textColor: 'text-gray-900'
+      }
+    }
+    
+    // No payment found - determine if date is applicable for this cadence
+    // This is a simplified check. In a full implementation, we'd need:
+    // - Lease start date to calculate anchor dates
+    // - Rent due day for monthly cadence
+    // - Payment history to determine pattern
+    
+    // For now, use a heuristic: check if other properties with same cadence have payments on nearby dates
+    const hasNearbyPayments = filteredAndSorted
+      .filter(p => {
+        const pCadence = p.cadence?.toLowerCase() || ''
+        return pCadence === cadence && p.property_id !== property.property_id
+      })
+      .some(p => {
+        return p.payments.some(pay => {
+          const payDate = new Date(pay.payment_date + 'T00:00:00')
+          const daysDiff = Math.abs((payDate.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+          // Check if payment is within cadence period
+          if (cadence === 'weekly') return daysDiff <= 3 // Within 3 days
+          if (cadence === 'biweekly' || cadence === 'bi-weekly') return daysDiff <= 7 // Within 7 days
+          if (cadence === 'monthly') return daysDiff <= 15 // Within 15 days
+          return false
+        })
+      })
+    
+    // If other properties with same cadence have payments around this date,
+    // this property should too (missing payment - red)
+    // Otherwise, it's likely not applicable (darker green with ----)
+    if (hasNearbyPayments) {
+      return {
+        value: '',
+        color: 'bg-red-200', // red - missing payment
+        textColor: 'text-gray-900'
+      }
+    }
+    
+    // Not applicable for this cadence - darker green with ----
+    return {
+      value: '----',
+      color: 'bg-green-200', // darker green
+      textColor: 'text-gray-600'
+    }
+  }
+
   const invoiceStatusBadge = (status: string | null) => {
     if (!status) return null
     const s = status.toUpperCase()
@@ -472,9 +601,34 @@ export default function LastPaidPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Last Paid</h1>
-        <p className="text-gray-500 text-sm">Last 4 payments per property with invoice details</p>
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Last Paid</h1>
+          <p className="text-gray-500 text-sm">Last 4 payments per property with invoice details</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">View:</span>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'table'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Table
+          </button>
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'grid'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Grid
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -506,9 +660,10 @@ export default function LastPaidPage() {
         </div>
       </div>
 
-      {/* Main Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
+      {/* Main Table or Grid */}
+      {viewMode === 'table' ? (
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th
@@ -627,6 +782,66 @@ export default function LastPaidPage() {
           </tbody>
         </table>
       </div>
+      ) : (
+        /* Grid View */
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border-b border-gray-200">
+                    Property
+                  </th>
+                  {gridDateColumns.map((dateStr) => (
+                    <th
+                      key={dateStr}
+                      className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200"
+                    >
+                      {formatGridDate(dateStr)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSorted.length === 0 ? (
+                  <tr>
+                    <td colSpan={gridDateColumns.length + 1} className="px-4 py-8 text-center text-gray-500">
+                      No payment history found
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAndSorted.map((property) => {
+                    const cadence = property.cadence?.toLowerCase() || ''
+                    const cadenceLabel = cadence === 'weekly' ? 'weekly' : 
+                                       cadence === 'biweekly' || cadence === 'bi-weekly' ? 'bi-Weekly' : 
+                                       cadence === 'monthly' ? 'monthly' : ''
+                    const propertyLabel = `${property.property_name}${cadenceLabel ? ` (${cadenceLabel})` : ''}`
+                    
+                    return (
+                      <tr key={property.property_id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-200">
+                          {propertyLabel}
+                        </td>
+                        {gridDateColumns.map((dateStr) => {
+                          const cell = getGridCellValue(property, dateStr)
+                          return (
+                            <td
+                              key={dateStr}
+                              className={`px-3 py-3 text-center text-sm border-r border-gray-200 ${cell.color} ${cell.textColor}`}
+                            >
+                              {cell.value}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Expanded Payment Detail Modal */}
       {expandedProperty && (() => {

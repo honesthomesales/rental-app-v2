@@ -447,51 +447,49 @@ export default function LastPaidPage() {
     return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">-</span>
   }
 
-  // Determine the least cadence (most frequent) among filtered properties
-  const gridCadence = useMemo(() => {
-    if (filteredAndSorted.length === 0) return 'weekly'
+  // Determine if all properties are monthly (only then use monthly dates)
+  const allMonthly = useMemo(() => {
+    if (filteredAndSorted.length === 0) return false
     
     const cadences = filteredAndSorted
       .map(p => p.cadence?.toLowerCase() || '')
       .filter(c => c)
     
-    if (cadences.some(c => c === 'weekly')) return 'weekly'
-    if (cadences.some(c => c === 'biweekly' || c === 'bi-weekly')) return 'biweekly'
-    if (cadences.some(c => c === 'monthly')) return 'monthly'
-    return 'weekly' // default
+    // Only use monthly if ALL properties are monthly
+    return cadences.length > 0 && cadences.every(c => c === 'monthly')
   }, [filteredAndSorted])
 
-  // Calculate date columns for grid view based on least cadence
+  // Calculate date columns for grid view - always weekly unless all monthly
   const gridDateColumns = useMemo(() => {
     const today = new Date()
     const dates: string[] = []
     
-    if (gridCadence === 'weekly') {
-      // Generate last 9 weeks (going back from today)
-      for (let i = 0; i < 9; i++) {
-        const date = new Date(today)
-        date.setDate(date.getDate() - (i * 7))
-        dates.push(date.toISOString().split('T')[0])
-      }
-    } else if (gridCadence === 'biweekly') {
-      // Generate last 9 bi-weekly periods (every 14 days)
-      for (let i = 0; i < 9; i++) {
-        const date = new Date(today)
-        date.setDate(date.getDate() - (i * 14))
-        dates.push(date.toISOString().split('T')[0])
-      }
-    } else {
-      // Monthly - generate last 9 months
+    if (allMonthly) {
+      // Monthly - generate last 9 months (first of each month)
       for (let i = 0; i < 9; i++) {
         const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
         dates.push(date.toISOString().split('T')[0])
+      }
+    } else {
+      // Always weekly (Fridays) - show 1 cycle past current date (next Friday)
+      // Find next Friday from today
+      const currentDay = today.getDay() // 0 = Sunday, 5 = Friday
+      const daysToFriday = currentDay === 5 ? 7 : (5 - currentDay + 7) % 7
+      const nextFriday = new Date(today)
+      nextFriday.setDate(today.getDate() + daysToFriday)
+      
+      // Generate 9 Fridays going back from next Friday
+      for (let i = 0; i < 9; i++) {
+        const friday = new Date(nextFriday)
+        friday.setDate(nextFriday.getDate() - (i * 7))
+        dates.push(friday.toISOString().split('T')[0])
       }
     }
     
     return dates.sort((a, b) => {
       return new Date(b).getTime() - new Date(a).getTime()
     })
-  }, [gridCadence])
+  }, [allMonthly])
 
   // Format date for grid header (M/D format)
   const formatGridDate = (dateStr: string) => {
@@ -502,21 +500,49 @@ export default function LastPaidPage() {
   }
 
   // Get which period a date belongs to based on cadence
+  // For weekly: period is the Friday (Sat to Fri window)
+  // For bi-weekly: period is the Friday of that bi-weekly cycle
+  // For monthly: period is the first of the month
   const getPeriodKey = (dateStr: string, cadence: string) => {
     const date = new Date(dateStr + 'T00:00:00')
     const c = cadence.toLowerCase()
     
     if (c === 'weekly') {
-      // Week period: Monday to Sunday
-      const dayOfWeek = date.getDay()
-      const monday = new Date(date)
-      monday.setDate(date.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
-      return monday.toISOString().split('T')[0]
+      // Weekly: find the Friday for this week (period is Sat to Fri)
+      // If date is Friday, that's the period key
+      // If date is Sat-Sun, it belongs to the next Friday
+      // If date is Mon-Thu, it belongs to the Friday of that week
+      const dayOfWeek = date.getDay() // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+      const friday = new Date(date)
+      
+      if (dayOfWeek === 5) {
+        // Already Friday
+        return friday.toISOString().split('T')[0]
+      } else if (dayOfWeek === 6 || dayOfWeek === 0) {
+        // Saturday or Sunday - belongs to next Friday
+        friday.setDate(date.getDate() + (5 - dayOfWeek + 7) % 7)
+      } else {
+        // Monday-Thursday - belongs to Friday of this week
+        friday.setDate(date.getDate() + (5 - dayOfWeek))
+      }
+      return friday.toISOString().split('T')[0]
     } else if (c === 'biweekly' || c === 'bi-weekly') {
-      // Bi-weekly: find the start of the 2-week period
-      // Use a simple approach: round down to nearest 14 days from a reference
-      const reference = new Date('2024-01-01') // Reference date
-      const daysSinceRef = Math.floor((date.getTime() - reference.getTime()) / (1000 * 60 * 60 * 24))
+      // Bi-weekly: find the Friday for this bi-weekly cycle
+      // Similar to weekly but every other Friday
+      const dayOfWeek = date.getDay()
+      let friday = new Date(date)
+      
+      if (dayOfWeek === 5) {
+        // Already Friday
+      } else if (dayOfWeek === 6 || dayOfWeek === 0) {
+        friday.setDate(date.getDate() + (5 - dayOfWeek + 7) % 7)
+      } else {
+        friday.setDate(date.getDate() + (5 - dayOfWeek))
+      }
+      
+      // Round to nearest bi-weekly Friday (every 14 days from a reference)
+      const reference = new Date('2024-01-05') // A Friday
+      const daysSinceRef = Math.floor((friday.getTime() - reference.getTime()) / (1000 * 60 * 60 * 24))
       const periodStart = new Date(reference)
       periodStart.setDate(reference.getDate() + Math.floor(daysSinceRef / 14) * 14)
       return periodStart.toISOString().split('T')[0]
@@ -528,16 +554,24 @@ export default function LastPaidPage() {
   }
 
   // Get period status for a property
+  // periodKey is the Friday date for weekly/bi-weekly, or first of month for monthly
   const getPeriodStatus = (property: PropertyPayments, periodKey: string, cadence: string) => {
-    const periodStart = new Date(periodKey + 'T00:00:00')
-    let periodEnd = new Date(periodStart)
+    const periodKeyDate = new Date(periodKey + 'T00:00:00')
+    let periodStart = new Date(periodKeyDate)
+    let periodEnd = new Date(periodKeyDate)
     
     if (cadence === 'weekly') {
-      periodEnd.setDate(periodStart.getDate() + 6)
+      // Weekly period: Saturday (day before Friday) to Friday
+      periodStart.setDate(periodKeyDate.getDate() - 6) // Previous Saturday
+      periodEnd = new Date(periodKeyDate) // Friday
     } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      periodEnd.setDate(periodStart.getDate() + 13)
+      // Bi-weekly period: Saturday (14 days before Friday) to Friday
+      periodStart.setDate(periodKeyDate.getDate() - 13) // 14 days before Friday
+      periodEnd = new Date(periodKeyDate) // Friday
     } else if (cadence === 'monthly') {
-      periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 1, 0)
+      // Monthly period: first day to last day of month
+      periodStart = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth(), 1)
+      periodEnd = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth() + 1, 0)
     }
     
     // Find all invoices that overlap with this period
@@ -588,12 +622,15 @@ export default function LastPaidPage() {
     
     const balance = totalOwed - totalPaid
     
+    // Determine status: paid if balance <= 0 and we have payments
     if (balance <= 0 && totalPaid > 0) {
       return { status: 'paid', total: totalOwed, paid: totalPaid, balance: balance }
     } else if (balance > 0 && totalPaid > 0) {
       return { status: 'partial', total: totalOwed, paid: totalPaid, balance: balance }
-    } else {
+    } else if (totalOwed > 0) {
       return { status: 'unpaid', total: totalOwed, paid: totalPaid, balance: balance }
+    } else {
+      return { status: 'not-applicable', total: 0, paid: 0, balance: 0 }
     }
   }
 
@@ -608,22 +645,31 @@ export default function LastPaidPage() {
       }
     }
     
+    // Get the period key for this date based on property's cadence
     const periodKey = getPeriodKey(dateStr, cadence)
     const periodStatus = getPeriodStatus(property, periodKey, cadence)
     
     // Check if this date is within the period for this cadence
     const date = new Date(dateStr + 'T00:00:00')
-    const periodStart = new Date(periodKey + 'T00:00:00')
-    let periodEnd = new Date(periodStart)
+    const periodKeyDate = new Date(periodKey + 'T00:00:00')
+    let periodStart = new Date(periodKeyDate)
+    let periodEnd = new Date(periodKeyDate)
     
     if (cadence === 'weekly') {
-      periodEnd.setDate(periodStart.getDate() + 6)
+      // Weekly period: Saturday to Friday
+      periodStart.setDate(periodKeyDate.getDate() - 6) // Previous Saturday
+      periodEnd = new Date(periodKeyDate) // Friday
     } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      periodEnd.setDate(periodStart.getDate() + 13)
+      // Bi-weekly period: Saturday (14 days before) to Friday
+      periodStart.setDate(periodKeyDate.getDate() - 13)
+      periodEnd = new Date(periodKeyDate) // Friday
     } else if (cadence === 'monthly') {
-      periodEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() + 1, 0)
+      // Monthly period: first day to last day of month
+      periodStart = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth(), 1)
+      periodEnd = new Date(periodKeyDate.getFullYear(), periodKeyDate.getMonth() + 1, 0)
     }
     
+    // Check if date falls within this period
     const isInPeriod = date >= periodStart && date <= periodEnd
     
     if (!isInPeriod) {
@@ -637,25 +683,28 @@ export default function LastPaidPage() {
     
     // Date is in period - show period status
     if (periodStatus.status === 'paid') {
+      // Paid period: all dates show "----" in darker green
       return {
         value: '----',
         color: 'bg-green-200', // darker green for paid periods
         textColor: 'text-gray-600'
       }
     } else if (periodStatus.status === 'unpaid') {
+      // Unpaid period: all dates show amount in red
       return {
         value: periodStatus.total > 0 ? formatCurrency(periodStatus.total) : '',
         color: 'bg-red-200', // red for unpaid
         textColor: 'text-gray-900'
       }
     } else if (periodStatus.status === 'partial') {
+      // Partially paid: all dates show balance in yellow
       return {
         value: formatCurrency(periodStatus.balance),
         color: 'bg-yellow-200', // yellow for partially paid
         textColor: 'text-gray-900'
       }
     } else {
-      // not-applicable
+      // not-applicable (no invoice for this period)
       return {
         value: '----',
         color: 'bg-green-200', // darker green

@@ -674,50 +674,69 @@ export default function LastPaidPage() {
     }
     
     // For bi-weekly, only show on the active Friday for that bi-weekly period
-    // The active Friday is the one whose period_end is closest to the invoice's period_end
+    // The active Friday is the one whose period_end matches the invoice's period_end
     if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      // Find all invoices for this property
-      const allInvoices = property.payments
-        .filter(p => p.invoice)
-        .map(p => p.invoice!)
+      // Calculate this Friday's bi-weekly period
+      const periodStart = new Date(fridayDate)
+      periodStart.setDate(fridayDate.getDate() - 13) // 14 days before Friday
+      const periodEnd = new Date(fridayDate)
+      
+      // Find invoices where the invoice period_end falls within this Friday's bi-weekly period
+      // AND the invoice period_end matches this Friday (or is closest)
+      const matchingPayments = property.payments.filter(p => {
+        if (!p.invoice) return false
+        const invoiceEnd = new Date(p.invoice.period_end + 'T00:00:00')
+        // Match if invoice period_end is in this Friday's bi-weekly period
+        return invoiceEnd >= periodStart && invoiceEnd <= periodEnd
+      })
+      
+      if (matchingPayments.length === 0) {
+        return null
+      }
       
       // Get unique invoices
       const invoiceMap = new Map<string, PaymentInvoice>()
-      allInvoices.forEach(inv => {
-        if (!invoiceMap.has(inv.id)) {
-          invoiceMap.set(inv.id, inv)
+      matchingPayments.forEach(p => {
+        if (p.invoice && !invoiceMap.has(p.invoice.id)) {
+          invoiceMap.set(p.invoice.id, p.invoice)
         }
       })
       
-      // For each invoice, find which Friday's period_end is closest to the invoice's period_end
-      // Only show the invoice on that Friday
+      // For each invoice, check if this Friday is the one whose period_end matches the invoice's period_end
+      // Only return invoice if this Friday's date matches the invoice's period_end
       for (const invoice of invoiceMap.values()) {
         const invoiceEnd = new Date(invoice.period_end + 'T00:00:00')
+        const invoiceEndStr = invoiceEnd.toISOString().split('T')[0]
         
-        // Find the Friday whose period_end is closest to the invoice's period_end
-        let closestFriday: string | null = null
-        let minDistance = Infinity
-        
-        for (const f of allFridays) {
-          const fDate = new Date(f + 'T00:00:00')
-          const distance = Math.abs(fDate.getTime() - invoiceEnd.getTime())
-          
-          // Check if invoice period_end falls within this Friday's bi-weekly period
-          const periodStart = new Date(fDate)
-          periodStart.setDate(fDate.getDate() - 13) // 14 days before Friday
-          const periodEnd = new Date(fDate)
-          
-          if (invoiceEnd >= periodStart && invoiceEnd <= periodEnd) {
-            if (distance < minDistance) {
-              minDistance = distance
-              closestFriday = f
-            }
-          }
+        // If invoice period_end matches this Friday, return it
+        // Otherwise, find which Friday in the period has the invoice's period_end
+        if (invoiceEndStr === fridayDateStr) {
+          return invoice
         }
         
-        // If this Friday is the closest one for this invoice, return the invoice
-        if (closestFriday === fridayDateStr) {
-          return invoice
+        // Check if invoice period_end falls on any Friday in this period
+        // If so, only return if this Friday is the one
+        const fridaysInPeriod = allFridays.filter(f => {
+          const fDate = new Date(f + 'T00:00:00')
+          const fPeriodStart = new Date(fDate)
+          fPeriodStart.setDate(fDate.getDate() - 13)
+          const fPeriodEnd = new Date(fDate)
+          return invoiceEnd >= fPeriodStart && invoiceEnd <= fPeriodEnd
+        })
+        
+        // Find the Friday closest to invoice period_end
+        if (fridaysInPeriod.length > 0) {
+          const closestFriday = fridaysInPeriod.reduce((closest, current) => {
+            const closestDate = new Date(closest + 'T00:00:00')
+            const currentDate = new Date(current + 'T00:00:00')
+            const closestDist = Math.abs(closestDate.getTime() - invoiceEnd.getTime())
+            const currentDist = Math.abs(currentDate.getTime() - invoiceEnd.getTime())
+            return currentDist < closestDist ? current : closest
+          })
+          
+          if (closestFriday === fridayDateStr) {
+            return invoice
+          }
         }
       }
       
@@ -812,6 +831,18 @@ export default function LastPaidPage() {
     // Green when payment amount >= owed (fully paid) - show amount
     // Red only when zero or no invoice for that date
     // Show amounts when period had a payment (not "----" when paid)
+    
+    // Debug logging for specific issues
+    if (property.property_name === '101 longstaff' && fridayDateStr === '2026-02-13') {
+      console.log('DEBUG 101 longstaff 2/13:', {
+        balance,
+        amountTotal,
+        totalPaid,
+        hasPayments,
+        invoiceId: invoice.id,
+        isFullyPaid: balance <= 0 || totalPaid >= amountTotal
+      })
+    }
     
     if (amountTotal === 0) {
       // Zero owed - show red

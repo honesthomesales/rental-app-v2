@@ -119,6 +119,7 @@ export async function GET() {
         }
 
         // Fetch ALL invoices for this lease (matching payments page: /api/invoices?leaseId=...&to=...)
+        // Only get invoices that are past due (due_date < today), not including today
         const { data: leaseInvoices, error: leaseInvError } = await supabaseServer
           .from('RENT_invoices')
           .select(`
@@ -134,7 +135,7 @@ export async function GET() {
             status
           `)
           .eq('lease_id', lease.id)
-          .lte('due_date', today)
+          .lt('due_date', today)
           .order('due_date', { ascending: false })
 
         if (leaseInvError) {
@@ -171,10 +172,17 @@ export async function GET() {
         })
 
         // Filter unpaid invoices using recalculated balance_due (EXACT same as payments page)
-        // Only count invoices with status='OPEN' and balance_due > 0
-        const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: any) => 
-          inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-        )
+        // Only count invoices with status='OPEN' and balance_due > 0 and due_date < today
+        // Double-check due_date to ensure we don't count future invoices
+        const todayDate = new Date(today)
+        todayDate.setHours(0, 0, 0, 0)
+        const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: any) => {
+          const invDueDate = new Date(inv.due_date)
+          invDueDate.setHours(0, 0, 0, 0)
+          return inv.status === 'OPEN' && 
+                 parseFloat(inv.balance_due as any || 0) > 0 &&
+                 invDueDate < todayDate
+        })
 
         // Calculate total owed from unpaid invoices using recalculated balance_due
         const totalOwed = unpaidInvoices.reduce((sum: number, inv: any) => 

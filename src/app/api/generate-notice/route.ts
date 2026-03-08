@@ -76,10 +76,46 @@ export async function POST(request: Request) {
     }
 
     // Calculate total amounts across all unpaid invoices
+    // Calculate breakdown from actual unpaid amounts per invoice
     const totalDue = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.balance_due || 0), 0) || 0
-    const rentAmount = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_rent || 0), 0) || 0
-    const lateFeeAmount = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_late || 0), 0) || 0
-    const otherAmount = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount_other || 0), 0) || 0
+    
+    // For each invoice, calculate the unpaid portion of each category proportionally
+    let rentAmount = 0
+    let lateFeeAmount = 0
+    let otherAmount = 0
+    
+    allUnpaidInvoices?.forEach((inv: any) => {
+      const invoiceTotal = parseFloat(inv.amount_rent || 0) + parseFloat(inv.amount_late || 0) + parseFloat(inv.amount_other || 0)
+      const balanceDue = parseFloat(inv.balance_due || 0)
+      
+      if (invoiceTotal > 0 && balanceDue > 0) {
+        // Calculate unpaid portion of each category proportionally
+        const rentPortion = parseFloat(inv.amount_rent || 0) / invoiceTotal
+        const latePortion = parseFloat(inv.amount_late || 0) / invoiceTotal
+        const otherPortion = parseFloat(inv.amount_other || 0) / invoiceTotal
+        
+        rentAmount += balanceDue * rentPortion
+        lateFeeAmount += balanceDue * latePortion
+        otherAmount += balanceDue * otherPortion
+      } else if (balanceDue > 0) {
+        // If no breakdown, assign all to rent
+        rentAmount += balanceDue
+      }
+    })
+    
+    // Round to 2 decimal places to ensure they sum correctly
+    rentAmount = Math.round(rentAmount * 100) / 100
+    lateFeeAmount = Math.round(lateFeeAmount * 100) / 100
+    otherAmount = Math.round(otherAmount * 100) / 100
+    
+    // Adjust for rounding errors - ensure they sum to totalDue
+    const sum = rentAmount + lateFeeAmount + otherAmount
+    const diff = totalDue - sum
+    if (Math.abs(diff) > 0.01) {
+      // Add the difference to rent amount
+      rentAmount += diff
+      rentAmount = Math.round(rentAmount * 100) / 100
+    }
 
     // Generate notice content based on state
     let noticeContent = ''
@@ -92,10 +128,10 @@ export async function POST(request: Request) {
 
 7-DAY NOTICE PURSUANT TO SOUTH CAROLINA CODE ANN. § 27-40-710(B)
 
-Date: ${noticeDateFormatted}
+Date Notice Delivered: ${noticeDateFormatted}
 
 To: ${tenant.first_name} ${tenant.last_name}
-Property: ${property.address}
+${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
@@ -105,8 +141,6 @@ Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximu
 ${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 ${otherAmount > 0 ? `Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
-
-As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
 Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7) days from the date of this notice (${noticeDateFormatted}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.
 
@@ -125,10 +159,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises
-
----
-This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) and is legally binding.`
+Method of Delivery: Physical Delivery to Premises`
     } else if (isNC) {
       // North Carolina Notice Template
       noticeTitle = '7-Day Notice to Pay Rent or Quit - North Carolina'
@@ -136,10 +167,10 @@ This notice is generated pursuant to South Carolina Code Ann. § 27-40-710(B) an
 
 7-DAY NOTICE PURSUANT TO NORTH CAROLINA GENERAL STATUTES § 42-26
 
-Date: ${noticeDateFormatted}
+Date Notice Delivered: ${noticeDateFormatted}
 
 To: ${tenant.first_name} ${tenant.last_name}
-Property: ${property.address}
+${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
@@ -149,8 +180,6 @@ Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximu
 ${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 ${otherAmount > 0 ? `Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
-
-As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
 Pursuant to North Carolina law (NC Gen. Stat. § 42-26), you have seven (7) days from the date of this notice (${noticeDateFormatted}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.
 
@@ -169,10 +198,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises
-
----
-This notice is generated pursuant to North Carolina General Statutes § 42-26 and is legally binding.`
+Method of Delivery: Physical Delivery to Premises`
     } else {
       // Default to SC template for unknown states
       noticeTitle = '7-Day Notice to Pay Rent or Quit'
@@ -180,10 +206,10 @@ This notice is generated pursuant to North Carolina General Statutes § 42-26 an
 
 7-DAY NOTICE
 
-Date: ${noticeDateFormatted}
+Date Notice Delivered: ${noticeDateFormatted}
 
 To: ${tenant.first_name} ${tenant.last_name}
-Property: ${property.address}
+${property.address}
 ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code}
 
 You are hereby notified that your rent in the amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} was due on ${rentDueDateFormatted}.
@@ -193,8 +219,6 @@ Rent: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximu
 ${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 ${otherAmount > 0 ? `Other Charges: $${otherAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
 **TOTAL DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**
-
-As of the date of this notice, the full amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remains unpaid.
 
 You have seven (7) days from the date of this notice (${noticeDateFormatted}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.
 
@@ -213,10 +237,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com
 
 **NOTICE DELIVERY:**
 Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises
-
----
-This notice is legally binding.`
+Method of Delivery: Physical Delivery to Premises`
     }
 
     return NextResponse.json({ 

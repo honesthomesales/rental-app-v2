@@ -128,7 +128,7 @@ export async function POST(request: Request) {
 
 7-DAY NOTICE PURSUANT TO SOUTH CAROLINA CODE ANN. § 27-40-710(B)
 
-Date Notice Delivered: ${noticeDateFormatted}
+Date Notice Delivered: ${noticeDateFormatted} 
 
 To: ${tenant.first_name} ${tenant.last_name}
 ${property.address}
@@ -155,11 +155,7 @@ We urge you to take immediate action to resolve this matter.
 **LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
-Text: 864-322-3432 | Email: honesthomesales@gmail.com
-
-**NOTICE DELIVERY:**
-Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises`
+Text: 864-322-3432 | Email: honesthomesales@gmail.com`
     } else if (isNC) {
       // North Carolina Notice Template
       noticeTitle = '7-Day Notice to Pay Rent or Quit - North Carolina'
@@ -167,7 +163,7 @@ Method of Delivery: Physical Delivery to Premises`
 
 7-DAY NOTICE PURSUANT TO NORTH CAROLINA GENERAL STATUTES § 42-26
 
-Date Notice Delivered: ${noticeDateFormatted}
+Date Notice Delivered: ${noticeDateFormatted} 
 
 To: ${tenant.first_name} ${tenant.last_name}
 ${property.address}
@@ -194,11 +190,7 @@ We urge you to take immediate action to resolve this matter.
 **LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
-Text: 864-322-3432 | Email: honesthomesales@gmail.com
-
-**NOTICE DELIVERY:**
-Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises`
+Text: 864-322-3432 | Email: honesthomesales@gmail.com`
     } else {
       // Default to SC template for unknown states
       noticeTitle = '7-Day Notice to Pay Rent or Quit'
@@ -206,7 +198,7 @@ Method of Delivery: Physical Delivery to Premises`
 
 7-DAY NOTICE
 
-Date Notice Delivered: ${noticeDateFormatted}
+Date Notice Delivered: ${noticeDateFormatted} 
 
 To: ${tenant.first_name} ${tenant.last_name}
 ${property.address}
@@ -233,11 +225,7 @@ We urge you to take immediate action to resolve this matter.
 **LANDLORD:**
 Honest Home Sales, LLC: Member: Billy Rochester
 PO Box 705, Cowpens, SC 29330
-Text: 864-322-3432 | Email: honesthomesales@gmail.com
-
-**NOTICE DELIVERY:**
-Date Notice Delivered: ${noticeDateFormatted}
-Method of Delivery: Physical Delivery to Premises`
+Text: 864-322-3432 | Email: honesthomesales@gmail.com`
     }
 
     return NextResponse.json({ 

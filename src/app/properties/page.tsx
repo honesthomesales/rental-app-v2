@@ -57,26 +57,38 @@ export default function PropertiesPage() {
       let aValue: any = a[sortField]
       let bValue: any = b[sortField]
 
-      // Handle null/undefined values first
-      if (aValue == null) aValue = ''
-      if (bValue == null) bValue = ''
-
-      // Handle different data types
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        aValue = aValue.toLowerCase()
-        bValue = bValue.toLowerCase()
-      } else if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
-        // For boolean values, convert to numbers (false = 0, true = 1)
-        aValue = aValue ? 1 : 0
-        bValue = bValue ? 1 : 0
-      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
-        // Numbers are already comparable
-        aValue = aValue || 0
-        bValue = bValue || 0
+      // Special handling for rent_value - use the displayRent if available, otherwise rent_value
+      if (sortField === 'rent_value') {
+        aValue = a.displayRent ?? a.rent_value ?? null
+        bValue = b.displayRent ?? b.rent_value ?? null
+        // Convert null to 0 for numeric comparison
+        aValue = aValue == null ? 0 : Number(aValue)
+        bValue = bValue == null ? 0 : Number(bValue)
+        // Ensure both are numbers
+        if (isNaN(aValue)) aValue = 0
+        if (isNaN(bValue)) bValue = 0
       } else {
-        // Mixed types or other: convert both to strings for comparison
-        aValue = String(aValue || '').toLowerCase()
-        bValue = String(bValue || '').toLowerCase()
+        // Handle null/undefined values first
+        if (aValue == null) aValue = ''
+        if (bValue == null) bValue = ''
+
+        // Handle different data types
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          aValue = aValue.toLowerCase()
+          bValue = bValue.toLowerCase()
+        } else if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+          // For boolean values, convert to numbers (false = 0, true = 1)
+          aValue = aValue ? 1 : 0
+          bValue = bValue ? 1 : 0
+        } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+          // Numbers are already comparable
+          aValue = aValue || 0
+          bValue = bValue || 0
+        } else {
+          // Mixed types or other: convert both to strings for comparison
+          aValue = String(aValue || '').toLowerCase()
+          bValue = String(bValue || '').toLowerCase()
+        }
       }
 
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
@@ -637,7 +649,14 @@ export default function PropertiesPage() {
                 bedrooms: parseInt(formData.get('bedrooms') as string) || 0,
                 bathrooms: parseFloat(formData.get('bathrooms') as string) || 0,
                 square_feet: parseInt(formData.get('square_feet') as string) || 0,
-                rent_value: parseFloat(formData.get('rent_value') as string) || 0,
+                rent_value: (() => {
+                  const rentValueStr = formData.get('rent_value') as string
+                  if (!rentValueStr || rentValueStr.trim() === '') {
+                    return null // Send null for empty values, not 0
+                  }
+                  const parsed = parseFloat(rentValueStr)
+                  return isNaN(parsed) ? null : parsed
+                })(),
                 lease_status: formData.get('lease_status') as string
               }
               handleSaveProperty(propertyData)

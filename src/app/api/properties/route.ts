@@ -104,9 +104,52 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Property ID is required' }, { status: 400 })
     }
 
+    // Clean up the update data - ensure numeric fields are properly formatted
+    // Use the same logic as PATCH endpoint for consistency
+    const cleanedData: any = {}
+    Object.keys(updateData).forEach(key => {
+      const value = updateData[key]
+      // Handle numeric fields - DECIMAL fields need to be numbers, INTEGER fields can be numbers
+      if (key === 'tax_paid_amount_current' || key === 'tax_paid_amount_previous' || 
+          key === 'tax_owed' || key === 'property_tax' || key === 'insurance_premium' || key === 'rent_value') {
+        // DECIMAL(10,2) fields - ensure proper number conversion with 2 decimal precision
+        if (value === null || value === undefined || value === '' || value === 'null' || value === 'undefined') {
+          cleanedData[key] = null
+        } else {
+          let numValue: number
+          if (typeof value === 'string') {
+            numValue = parseFloat(value.replace(/[^0-9.-]/g, '')) // Remove any non-numeric chars except . and -
+          } else if (typeof value === 'number') {
+            numValue = value
+          } else {
+            numValue = parseFloat(String(value))
+          }
+          
+          if (isNaN(numValue)) {
+            cleanedData[key] = null
+          } else {
+            // Ensure 2 decimal places for DECIMAL(10,2) fields
+            // Round to 2 decimals to match DECIMAL(10,2) precision
+            const roundedValue = Math.round(numValue * 100) / 100
+            cleanedData[key] = parseFloat(roundedValue.toFixed(2))
+          }
+        }
+      } else if (key === 'tax_color_state') {
+        // INTEGER field
+        if (value === null || value === undefined || value === '' || value === 'null') {
+          cleanedData[key] = null
+        } else {
+          const intValue = typeof value === 'string' ? parseInt(value, 10) : Math.floor(Number(value))
+          cleanedData[key] = isNaN(intValue) ? null : intValue
+        }
+      } else {
+        cleanedData[key] = value
+      }
+    })
+    
     // Filter out undefined values to avoid database errors
     const cleanUpdateData = Object.fromEntries(
-      Object.entries(updateData).filter(([_, value]) => value !== undefined)
+      Object.entries(cleanedData).filter(([_, value]) => value !== undefined)
     )
     
     console.log('Updating property:', { id, updateData: cleanUpdateData })

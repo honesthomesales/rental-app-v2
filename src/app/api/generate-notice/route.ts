@@ -128,7 +128,7 @@ export async function POST(request: Request) {
 
 7-DAY NOTICE PURSUANT TO SOUTH CAROLINA CODE ANN. § 27-40-710(B)
 
-Date Notice Delivered: ${noticeDateFormatted} 
+**Date Notice Delivered:** ${noticeDateFormatted} 
 
 To: ${tenant.first_name} ${tenant.last_name}
 ${property.address}
@@ -163,7 +163,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com`
 
 7-DAY NOTICE PURSUANT TO NORTH CAROLINA GENERAL STATUTES § 42-26
 
-Date Notice Delivered: ${noticeDateFormatted} 
+**Date Notice Delivered:** ${noticeDateFormatted} 
 
 To: ${tenant.first_name} ${tenant.last_name}
 ${property.address}
@@ -198,7 +198,7 @@ Text: 864-322-3432 | Email: honesthomesales@gmail.com`
 
 7-DAY NOTICE
 
-Date Notice Delivered: ${noticeDateFormatted} 
+**Date Notice Delivered:** ${noticeDateFormatted} 
 
 To: ${tenant.first_name} ${tenant.last_name}
 ${property.address}

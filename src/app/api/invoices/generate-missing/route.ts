@@ -3,6 +3,47 @@ import { supabaseServer } from '@/lib/supabase-server'
 import { normalizeCadence } from '@/lib/rent/cadence'
 
 /**
+ * Validates if an invoice's period matches the expected cadence
+ */
+function validateInvoiceCadence(
+  invoice: { period_start: string; period_end: string; due_date: string },
+  cadence: string,
+  rentDueDay: number
+): boolean {
+  const periodStart = new Date(invoice.period_start + 'T00:00:00')
+  const periodEnd = new Date(invoice.period_end + 'T00:00:00')
+  const dueDate = new Date(invoice.due_date + 'T00:00:00')
+  
+  // Calculate period length in days
+  const periodLengthDays = Math.round((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  
+  if (cadence === 'weekly') {
+    // Weekly: period should be exactly 7 days
+    return periodLengthDays === 7
+  } else if (cadence === 'biweekly') {
+    // Biweekly: period should be exactly 14 days
+    return periodLengthDays === 14
+  } else if (cadence === 'monthly') {
+    // Monthly: period should span the full month
+    // period_start should be the 1st of the month
+    // period_end should be the last day of the month
+    // due_date should match rent_due_day (or last day of month if rent_due_day is later)
+    const expectedPeriodStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)
+    const expectedPeriodEnd = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0)
+    const daysInMonth = expectedPeriodEnd.getDate()
+    const expectedDueDay = Math.min(rentDueDay, daysInMonth)
+    
+    const periodStartMatches = periodStart.getTime() === expectedPeriodStart.getTime()
+    const periodEndMatches = periodEnd.getTime() === expectedPeriodEnd.getTime()
+    const dueDayMatches = dueDate.getDate() === expectedDueDay
+    
+    return periodStartMatches && periodEndMatches && dueDayMatches
+  }
+  
+  return false
+}
+
+/**
  * API endpoint to automatically generate missing invoices for a lease
  * This ensures invoices always exist up to 3 months ahead
  * Called automatically when viewing invoices to fill any gaps
@@ -69,10 +110,10 @@ export async function POST(request: Request) {
       endDate = threeMonthsAhead.toISOString().split('T')[0]
     }
 
-    // Fetch existing invoices to find gaps
+    // Fetch existing invoices to find gaps and validate cadence
     const { data: existingInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
-      .select('due_date')
+      .select('id, due_date, period_start, period_end')
       .eq('lease_id', leaseId)
       .gte('due_date', leaseStartDate)
       .lte('due_date', endDate)
@@ -84,6 +125,40 @@ export async function POST(request: Request) {
         { error: 'Failed to fetch existing invoices', details: invoicesError.message },
         { status: 500 }
       )
+    }
+
+    // Validate that all existing invoices match the lease cadence
+    if (existingInvoices && existingInvoices.length > 0) {
+      const mismatchedInvoices: any[] = []
+      
+      for (const invoice of existingInvoices) {
+        if (!validateInvoiceCadence(invoice, cadence || 'monthly', rentDueDay)) {
+          mismatchedInvoices.push({
+            id: invoice.id,
+            due_date: invoice.due_date,
+            period_start: invoice.period_start,
+            period_end: invoice.period_end,
+            period_length_days: Math.round(
+              (new Date(invoice.period_end + 'T00:00:00').getTime() - 
+               new Date(invoice.period_start + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)
+            ) + 1
+          })
+        }
+      }
+      
+      if (mismatchedInvoices.length > 0) {
+        console.error(`Found ${mismatchedInvoices.length} invoices with incorrect cadence for lease ${leaseId} (expected: ${cadence})`)
+        return NextResponse.json(
+          {
+            error: 'Existing invoices have incorrect cadence',
+            details: `Found ${mismatchedInvoices.length} invoice(s) that do not match the lease cadence (${cadence}). Please delete these invoices before generating new ones.`,
+            mismatchedInvoices: mismatchedInvoices,
+            expectedCadence: cadence,
+            leaseCadence: lease.rent_cadence
+          },
+          { status: 400 }
+        )
+      }
     }
 
     const existingDueDates = new Set(

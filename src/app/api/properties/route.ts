@@ -44,6 +44,23 @@ export async function GET(request: Request) {
         throw new Error(`Error fetching properties: ${retryError.message}`)
       }
       
+      // If not including retired, filter out properties with "sold" lease status
+      if (!includeRetired) {
+        const { data: allLeases } = await supabaseServer
+          .from('RENT_leases')
+          .select('property_id, status')
+        
+        const soldPropertyIds = new Set(
+          allLeases?.filter(lease => lease.status === 'sold').map(lease => lease.property_id) || []
+        )
+        
+        const filteredProperties = allProperties?.filter(
+          property => !soldPropertyIds.has(property.id)
+        ) || []
+        
+        return NextResponse.json(filteredProperties)
+      }
+      
       return NextResponse.json(allProperties || [])
     }
 
@@ -52,6 +69,30 @@ export async function GET(request: Request) {
     if (error) {
       console.error('Supabase error:', error)
       throw new Error(`Error fetching properties: ${error.message}`)
+    }
+
+    // If not including retired, also filter out properties with "sold" lease status
+    // This ensures "sold" properties are treated the same as retired properties
+    if (!includeRetired) {
+      const { data: allLeases } = await supabaseServer
+        .from('RENT_leases')
+        .select('property_id, status')
+      
+      const soldPropertyIds = new Set(
+        allLeases?.filter(lease => lease.status === 'sold').map(lease => lease.property_id) || []
+      )
+      
+      const filteredProperties = properties?.filter(
+        property => !soldPropertyIds.has(property.id)
+      ) || []
+      
+      console.log('Filtered out sold properties:', { 
+        before: properties?.length || 0, 
+        after: filteredProperties.length,
+        soldCount: soldPropertyIds.size
+      })
+      
+      return NextResponse.json(filteredProperties)
     }
 
     console.log('Returning properties:', properties?.length || 0)

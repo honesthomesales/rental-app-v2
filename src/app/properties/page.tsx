@@ -40,8 +40,14 @@ export default function PropertiesPage() {
         return false
       }
       
-      // If showRetired is true, we want to show all (including retired)
-      // If showRetired is false, we want to show only active/null (retired already filtered above)
+      // Also filter out properties with "sold" lease status when showRetired is false
+      // "Sold" properties should be treated the same as retired properties
+      if (!showRetired && property.leaseStatus === 'sold') {
+        return false
+      }
+      
+      // If showRetired is true, we want to show all (including retired and sold)
+      // If showRetired is false, we want to show only active/null (retired and sold already filtered above)
       
       const searchLower = searchTerm.toLowerCase()
       return (

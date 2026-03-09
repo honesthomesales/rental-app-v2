@@ -153,8 +153,9 @@ export default function PropertiesPage() {
           isOccupied: !!isActiveLease, // Only true if status is occupied/active/sold
           leaseStatus: anyLease?.status || null, // Show all lease statuses
           leaseId: anyLease?.id || null, // Store lease ID for updates
-          // Show lease rent if has lease, otherwise show property rent_value
-          displayRent: anyLease ? anyLease.rent : property.rent_value
+          // Show lease rent ONLY if lease is actively occupied, otherwise show property rent_value
+          // This ensures property rent_value is displayed when lease is empty, sold, or doesn't exist
+          displayRent: (anyLease && anyLease.status === 'occupied') ? anyLease.rent : property.rent_value
         }
       })
       

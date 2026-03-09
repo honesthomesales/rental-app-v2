@@ -15,6 +15,7 @@ export default function DealsPage() {
   const [sortField, setSortField] = useState<SortField>('date_purchased')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [searchTerm, setSearchTerm] = useState('')
+  const [showCompleted, setShowCompleted] = useState<'all' | 'completed' | 'not-completed'>('all')
 
   useEffect(() => {
     fetchDeals()
@@ -50,9 +51,26 @@ export default function DealsPage() {
     return () => clearTimeout(timeoutId)
   }, [searchTerm])
 
+  // Helper function to check if a deal is completed
+  // A deal is completed if the word "completed" appears on its own line in the notes
+  const isDealCompleted = (deal: Deal): boolean => {
+    if (!deal.notes) return false
+    // Split notes by newlines and check if any line contains only "completed" (case-insensitive, trimmed)
+    const lines = deal.notes.split(/\r?\n/)
+    return lines.some(line => line.trim().toLowerCase() === 'completed')
+  }
+
   // Compute filtered and sorted deals using useMemo
   const deals = useMemo(() => {
     let filtered = [...allDeals]
+
+    // Filter by completed status
+    if (showCompleted === 'completed') {
+      filtered = filtered.filter(deal => isDealCompleted(deal))
+    } else if (showCompleted === 'not-completed') {
+      filtered = filtered.filter(deal => !isDealCompleted(deal))
+    }
+    // If showCompleted === 'all', don't filter
 
     // Apply sorting
     filtered.sort((a, b) => {
@@ -90,7 +108,7 @@ export default function DealsPage() {
     })
 
     return filtered
-  }, [allDeals, sortField, sortDirection])
+  }, [allDeals, sortField, sortDirection, showCompleted])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -249,6 +267,18 @@ export default function DealsPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">All Deals</h2>
             <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Filter:</label>
+                <select
+                  value={showCompleted}
+                  onChange={(e) => setShowCompleted(e.target.value as 'all' | 'completed' | 'not-completed')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                >
+                  <option value="all">All</option>
+                  <option value="completed">Completed</option>
+                  <option value="not-completed">Not Completed</option>
+                </select>
+              </div>
               <div className="relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
@@ -326,6 +356,9 @@ export default function DealsPage() {
                   </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Notes
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -353,6 +386,17 @@ export default function DealsPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(deal["Soteris_$"])}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {isDealCompleted(deal) ? (
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                        Completed
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                        Not Completed
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
                     {deal.notes || 'N/A'}

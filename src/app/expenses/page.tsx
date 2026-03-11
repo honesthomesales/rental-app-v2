@@ -327,9 +327,20 @@ export default function ExpensesPage() {
     )
   }
 
-  const calculateBalancePercent = (balance: number, amountOwed: number) => {
-    if (amountOwed === 0) return '0.00%'
-    return `${((balance / amountOwed) * 100).toFixed(2)}%`
+  const calculateSummaryTotals = () => {
+    const withInterest = filteredExpenses
+      .filter(e => (e.interest_rate ?? 0) > 0)
+      .reduce((sum, e) => sum + (e.balance ?? 0), 0)
+    const zeroInterest = filteredExpenses
+      .filter(e => (e.interest_rate ?? 0) === 0)
+      .reduce((sum, e) => sum + (e.balance ?? 0), 0)
+    const totals = calculateTotals()
+    return {
+      balanceWithInterest: withInterest,
+      balanceZeroInterest: zeroInterest,
+      totalBalance: totals.balance,
+      totalAmountOwed: totals.amount_owed
+    }
   }
 
   if (loading) {
@@ -353,21 +364,41 @@ export default function ExpensesPage() {
               <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
               <p className="mt-2 text-gray-600">Manage property expenses and payments</p>
             </div>
-            <div className="flex space-x-3">
-              <button
-                onClick={handleAddExpense}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
-              >
-                <PlusIcon className="h-5 w-5" />
-                <span>Add Expense</span>
-              </button>
-              <button
-                onClick={handleAddOneTimeExpense}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
-              >
-                <PlusIcon className="h-5 w-5" />
-                <span>Add One-Time Expense</span>
-              </button>
+            <div className="flex items-center gap-4">
+              <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-4 py-3 flex items-center gap-6">
+                <div className="text-sm">
+                  <span className="text-gray-500 block">Balance (interest &gt; 0)</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().balanceWithInterest)}</span>
+                </div>
+                <div className="text-sm border-l border-gray-200 pl-4">
+                  <span className="text-gray-500 block">Balance (0% interest)</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().balanceZeroInterest)}</span>
+                </div>
+                <div className="text-sm border-l border-gray-200 pl-4">
+                  <span className="text-gray-500 block">Total Balance</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().totalBalance)}</span>
+                </div>
+                <div className="text-sm border-l border-gray-200 pl-4">
+                  <span className="text-gray-500 block">Total Amount Owed</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().totalAmountOwed)}</span>
+                </div>
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleAddExpense}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+                >
+                  <PlusIcon className="h-5 w-5" />
+                  <span>Add Expense</span>
+                </button>
+                <button
+                  onClick={handleAddOneTimeExpense}
+                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+                >
+                  <PlusIcon className="h-5 w-5" />
+                  <span>Add One-Time Expense</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -458,9 +489,6 @@ export default function ExpensesPage() {
                       )}
                     </div>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Percent
-                  </th>
                   <th 
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('interest_rate')}
@@ -515,9 +543,6 @@ export default function ExpensesPage() {
                       {formatCurrency(expense.balance)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {calculateBalancePercent(expense.balance, expense.amount_owed)}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatPercentage(expense.interest_rate)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -552,9 +577,6 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatCurrency(calculateTotals().balance)}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {calculateBalancePercent(calculateTotals().balance, calculateTotals().amount_owed)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                       -

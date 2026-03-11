@@ -370,6 +370,25 @@ export default function LastPaidPage() {
     return sortDirection === 'asc' ? ' ↑' : ' ↓'
   }
 
+  const sortIndicatorIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400 inline-block ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      )
+    }
+    return sortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-blue-600 inline-block ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-blue-600 inline-block ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    )
+  }
+
   // Filter properties that have at least one payment
   const propertiesWithPayments = useMemo(() => {
     return data.filter(p => p.payments.length > 0)
@@ -1144,8 +1163,16 @@ export default function LastPaidPage() {
                       key={dateStr}
                       className={`px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200 ${colIndex === 0 ? 'cursor-pointer hover:bg-gray-100' : ''}`}
                       onClick={colIndex === 0 ? () => handleSort('latestWeek') : undefined}
+                      title={colIndex === 0 ? 'Sort by latest week' : undefined}
                     >
-                      {formatGridDate(dateStr)}{colIndex === 0 ? sortIndicator('latestWeek') : ''}
+                      <span className="inline-flex items-center justify-center gap-1">
+                        {formatGridDate(dateStr)}
+                        {colIndex === 0 && (
+                          <span className="inline-flex items-center" aria-hidden="true">
+                            {sortIndicatorIcon('latestWeek')}
+                          </span>
+                        )}
+                      </span>
                     </th>
                   ))}
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200">

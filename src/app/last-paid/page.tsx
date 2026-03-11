@@ -39,7 +39,7 @@ interface PropertyPayments {
   payments: PaymentEntry[]
 }
 
-type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed'
+type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 'latestWeek'
 type SortDirection = 'asc' | 'desc'
 
 export default function LastPaidPage() {
@@ -432,13 +432,25 @@ export default function LastPaidPage() {
         case 'totalOwed': {
           return dir * ((a.totalOwed || 0) - (b.totalOwed || 0))
         }
+        case 'latestWeek': {
+          // Sort by value in first (latest) week column - only used in grid view
+          const firstDate = gridDateColumns[0]
+          if (!firstDate) return 0
+          const sortKey = (prop: PropertyPayments) => {
+            const cell = getGridCellValue(prop, firstDate)
+            if (cell.value === '----') return -Infinity
+            const num = parseFloat(cell.value.replace(/[$,]/g, ''))
+            return Number.isNaN(num) ? -Infinity : num
+          }
+          return dir * (sortKey(a) - sortKey(b))
+        }
         default:
           return 0
       }
     })
 
     return sorted
-  }, [propertiesWithPayments, searchTerm, cadenceFilter, sortField, sortDirection])
+  }, [propertiesWithPayments, searchTerm, cadenceFilter, sortField, sortDirection, gridDateColumns])
 
   const cadenceBadge = (cadence: string | null) => {
     const c = cadence?.toLowerCase() || ''
@@ -1127,12 +1139,13 @@ export default function LastPaidPage() {
                   >
                     Total Owed{sortIndicator('totalOwed')}
                   </th>
-                  {gridDateColumns.map((dateStr) => (
+                  {gridDateColumns.map((dateStr, colIndex) => (
                     <th
                       key={dateStr}
-                      className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200"
+                      className={`px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200 ${colIndex === 0 ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                      onClick={colIndex === 0 ? () => handleSort('latestWeek') : undefined}
                     >
-                      {formatGridDate(dateStr)}
+                      {formatGridDate(dateStr)}{colIndex === 0 ? sortIndicator('latestWeek') : ''}
                     </th>
                   ))}
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200">

@@ -41,6 +41,7 @@ interface PropertyPayments {
 
 type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 'latestWeek'
 type SortDirection = 'asc' | 'desc'
+type MonthlySortField = 'property' | 'cadence' | 'thisMonth' | 'lastMonth' | 'twoMonthsAgo'
 
 export default function LastPaidPage() {
   const [data, setData] = useState<PropertyPayments[]>([])
@@ -74,6 +75,8 @@ export default function LastPaidPage() {
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
   const [viewMode, setViewMode] = useState<'table' | 'grid' | 'monthly'>('table')
+  const [monthlySortField, setMonthlySortField] = useState<MonthlySortField>('property')
+  const [monthlySortDirection, setMonthlySortDirection] = useState<SortDirection>('asc')
 
   useEffect(() => {
     fetchData()
@@ -557,6 +560,40 @@ export default function LastPaidPage() {
       }
     })
   }, [filteredAndSorted])
+
+  const monthlyTotalsSorted = useMemo(() => {
+    const dir = monthlySortDirection === 'asc' ? 1 : -1
+    return [...monthlyTotals].sort((a, b) => {
+      switch (monthlySortField) {
+        case 'property':
+          return dir * (a.property.property_name || '').localeCompare(b.property.property_name || '')
+        case 'cadence':
+          return dir * (a.property.cadence || '').localeCompare(b.property.cadence || '')
+        case 'thisMonth':
+          return dir * (a.paidThisMonth - b.paidThisMonth)
+        case 'lastMonth':
+          return dir * (a.paidLastMonth - b.paidLastMonth)
+        case 'twoMonthsAgo':
+          return dir * (a.paidTwoMonthsAgo - b.paidTwoMonthsAgo)
+        default:
+          return 0
+      }
+    })
+  }, [monthlyTotals, monthlySortField, monthlySortDirection])
+
+  const handleMonthlySort = (field: MonthlySortField) => {
+    if (monthlySortField === field) {
+      setMonthlySortDirection(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setMonthlySortField(field)
+      setMonthlySortDirection('asc')
+    }
+  }
+
+  const monthlySortIndicator = (field: MonthlySortField) => {
+    if (monthlySortField !== field) return ' ↕'
+    return monthlySortDirection === 'asc' ? ' ↑' : ' ↓'
+  }
 
   // Format date for grid header (M/D format)
   const formatGridDate = (dateStr: string) => {
@@ -1286,32 +1323,47 @@ export default function LastPaidPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Property
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleMonthlySort('property')}
+                  >
+                    Property{monthlySortIndicator('property')}
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cadence
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleMonthlySort('cadence')}
+                  >
+                    Cadence{monthlySortIndicator('cadence')}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {monthLabels[0]}
+                  <th
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleMonthlySort('thisMonth')}
+                  >
+                    {monthLabels[0]}{monthlySortIndicator('thisMonth')}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {monthLabels[1]}
+                  <th
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleMonthlySort('lastMonth')}
+                  >
+                    {monthLabels[1]}{monthlySortIndicator('lastMonth')}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {monthLabels[2]}
+                  <th
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleMonthlySort('twoMonthsAgo')}
+                  >
+                    {monthLabels[2]}{monthlySortIndicator('twoMonthsAgo')}
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {monthlyTotals.length === 0 ? (
+                {monthlyTotalsSorted.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                       No properties found
                     </td>
                   </tr>
                 ) : (
-                  monthlyTotals.map(({ property, paidThisMonth, paidLastMonth, paidTwoMonthsAgo }) => (
+                  monthlyTotalsSorted.map(({ property, paidThisMonth, paidLastMonth, paidTwoMonthsAgo }) => (
                     <tr key={property.property_id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-gray-900">{property.property_name}</div>

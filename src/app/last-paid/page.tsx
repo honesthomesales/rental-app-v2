@@ -41,7 +41,7 @@ interface PropertyPayments {
 
 type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 'latestWeek'
 type SortDirection = 'asc' | 'desc'
-type MonthlySortField = 'property' | 'cadence' | 'thisMonth' | 'lastMonth' | 'twoMonthsAgo'
+type MonthlySortField = 'property' | 'cadence' | 'dayDue' | 'thisMonth' | 'lastMonth' | 'twoMonthsAgo'
 
 export default function LastPaidPage() {
   const [data, setData] = useState<PropertyPayments[]>([])
@@ -75,8 +75,11 @@ export default function LastPaidPage() {
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
   const [viewMode, setViewMode] = useState<'table' | 'grid' | 'monthly'>('table')
-  const [monthlySortField, setMonthlySortField] = useState<MonthlySortField>('property')
+  const [monthlySortField, setMonthlySortField] = useState<MonthlySortField>('dayDue')
   const [monthlySortDirection, setMonthlySortDirection] = useState<SortDirection>('asc')
+  const [monthlyDayDueDir, setMonthlyDayDueDir] = useState<SortDirection>('asc')
+  const [monthlySortSecondaryColumn, setMonthlySortSecondaryColumn] = useState<'thisMonth' | 'lastMonth' | 'twoMonthsAgo'>('thisMonth')
+  const [monthlySortSecondaryDir, setMonthlySortSecondaryDir] = useState<SortDirection>('asc')
 
   useEffect(() => {
     fetchData()
@@ -563,34 +566,61 @@ export default function LastPaidPage() {
 
   const monthlyTotalsSorted = useMemo(() => {
     const dir = monthlySortDirection === 'asc' ? 1 : -1
+    const dayDueDir = monthlyDayDueDir === 'asc' ? 1 : -1
+    const monthDir = monthlySortSecondaryDir === 'asc' ? 1 : -1
+    const getDayDue = (r: { property: PropertyPayments }) => r.property.rent_due_day ?? 99
+    const getMonthVal = (r: { paidThisMonth: number; paidLastMonth: number; paidTwoMonthsAgo: number }, col: 'thisMonth' | 'lastMonth' | 'twoMonthsAgo') =>
+      col === 'thisMonth' ? r.paidThisMonth : col === 'lastMonth' ? r.paidLastMonth : r.paidTwoMonthsAgo
+
     return [...monthlyTotals].sort((a, b) => {
-      switch (monthlySortField) {
-        case 'property':
-          return dir * (a.property.property_name || '').localeCompare(b.property.property_name || '')
-        case 'cadence':
-          return dir * (a.property.cadence || '').localeCompare(b.property.cadence || '')
-        case 'thisMonth':
-          return dir * (a.paidThisMonth - b.paidThisMonth)
-        case 'lastMonth':
-          return dir * (a.paidLastMonth - b.paidLastMonth)
-        case 'twoMonthsAgo':
-          return dir * (a.paidTwoMonthsAgo - b.paidTwoMonthsAgo)
-        default:
-          return 0
+      if (monthlySortField === 'property') {
+        return dir * (a.property.property_name || '').localeCompare(b.property.property_name || '')
       }
+      if (monthlySortField === 'cadence') {
+        return dir * (a.property.cadence || '').localeCompare(b.property.cadence || '')
+      }
+      if (monthlySortField === 'dayDue') {
+        const dayCmp = dayDueDir * (getDayDue(a) - getDayDue(b))
+        if (dayCmp !== 0) return dayCmp
+        return monthDir * (getMonthVal(a, monthlySortSecondaryColumn) - getMonthVal(b, monthlySortSecondaryColumn))
+      }
+      if (monthlySortField === 'thisMonth' || monthlySortField === 'lastMonth' || monthlySortField === 'twoMonthsAgo') {
+        const dayCmp = dayDueDir * (getDayDue(a) - getDayDue(b))
+        if (dayCmp !== 0) return dayCmp
+        return dir * (getMonthVal(a, monthlySortField) - getMonthVal(b, monthlySortField))
+      }
+      return 0
     })
-  }, [monthlyTotals, monthlySortField, monthlySortDirection])
+  }, [monthlyTotals, monthlySortField, monthlySortDirection, monthlyDayDueDir, monthlySortSecondaryColumn, monthlySortSecondaryDir])
 
   const handleMonthlySort = (field: MonthlySortField) => {
     if (monthlySortField === field) {
       setMonthlySortDirection(d => d === 'asc' ? 'desc' : 'asc')
+      if (field === 'dayDue') setMonthlyDayDueDir(d => d === 'asc' ? 'desc' : 'asc')
+      if (field === 'thisMonth' || field === 'lastMonth' || field === 'twoMonthsAgo') setMonthlySortSecondaryDir(d => d === 'asc' ? 'desc' : 'asc')
     } else {
       setMonthlySortField(field)
       setMonthlySortDirection('asc')
+      if (field === 'dayDue') setMonthlyDayDueDir('asc')
+      if (field === 'thisMonth' || field === 'lastMonth' || field === 'twoMonthsAgo') {
+        setMonthlySortSecondaryColumn(field)
+        setMonthlySortSecondaryDir('asc')
+      }
     }
   }
 
   const monthlySortIndicator = (field: MonthlySortField) => {
+    if (field === 'dayDue') {
+      if (monthlySortField !== 'dayDue' && monthlySortField !== 'thisMonth' && monthlySortField !== 'lastMonth' && monthlySortField !== 'twoMonthsAgo') return ' ↕'
+      return monthlyDayDueDir === 'asc' ? ' ↑' : ' ↓'
+    }
+    if (field === 'thisMonth' || field === 'lastMonth' || field === 'twoMonthsAgo') {
+      const isPrimary = monthlySortField === field
+      const isSecondary = monthlySortSecondaryColumn === field
+      if (!isPrimary && !isSecondary) return ' ↕'
+      if (isPrimary) return monthlySortDirection === 'asc' ? ' ↑' : ' ↓'
+      return monthlySortSecondaryDir === 'asc' ? ' ↑' : ' ↓'
+    }
     if (monthlySortField !== field) return ' ↕'
     return monthlySortDirection === 'asc' ? ' ↑' : ' ↓'
   }
@@ -1336,6 +1366,12 @@ export default function LastPaidPage() {
                     Cadence{monthlySortIndicator('cadence')}
                   </th>
                   <th
+                    className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleMonthlySort('dayDue')}
+                  >
+                    Day Due{monthlySortIndicator('dayDue')}
+                  </th>
+                  <th
                     className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleMonthlySort('thisMonth')}
                   >
@@ -1358,7 +1394,7 @@ export default function LastPaidPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {monthlyTotalsSorted.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                       No properties found
                     </td>
                   </tr>
@@ -1371,6 +1407,9 @@ export default function LastPaidPage() {
                       </td>
                       <td className="px-4 py-3">
                         {cadenceBadge(property.cadence)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-900">
+                        {property.rent_due_day != null ? property.rent_due_day : '–'}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
                         {formatCurrency(paidThisMonth)}

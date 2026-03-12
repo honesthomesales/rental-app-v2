@@ -394,9 +394,9 @@ export default function LastPaidPage() {
     return data.filter(p => p.payments.length > 0)
   }, [data])
 
-  const filteredAndSorted = useMemo(() => {
+  // Filter only (no sort) - used by allMonthly and filteredAndSorted to break circular dependency
+  const filteredOnly = useMemo(() => {
     let filtered = propertiesWithPayments
-
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(p =>
@@ -405,7 +405,6 @@ export default function LastPaidPage() {
         p.payments.some(pay => pay.tenant_name?.toLowerCase().includes(term))
       )
     }
-
     if (cadenceFilter) {
       filtered = filtered.filter(p => {
         const c = p.cadence?.toLowerCase() || ''
@@ -415,8 +414,41 @@ export default function LastPaidPage() {
         return true
       })
     }
+    return filtered
+  }, [propertiesWithPayments, searchTerm, cadenceFilter])
 
-    const sorted = [...filtered].sort((a, b) => {
+  // Determine if all properties are monthly (only then use monthly dates) - must be before gridDateColumns
+  const allMonthly = useMemo(() => {
+    if (filteredOnly.length === 0) return false
+    const cadences = filteredOnly.map(p => p.cadence?.toLowerCase() || '').filter(c => c)
+    return cadences.length > 0 && cadences.every(c => c === 'monthly')
+  }, [filteredOnly])
+
+  // Calculate date columns for grid view - must be before filteredAndSorted (used in latestWeek sort)
+  const gridDateColumns = useMemo(() => {
+    const today = new Date()
+    const dates: string[] = []
+    if (allMonthly) {
+      for (let i = 0; i < 9; i++) {
+        const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
+        dates.push(date.toISOString().split('T')[0])
+      }
+    } else {
+      const currentDay = today.getDay()
+      const daysToFriday = currentDay === 5 ? 7 : (5 - currentDay + 7) % 7
+      const nextFriday = new Date(today)
+      nextFriday.setDate(today.getDate() + daysToFriday)
+      for (let i = 0; i < 9; i++) {
+        const friday = new Date(nextFriday)
+        friday.setDate(nextFriday.getDate() - (i * 7))
+        dates.push(friday.toISOString().split('T')[0])
+      }
+    }
+    return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+  }, [allMonthly])
+
+  const filteredAndSorted = useMemo(() => {
+    const sorted = [...filteredOnly].sort((a, b) => {
       const dir = sortDirection === 'asc' ? 1 : -1
       switch (sortField) {
         case 'property':
@@ -452,14 +484,22 @@ export default function LastPaidPage() {
           return dir * ((a.totalOwed || 0) - (b.totalOwed || 0))
         }
         case 'latestWeek': {
-          // Sort by value in first (latest) week column - only used in grid view
-          const firstDate = gridDateColumns[0]
-          if (!firstDate) return 0
+          // Sort by value in first (latest) week column - compute key inline to avoid use-before-init of getGridCellValue
+          const firstDateStr = gridDateColumns[0]
+          if (!firstDateStr) return 0
+          const firstDate = new Date(firstDateStr + 'T00:00:00')
+          const periodEnd = new Date(firstDate)
+          const periodStart = new Date(firstDate)
+          periodStart.setDate(periodEnd.getDate() - 6)
           const sortKey = (prop: PropertyPayments) => {
-            const cell = getGridCellValue(prop, firstDate)
-            if (cell.value === '----') return -Infinity
-            const num = parseFloat(cell.value.replace(/[$,]/g, ''))
-            return Number.isNaN(num) ? -Infinity : num
+            let total = 0
+            for (const p of prop.payments) {
+              const amt = parseFloat(p.amount as any) || 0
+              if (!p.payment_date || amt <= 0) continue
+              const d = new Date(p.payment_date + 'T00:00:00')
+              if (d >= periodStart && d <= periodEnd) total += amt
+            }
+            return total
           }
           return dir * (sortKey(a) - sortKey(b))
         }
@@ -469,7 +509,7 @@ export default function LastPaidPage() {
     })
 
     return sorted
-  }, [propertiesWithPayments, searchTerm, cadenceFilter, sortField, sortDirection, gridDateColumns])
+  }, [filteredOnly, sortField, sortDirection, gridDateColumns])
 
   const cadenceBadge = (cadence: string | null) => {
     const c = cadence?.toLowerCase() || ''
@@ -517,50 +557,6 @@ export default function LastPaidPage() {
       }
     })
   }, [filteredAndSorted])
-
-  // Determine if all properties are monthly (only then use monthly dates)
-  const allMonthly = useMemo(() => {
-    if (filteredAndSorted.length === 0) return false
-    
-    const cadences = filteredAndSorted
-      .map(p => p.cadence?.toLowerCase() || '')
-      .filter(c => c)
-    
-    // Only use monthly if ALL properties are monthly
-    return cadences.length > 0 && cadences.every(c => c === 'monthly')
-  }, [filteredAndSorted])
-
-  // Calculate date columns for grid view - always weekly unless all monthly
-  const gridDateColumns = useMemo(() => {
-    const today = new Date()
-    const dates: string[] = []
-    
-    if (allMonthly) {
-      // Monthly - generate last 9 months (first of each month)
-      for (let i = 0; i < 9; i++) {
-        const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
-        dates.push(date.toISOString().split('T')[0])
-      }
-    } else {
-      // Always weekly (Fridays) - show 1 cycle past current date (next Friday)
-      // Find next Friday from today
-      const currentDay = today.getDay() // 0 = Sunday, 5 = Friday
-      const daysToFriday = currentDay === 5 ? 7 : (5 - currentDay + 7) % 7
-      const nextFriday = new Date(today)
-      nextFriday.setDate(today.getDate() + daysToFriday)
-      
-      // Generate 9 Fridays going back from next Friday
-      for (let i = 0; i < 9; i++) {
-        const friday = new Date(nextFriday)
-        friday.setDate(nextFriday.getDate() - (i * 7))
-        dates.push(friday.toISOString().split('T')[0])
-      }
-    }
-    
-    return dates.sort((a, b) => {
-      return new Date(b).getTime() - new Date(a).getTime()
-    })
-  }, [allMonthly])
 
   // Format date for grid header (M/D format)
   const formatGridDate = (dateStr: string) => {

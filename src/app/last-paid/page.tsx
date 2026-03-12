@@ -73,7 +73,7 @@ export default function LastPaidPage() {
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
-  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table')
+  const [viewMode, setViewMode] = useState<'table' | 'grid' | 'monthly'>('table')
 
   useEffect(() => {
     fetchData()
@@ -478,6 +478,45 @@ export default function LastPaidPage() {
     if (c === 'monthly') return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">Monthly</span>
     return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">-</span>
   }
+
+  // Monthly view: total paid per property for this month, last month, 2 months ago
+  const now = new Date()
+  const monthLabels = useMemo(() => {
+    const m0 = new Date(now.getFullYear(), now.getMonth(), 1)
+    const m1 = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const m2 = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+    return [
+      m0.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      m1.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      m2.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    ]
+  }, [])
+
+  const monthlyTotals = useMemo(() => {
+    const thisKey = now.getFullYear() * 12 + now.getMonth()
+    const lastKey = thisKey - 1
+    const twoKeys = thisKey - 2
+    return filteredAndSorted.map((property) => {
+      let paidThisMonth = 0
+      let paidLastMonth = 0
+      let paidTwoMonthsAgo = 0
+      for (const p of property.payments) {
+        const amt = parseFloat(p.amount as any) || 0
+        if (!p.payment_date || amt <= 0) continue
+        const d = new Date(p.payment_date + 'T00:00:00')
+        const key = d.getFullYear() * 12 + d.getMonth()
+        if (key === thisKey) paidThisMonth += amt
+        else if (key === lastKey) paidLastMonth += amt
+        else if (key === twoKeys) paidTwoMonthsAgo += amt
+      }
+      return {
+        property,
+        paidThisMonth,
+        paidLastMonth,
+        paidTwoMonthsAgo
+      }
+    })
+  }, [filteredAndSorted])
 
   // Determine if all properties are monthly (only then use monthly dates)
   const allMonthly = useMemo(() => {
@@ -979,6 +1018,16 @@ export default function LastPaidPage() {
           >
             Grid
           </button>
+          <button
+            onClick={() => setViewMode('monthly')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'monthly'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Monthly
+          </button>
         </div>
       </div>
 
@@ -1011,7 +1060,7 @@ export default function LastPaidPage() {
         </div>
       </div>
 
-      {/* Main Table or Grid */}
+      {/* Main Table, Grid, or Monthly */}
       {viewMode === 'table' ? (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
@@ -1133,7 +1182,7 @@ export default function LastPaidPage() {
           </tbody>
         </table>
       </div>
-      ) : (
+      ) : viewMode === 'grid' ? (
         /* Grid View */
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="overflow-x-auto">
@@ -1229,6 +1278,63 @@ export default function LastPaidPage() {
                       </tr>
                     )
                   })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Monthly View */
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Property
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cadence
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {monthLabels[0]}
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {monthLabels[1]}
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {monthLabels[2]}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {monthlyTotals.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                      No properties found
+                    </td>
+                  </tr>
+                ) : (
+                  monthlyTotals.map(({ property, paidThisMonth, paidLastMonth, paidTwoMonthsAgo }) => (
+                    <tr key={property.property_id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="text-sm font-medium text-gray-900">{property.property_name}</div>
+                        <div className="text-xs text-gray-500">{property.property_address}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {cadenceBadge(property.cadence)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(paidThisMonth)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(paidLastMonth)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(paidTwoMonthsAgo)}
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>

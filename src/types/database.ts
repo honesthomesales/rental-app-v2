@@ -436,3 +436,19 @@ export interface Expense {
   created_at?: string
   updated_at?: string
 }
+
+export interface Document {
+  id: string
+  title: string
+  file_url: string
+  file_size?: number
+  created_at?: string
+  updated_at?: string
+  // Attachment context (all optional for V1)
+  property_id?: string | null
+  tenant_id?: string | null
+  lease_id?: string | null
+  expense_id?: string | null
+  deal_id?: string | null
+  notes?: string | null
+}

@@ -33,4 +33,3 @@ jobs:
       
       - name: Build successful
         run: echo "Build completed successfully - Render will handle deployment"
-

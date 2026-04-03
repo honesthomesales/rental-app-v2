@@ -439,16 +439,41 @@ export default function ProfitPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
-          {monthlyMetrics?.averageProfit12Months !== undefined && (
-            <div className="text-right">
-              <p className="text-sm text-gray-600">Average Profit (12 Months)</p>
-              <p className={`text-2xl font-bold ${monthlyMetrics.averageProfit12Months >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(monthlyMetrics.averageProfit12Months)}
-              </p>
-            </div>
-          )}
+          <div className="flex flex-wrap items-end justify-end gap-8 ml-auto">
+            {monthlyMetrics && (
+              <div className="text-right">
+                <p className="text-sm text-gray-600">Current Profit</p>
+                {(() => {
+                  const totalIncome =
+                    (monthlyMetrics.rentCollection?.collected || 0) +
+                    (monthlyMetrics.oneTimeExpenseIncome?.income?.miscIncome || 0)
+                  const totalExpenses =
+                    (monthlyMetrics.fixedExpenses?.total || 0) +
+                    (monthlyMetrics.oneTimeExpenseIncome?.expenses?.otherExpenses || 0)
+                  const profit = totalIncome - totalExpenses
+                  return (
+                    <p
+                      className={`text-2xl font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                    >
+                      {formatCurrency(profit)}
+                    </p>
+                  )
+                })()}
+              </div>
+            )}
+            {monthlyMetrics?.averageProfit12Months !== undefined && (
+              <div className="text-right">
+                <p className="text-sm text-gray-600">Average Profit (12 Months)</p>
+                <p
+                  className={`text-2xl font-bold ${monthlyMetrics.averageProfit12Months >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                >
+                  {formatCurrency(monthlyMetrics.averageProfit12Months)}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

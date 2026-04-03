@@ -74,26 +74,30 @@ export async function GET(request: Request) {
     console.log('Total insurance:', totalInsurance)
     console.log('Total taxes:', totalTaxes)
     
-    // Get total payments from expenses table (all expenses, not filtered by month)
-    // Need to fetch balance field to exclude expenses with balance > 0 for potential calculation
+    // Total payments: match Expenses page regular-expense totals (footer "Amount Owed" column).
+    // Same rules: exclude one-time rows (interest_rate === -9.9999); sum amount_owed (not amount).
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
-      .select('amount, balance')
+      .select('amount, amount_owed, balance, interest_rate')
     
     if (expensesError) {
       console.error('Error fetching expenses:', expensesError)
       throw expensesError
     }
-    
-    // Calculate total payments (all expenses)
-    const totalPayments = expenses
-      ?.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
-    
-    // Calculate potential payments (excluding expenses with balance > 0)
-    // If House Debt is paid, expenses with balance > 0 would be reduced to zero
-    const potentialPayments = expenses
-      ?.filter(expense => (Number(expense.balance) || 0) <= 0)
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+
+    const recurringExpenses = expenses?.filter(
+      (expense) => expense.interest_rate !== -9.9999
+    ) || []
+
+    const totalPayments = recurringExpenses.reduce(
+      (sum, expense) => sum + (Number(expense.amount_owed) || 0),
+      0
+    )
+
+    // Potential payments: same basis as totalPayments, exclude rows with balance > 0
+    const potentialPayments = recurringExpenses
+      .filter((expense) => (Number(expense.balance) || 0) <= 0)
+      .reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0)
     
     console.log('Expenses found:', expenses?.length || 0)
     console.log('Total payments from expenses:', totalPayments)

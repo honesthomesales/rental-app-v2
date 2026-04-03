@@ -516,7 +516,22 @@ export default function ExpensesPage() {
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <button
-                          onClick={() => handleEditExpense(expense)}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteExpense(expense)
+                          }}
+                          className="text-red-600 hover:text-red-900 mr-2"
+                          title="Delete Expense"
+                        >
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleEditExpense(expense)
+                          }}
                           className="text-blue-600 hover:text-blue-900 mr-3"
                           title="Edit Expense"
                         >
@@ -546,15 +561,7 @@ export default function ExpensesPage() {
                       {formatPercentage(expense.interest_rate)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleDeleteExpense(expense)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete Expense"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
+                      <span className="text-xs text-gray-400">—</span>
                     </td>
                   </tr>
                 ))}
@@ -650,7 +657,22 @@ export default function ExpensesPage() {
                         <td className="px-4 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <button
-                              onClick={() => handleEditOneTimeExpense(expense)}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteOneTimeExpense(expense)
+                              }}
+                              className="text-red-600 hover:text-red-900 mr-2"
+                              title="Delete One-Time Expense"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditOneTimeExpense(expense)
+                              }}
                               className="text-blue-600 hover:text-blue-900 mr-3"
                               title="Edit One-Time Expense"
                             >
@@ -671,13 +693,7 @@ export default function ExpensesPage() {
                           {expense.property_name || '-'}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                          <button
-                            onClick={() => handleDeleteOneTimeExpense(expense)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete One-Time Expense"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          <span className="text-xs text-gray-400">—</span>
                         </td>
                       </tr>
                     ))}

@@ -32,4 +32,4 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       
       - name: Build successful
-        run: echo "Build completed successfully - Render will handle deployment"
+        run: echo "Build completed successfully on GitHub Actions"

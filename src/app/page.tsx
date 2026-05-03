@@ -12,6 +12,16 @@ import {
   ArrowPathIcon
 } from '@heroicons/react/24/outline'
 
+/** Match dashboard metrics API: only these types count toward totals and overview lists */
+const DASHBOARD_COUNTED_PROPERTY_TYPES = ['house', 'doublewide', 'singlewide'] as const
+
+function isDashboardCountedPropertyType(propertyType: string | null | undefined): boolean {
+  return (
+    propertyType != null &&
+    (DASHBOARD_COUNTED_PROPERTY_TYPES as readonly string[]).includes(propertyType)
+  )
+}
+
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,6 +65,15 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboardData()
   }, [])
+
+  useEffect(() => {
+    if (typeFilter === 'loan' || typeFilter === 'other') {
+      setTypeFilter('')
+    }
+    if (occupiedPropertiesTypeFilter === 'loan' || occupiedPropertiesTypeFilter === 'other') {
+      setOccupiedPropertiesTypeFilter('all')
+    }
+  }, [typeFilter, occupiedPropertiesTypeFilter])
 
   const fetchDashboardData = async (showRefreshing = false) => {
     try {
@@ -162,6 +181,7 @@ export default function Dashboard() {
           // Filter empty properties with rent_value
           // A property is empty if it's not in the occupiedPropertyIds set
           const potentialProps = propertiesData.filter((property: any) => {
+            if (!isDashboardCountedPropertyType(property.property_type)) return false
             const isOccupied = occupiedPropertyIds.has(property.id)
             const hasRentValue = property.rent_value && property.rent_value > 0
             
@@ -194,9 +214,11 @@ export default function Dashboard() {
               .map((lease: any) => lease.property_id)
           )
           
-          // Filter properties to match dashboard (exclude sold and "other" type)
-          const validProperties = propertiesData.filter((property: any) => 
-            !soldPropertyIds.has(property.id) && property.property_type !== 'other'
+          // Filter properties to match dashboard (exclude sold; only house/doublewide/singlewide)
+          const validProperties = propertiesData.filter(
+            (property: any) =>
+              !soldPropertyIds.has(property.id) &&
+              isDashboardCountedPropertyType(property.property_type)
           )
           
           const allPropsWithTenants = validProperties.map((property: any) => ({
@@ -576,8 +598,9 @@ export default function Dashboard() {
   }
 
   const getFilteredProperties = () => {
-    if (!typeFilter) return properties
-    return properties.filter(p => p.property_type === typeFilter)
+    const base = properties.filter(p => isDashboardCountedPropertyType(p.property_type))
+    if (!typeFilter) return base
+    return base.filter(p => p.property_type === typeFilter)
   }
 
   if (loading) {
@@ -828,7 +851,6 @@ export default function Dashboard() {
               <option value="house">House</option>
               <option value="doublewide">Doublewide</option>
               <option value="singlewide">Singlewide</option>
-              <option value="loan">Loan</option>
             </select>
           </div>
         </div>
@@ -911,7 +933,7 @@ export default function Dashboard() {
             {/* Insurance List */}
             {getSortedInsuranceProperties().length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No properties found. Total properties: {properties.length}
+                No properties found. Properties in overview: {getFilteredProperties().length}
               </div>
             ) : (
               getSortedInsuranceProperties().map((property) => (
@@ -1139,7 +1161,7 @@ export default function Dashboard() {
             {/* Tax List */}
             {getSortedTaxProperties().length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No properties found. Total properties: {properties.length}
+                No properties found. Properties in overview: {getFilteredProperties().length}
               </div>
             ) : (
               getSortedTaxProperties().map((property) => {
@@ -1155,6 +1177,10 @@ export default function Dashboard() {
                 const monthlyTaxOwed = (colorState === 1 || colorState === 2 || colorState === 6) 
                   ? 0 
                   : taxesOwed / 12
+
+                const darkTaxRow = colorState === 5 || colorState === 7
+                const taxCellText = darkTaxRow ? 'text-xs text-white' : 'text-xs text-gray-500'
+                const taxNameText = darkTaxRow ? 'font-medium text-sm text-white' : 'font-medium text-sm'
                 
                 return (
                 <div key={property.id} className={`${rowColor} p-4 rounded-lg border cursor-pointer hover:opacity-90`}>
@@ -1187,8 +1213,8 @@ export default function Dashboard() {
                       title={`State: ${colorState === 0 ? 'Default' : colorState === 6 ? 'Light red: Unpaid taxes' : colorState === 1 ? 'Yellow: Customer owed taxes' : colorState === 2 ? 'Light green: Customer paid' : colorState === 3 ? 'Lime: Paid' : colorState === 4 ? 'Med Red: Customer Owed' : colorState === 5 ? 'Red: Owed' : colorState === 7 ? 'Dark green: Bank paid' : 'Default'}`}
                     />
                   </div>
-                  <div className="font-medium text-sm">{property.name}</div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxNameText}>{property.name}</div>
+                  <div className={taxCellText}>
                     <span 
                       onDoubleClick={() => handleDoubleClick(property, 'owner_name')}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
@@ -1209,7 +1235,7 @@ export default function Dashboard() {
                       ) : (property.owner_name || 'Not set')}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxCellText}>
                     <span 
                       onDoubleClick={() => handleDoubleClick(property, 'county')}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
@@ -1230,12 +1256,12 @@ export default function Dashboard() {
                       ) : (property.county || 'Not set')}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxCellText}>
                     <span className="px-1 rounded">
                       ${monthlyTaxOwed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxCellText}>
                     <span 
                       onDoubleClick={() => handleDoubleClick(property, 'tax_paid_amount_current')}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
@@ -1256,7 +1282,7 @@ export default function Dashboard() {
                       ) : (property.tax_paid_amount_current ? `$${property.tax_paid_amount_current.toLocaleString()}` : '$0')}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxCellText}>
                     <span 
                       onDoubleClick={() => {
                         // Use manual tax_owed if set, otherwise calculate
@@ -1290,7 +1316,7 @@ export default function Dashboard() {
                       ) : (taxesOwed > 0 ? `$${taxesOwed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00')}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxCellText}>
                     <span 
                       onDoubleClick={() => handleDoubleClick(property, 'Map_ID')}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
@@ -1311,7 +1337,7 @@ export default function Dashboard() {
                       ) : (property.Map_ID || 'Not set')}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className={taxCellText}>
                     <span 
                       onDoubleClick={() => handleDoubleClick(property, 'map_id_trailer')}
                       className="hover:bg-yellow-100 px-1 rounded cursor-pointer"
@@ -1595,7 +1621,6 @@ export default function Dashboard() {
                         <option value="house">House</option>
                         <option value="doublewide">Doublewide</option>
                         <option value="singlewide">Singlewide</option>
-                        <option value="loan">Loan</option>
                       </select>
                     </div>
                     <div className="flex items-center gap-2">

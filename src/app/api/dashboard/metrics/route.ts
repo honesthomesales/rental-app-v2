@@ -4,6 +4,16 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
 
+/** Types included in dashboard totals, insurance/tax aggregates, and overview lists */
+const DASHBOARD_COUNTED_PROPERTY_TYPES = ['house', 'doublewide', 'singlewide'] as const
+
+function isDashboardCountedPropertyType(propertyType: string | null | undefined): boolean {
+  return (
+    propertyType != null &&
+    (DASHBOARD_COUNTED_PROPERTY_TYPES as readonly string[]).includes(propertyType)
+  )
+}
+
 export async function GET(request: Request) {
   // Accept query parameters (like cache-busting timestamps) but ignore them
   // This prevents errors when query params are added to the URL
@@ -36,11 +46,12 @@ export async function GET(request: Request) {
         .map(lease => lease.property_id)
     )
 
-    // Filter out properties with "sold" status leases and "other" property type
-    // Include all other properties (including those with no lease)
-    const validProperties = allProperties?.filter(
-      property => !soldPropertyIds.has(property.id) && property.property_type !== 'other'
-    ) || []
+    // Filter out sold properties and types not counted on dashboard (other, loan, unset)
+    const validProperties =
+      allProperties?.filter(
+        property =>
+          !soldPropertyIds.has(property.id) && isDashboardCountedPropertyType(property.property_type)
+      ) || []
 
     // Fetch occupied properties (properties with active leases)
     // Match Payments page logic: filter by status only, no date range check

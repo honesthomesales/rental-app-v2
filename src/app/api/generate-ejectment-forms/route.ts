@@ -422,12 +422,8 @@ SCCA/732 — Official statewide form (SC Judicial Branch); Revised 12/2024`
       }
     }
 
-      // Generate Affidavit of Item of Account if late rent - SC only (SCCA/716); NC uses separate procedures/forms
-      if (
-        !isNorthCarolina &&
-        (formType === 'ejectment' || formType === 'both') &&
-        ejectmentReason === 'nonpayment'
-      ) {
+      // Generate Affidavit / rent ledger itemization for nonpayment (SC: SCCA/716; NC: rent ledger for summary ejectment)
+      if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
         // Create itemization lines (form shows exactly 5 lines with dollar signs at the end)
         // IMPORTANT: Itemization shows only RENT amounts (amount_rent), not balance_due (which includes late fees)
         // The TOTAL shows totalDue (which includes all balances with late fees)
@@ -464,7 +460,49 @@ SCCA/732 — Official statewide form (SC Judicial Branch); Revised 12/2024`
         const totalSpaces = lineWidth - totalLabel.length - totalAmount.length
         const totalPadding = totalSpaces > 0 ? ' '.repeat(totalSpaces) : ' '
 
-        forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS
+        if (isNorthCarolina) {
+          forms.affidavitFormKind = 'NC'
+          forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS (Rent Ledger)
+
+STATE OF NORTH CAROLINA
+COUNTY OF ${propertyCounty.toUpperCase()}
+
+CIVIL CASE NUMBER: _________________________
+
+IN THE GENERAL COURT OF JUSTICE
+DISTRICT COURT DIVISION — SMALL CLAIMS
+
+PLAINTIFF(S): Honest Home Sales, LLC
+
+VS.
+
+DEFENDANT(S): ${tenant.first_name} ${tenant.last_name}
+
+Plaintiff, Honest Home Sales, LLC, personally appearing before me, being duly sworn, states that he/she/it is the plaintiff in this action, and that the itemization of accounts which follows is true and correct.
+
+Plaintiff further states that no part of the sum included in the itemization below has been paid or satisfied in any fashion, and is today due and owed.
+
+ITEMIZATION OF ACCOUNTS
+
+${invoiceItems.join('\n')}
+
+${totalLabel}${totalPadding}${totalAmount}
+
+(Copies of bills, invoices, ledger pages, or other proof may be attached.)
+
+Sworn to and subscribed before me this ${day} day of ${month}, ${year}.
+
+_________________________
+Magistrate or Notary Public for North Carolina
+
+My Commission expires: _________________________
+
+PLAINTIFF (or attorney): _________________________
+
+Attach to Complaint in Summary Ejectment (AOC-CVM-201). Use official forms from nccourts.gov when required by the clerk.`
+        } else {
+          forms.affidavitFormKind = 'SC'
+          forms.affidavit = `AFFIDAVIT AND ITEMIZATION OF ACCOUNTS
 
 STATE OF SOUTH CAROLINA
 COUNTY OF ${propertyCounty.toUpperCase()}
@@ -500,7 +538,8 @@ My Commission expires: _________________________
 
 PLAINTIFF (or his attorney): _________________________
 
-SCCA/716 (Amended 05/2008)`
+SCCA/716 — Official statewide form (SC Judicial Branch)`
+        }
       }
 
     // Also include HTML versions for better formatting
@@ -533,28 +572,57 @@ SCCA/716 (Amended 05/2008)`
     }
     
     if (forms.affidavit) {
-      const { generateAffidavitHTML } = await import('@/lib/form-html-generator')
-      // Use amount_rent for itemization (not balance_due)
-      const invoiceItemsForHTML = unpaidInvoices?.slice(0, 5).map((inv) => {
-        const dueDate = new Date(inv.due_date + 'T12:00:00')
-        const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-        // Itemization shows only rent amounts, not late fees
-        const rentAmount = parseFloat(inv.amount_rent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        return {
-          description: `Rent due ${formattedDueDate}`,
-          amount: rentAmount
-        }
-      }) || []
-      
-      formsWithHTML.affidavitHTML = generateAffidavitHTML(
-        propertyCounty,
-        'Honest Home Sales, LLC',
-        `${tenant.first_name} ${tenant.last_name}`,
-        invoiceItemsForHTML,
-        totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        day,
-        month,
-        year
+      // Use amount_rent for itemization (not balance_due); TOTAL uses totalDue (includes late fees)
+      const invoiceItemsForHTML =
+        unpaidInvoices?.slice(0, 5).map((inv) => {
+          const dueDate = new Date(inv.due_date + 'T12:00:00')
+          const formattedDueDate = dueDate.toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+          })
+          const rentAmount = parseFloat(inv.amount_rent || 0).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+          return {
+            description: `Rent due ${formattedDueDate}`,
+            amount: rentAmount,
+          }
+        }) || []
+
+      if (forms.affidavitFormKind === 'NC') {
+        const { generateNCRentLedgerHTML } = await import('@/lib/form-html-generator')
+        formsWithHTML.affidavitHTML = generateNCRentLedgerHTML(
+          propertyCounty,
+          'Honest Home Sales, LLC',
+          `${tenant.first_name} ${tenant.last_name}`,
+          invoiceItemsForHTML,
+          totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          day,
+          month,
+          year
+        )
+      } else {
+        const { generateAffidavitHTML } = await import('@/lib/form-html-generator')
+        formsWithHTML.affidavitHTML = generateAffidavitHTML(
+          propertyCounty,
+          'Honest Home Sales, LLC',
+          `${tenant.first_name} ${tenant.last_name}`,
+          invoiceItemsForHTML,
+          totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          day,
+          month,
+          year
+        )
+      }
+    }
+
+    if (formsWithHTML.ejectmentHTML && formsWithHTML.affidavitHTML) {
+      const { combineHtmlDocumentsForPrint } = await import('@/lib/combine-html-print')
+      formsWithHTML.ejectmentAndLedgerPrintHTML = combineHtmlDocumentsForPrint(
+        formsWithHTML.ejectmentHTML,
+        formsWithHTML.affidavitHTML
       )
     }
 

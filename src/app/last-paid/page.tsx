@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { generateNoticeHTML } from '@/lib/form-html-generator'
+import { getEjectmentPacketPrintHtml } from '@/lib/combine-html-print'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
@@ -1981,11 +1982,11 @@ export default function LastPaidPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const html = generatedForms.ejectmentHTML
+                        const html = getEjectmentPacketPrintHtml(generatedForms)
                         if (!html) return
                         openPrintPreview(html)
                       }}
-                      disabled={!generatedForms.ejectmentHTML}
+                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
                       className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Print preview
@@ -1993,11 +1994,11 @@ export default function LastPaidPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const html = generatedForms.ejectmentHTML
+                        const html = getEjectmentPacketPrintHtml(generatedForms)
                         if (!html) return
                         printFormDocument(html)
                       }}
-                      disabled={!generatedForms.ejectmentHTML}
+                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Print
@@ -2029,14 +2030,19 @@ export default function LastPaidPage() {
                           generatedForms.ejectmentFormKind === 'NC'
                             ? 'Complaint-Summary-Ejectment-NC'
                             : 'Application-for-Ejectment'
+                        const packetHtml = getEjectmentPacketPrintHtml(generatedForms)
+                        const pdfHtml = packetHtml ?? generatedForms.ejectmentHTML
+                        const textPacket =
+                          generatedForms.affidavit &&
+                          `${generatedForms.ejectment}\n\n---\n\n${generatedForms.affidavit}`
                         if (downloadFormat === 'pdf') {
                           downloadAsPDF(
-                            generatedForms.ejectment,
+                            textPacket || generatedForms.ejectment,
                             `${base}.pdf`,
-                            generatedForms.ejectmentHTML
+                            pdfHtml
                           )
                         } else {
-                          downloadAsWord(generatedForms.ejectment, `${base}.docx`)
+                          downloadAsWord(textPacket || generatedForms.ejectment, `${base}.docx`)
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -2049,38 +2055,74 @@ export default function LastPaidPage() {
 
               {generatedForms.affidavit && (
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3">Affidavit of Item of Account (SCCA/716)</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">
+                    {generatedForms.affidavitFormKind === 'NC'
+                      ? 'Affidavit of Item of Account — Rent Ledger (NC)'
+                      : 'Affidavit of Item of Account (SCCA/716)'}
+                  </h3>
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.affidavit}</pre>
                   </div>
-                  <div className="mt-3 flex justify-end space-x-2">
-                    {generatedForms.affidavitHTML && (
-                      <button
-                        onClick={() => {
-                          const blob = new Blob([generatedForms.affidavitHTML], { type: 'text/html' })
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = 'Affidavit-of-Item-of-Account.html'
-                          a.click()
-                          URL.revokeObjectURL(url)
-                        }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        View HTML
-                      </button>
-                    )}
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
                     <button
+                      type="button"
                       onClick={() => {
+                        const html = getEjectmentPacketPrintHtml(generatedForms)
+                        if (!html) return
+                        openPrintPreview(html)
+                      }}
+                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
+                      className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Print preview (full packet)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html = getEjectmentPacketPrintHtml(generatedForms)
+                        if (!html) return
+                        printFormDocument(html)
+                      }}
+                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Print (full packet)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const blob = new Blob([generatedForms.affidavitHTML], { type: 'text/html' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download =
+                          generatedForms.affidavitFormKind === 'NC'
+                            ? 'Rent-Ledger-NC.html'
+                            : 'Affidavit-of-Item-of-Account.html'
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      }}
+                      disabled={!generatedForms.affidavitHTML}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Download ledger HTML only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base =
+                          generatedForms.affidavitFormKind === 'NC'
+                            ? 'Rent-Ledger-NC'
+                            : 'Affidavit-of-Item-of-Account'
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.pdf', generatedForms.affidavitHTML)
+                          downloadAsPDF(generatedForms.affidavit, `${base}.pdf`, generatedForms.affidavitHTML)
                         } else {
-                          downloadAsWord(generatedForms.affidavit, 'Affidavit-of-Item-of-Account.docx')
+                          downloadAsWord(generatedForms.affidavit, `${base}.docx`)
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download ({downloadFormat.toUpperCase()})
+                      Download ledger ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>

@@ -12,14 +12,9 @@ import {
   ArrowPathIcon
 } from '@heroicons/react/24/outline'
 
-/** Match dashboard metrics API: only these types count toward totals and overview lists */
-const DASHBOARD_COUNTED_PROPERTY_TYPES = ['house', 'doublewide', 'singlewide'] as const
-
-function isDashboardCountedPropertyType(propertyType: string | null | undefined): boolean {
-  return (
-    propertyType != null &&
-    (DASHBOARD_COUNTED_PROPERTY_TYPES as readonly string[]).includes(propertyType)
-  )
+/** Match dashboard metrics API: show all types except `other` in totals and Insurance / Tax overviews */
+function isShownInDashboardOverviews(propertyType: string | null | undefined): boolean {
+  return propertyType !== 'other'
 }
 
 /** DB sometimes stores -1 as a sentinel for tax paid fields; treat as $0 for display and math */
@@ -93,10 +88,10 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    if (typeFilter === 'loan' || typeFilter === 'other') {
+    if (typeFilter === 'other') {
       setTypeFilter('')
     }
-    if (occupiedPropertiesTypeFilter === 'loan' || occupiedPropertiesTypeFilter === 'other') {
+    if (occupiedPropertiesTypeFilter === 'other') {
       setOccupiedPropertiesTypeFilter('all')
     }
   }, [typeFilter, occupiedPropertiesTypeFilter])
@@ -207,7 +202,7 @@ export default function Dashboard() {
           // Filter empty properties with rent_value
           // A property is empty if it's not in the occupiedPropertyIds set
           const potentialProps = propertiesData.filter((property: any) => {
-            if (!isDashboardCountedPropertyType(property.property_type)) return false
+            if (!isShownInDashboardOverviews(property.property_type)) return false
             const isOccupied = occupiedPropertyIds.has(property.id)
             const hasRentValue = property.rent_value && property.rent_value > 0
             
@@ -240,11 +235,11 @@ export default function Dashboard() {
               .map((lease: any) => lease.property_id)
           )
           
-          // Filter properties to match dashboard (exclude sold; only house/doublewide/singlewide)
+          // Filter properties to match dashboard (exclude sold; exclude only type `other`)
           const validProperties = propertiesData.filter(
             (property: any) =>
               !soldPropertyIds.has(property.id) &&
-              isDashboardCountedPropertyType(property.property_type)
+              isShownInDashboardOverviews(property.property_type)
           )
           
           const allPropsWithTenants = validProperties.map((property: any) => ({
@@ -632,7 +627,7 @@ export default function Dashboard() {
   }
 
   const getFilteredProperties = () => {
-    const base = properties.filter(p => isDashboardCountedPropertyType(p.property_type))
+    const base = properties.filter(p => isShownInDashboardOverviews(p.property_type))
     if (!typeFilter) return base
     return base.filter(p => p.property_type === typeFilter)
   }
@@ -885,6 +880,7 @@ export default function Dashboard() {
               <option value="house">House</option>
               <option value="doublewide">Doublewide</option>
               <option value="singlewide">Singlewide</option>
+              <option value="loan">Loan</option>
             </select>
           </div>
         </div>
@@ -1659,6 +1655,7 @@ export default function Dashboard() {
                         <option value="house">House</option>
                         <option value="doublewide">Doublewide</option>
                         <option value="singlewide">Singlewide</option>
+                        <option value="loan">Loan</option>
                       </select>
                     </div>
                     <div className="flex items-center gap-2">

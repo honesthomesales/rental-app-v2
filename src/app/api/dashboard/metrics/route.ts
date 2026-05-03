@@ -4,14 +4,9 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
 
-/** Types included in dashboard totals, insurance/tax aggregates, and overview lists */
-const DASHBOARD_COUNTED_PROPERTY_TYPES = ['house', 'doublewide', 'singlewide'] as const
-
-function isDashboardCountedPropertyType(propertyType: string | null | undefined): boolean {
-  return (
-    propertyType != null &&
-    (DASHBOARD_COUNTED_PROPERTY_TYPES as readonly string[]).includes(propertyType)
-  )
+/** Totals and Insurance / Property Tax overviews: all types except `other` (includes loan and unset type). */
+function isShownInDashboardOverviews(propertyType: string | null | undefined): boolean {
+  return propertyType !== 'other'
 }
 
 export async function GET(request: Request) {
@@ -46,11 +41,11 @@ export async function GET(request: Request) {
         .map(lease => lease.property_id)
     )
 
-    // Filter out sold properties and types not counted on dashboard (other, loan, unset)
+    // Filter out sold properties and type `other` (loan and unset type stay in totals / overviews)
     const validProperties =
       allProperties?.filter(
         property =>
-          !soldPropertyIds.has(property.id) && isDashboardCountedPropertyType(property.property_type)
+          !soldPropertyIds.has(property.id) && isShownInDashboardOverviews(property.property_type)
       ) || []
 
     // Fetch occupied properties (properties with active leases)

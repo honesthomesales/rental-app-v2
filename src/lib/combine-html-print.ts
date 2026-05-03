@@ -3,6 +3,13 @@
  * No browser APIs — safe for API routes and client.
  */
 
+import { COURT_FORM_DOC_TITLE, COURT_FORM_PRINT_BASE } from '@/lib/court-form-print-styles'
+
+/** Avoid stacked @page rules when merging two form stylesheets. */
+function stripPageRules(css: string): string {
+  return css.replace(/@page\s*\{[^}]*\}/gi, '').trim()
+}
+
 export function combineHtmlDocumentsForPrint(firstFullHtml: string, secondFullHtml: string): string {
   function extractBody(html: string): string {
     const m = html.match(/<body[^>]*>([\s\S]*)<\/body>/i)
@@ -19,7 +26,8 @@ export function combineHtmlDocumentsForPrint(firstFullHtml: string, secondFullHt
     return parts.join('\n')
   }
 
-  const styles = `${extractStyles(firstFullHtml)}\n${extractStyles(secondFullHtml)}`
+  const styles = `${stripPageRules(extractStyles(firstFullHtml))}\n${stripPageRules(extractStyles(secondFullHtml))}`
+
   const body1 = extractBody(firstFullHtml)
   const body2 = extractBody(secondFullHtml)
 
@@ -27,16 +35,23 @@ export function combineHtmlDocumentsForPrint(firstFullHtml: string, secondFullHt
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <title>Ejectment application and rent ledger</title>
+  <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
+${COURT_FORM_PRINT_BASE}
 ${styles}
-.combined-page-break { page-break-before: always; break-before: page; }
+.combined-page-break {
+  page-break-before: always;
+  break-before: page;
+}
 @media print {
-  .combined-page-break { page-break-before: always; break-before: page; }
+  .combined-page-break {
+    page-break-before: always;
+    break-before: page;
+  }
 }
   </style>
 </head>
-<body>
+<body class="court-form-root">
 ${body1}
 <div class="combined-page-break"></div>
 ${body2}

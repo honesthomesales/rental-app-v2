@@ -2,6 +2,8 @@
  * Generate HTML versions of SC forms with exact formatting
  */
 
+import { COURT_FORM_DOC_TITLE, COURT_FORM_PRINT_BASE } from '@/lib/court-form-print-styles'
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -16,16 +18,13 @@ export function generateNoticeHTML(plainText: string): string {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>7-Day Notice</title>
+  <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
-    @page { size: letter; margin: 1in; }
-    body {
+    ${COURT_FORM_PRINT_BASE}
+    body.court-form-root {
       font-family: 'Times New Roman', Times, serif;
       font-size: 12pt;
       line-height: 1.5;
-      margin: 0;
-      padding: 1in;
-      max-width: 8.5in;
     }
     pre.notice-body {
       white-space: pre-wrap;
@@ -35,11 +34,10 @@ export function generateNoticeHTML(plainText: string): string {
     }
     @media print {
       .form-print-toolbar { display: none !important; }
-      body { padding: 0.75in; }
     }
   </style>
 </head>
-<body>
+<body class="court-form-root">
 <pre class="notice-body">${escapeHtml(plainText)}</pre>
 </body>
 </html>`
@@ -75,16 +73,13 @@ export function generateNCSummaryEjectmentHTML(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Complaint in Summary Ejectment</title>
+  <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
-    @page { size: letter; margin: 1in; }
-    body {
+    ${COURT_FORM_PRINT_BASE}
+    body.court-form-root {
       font-family: 'Times New Roman', Times, serif;
       font-size: 12pt;
       line-height: 1.45;
-      margin: 0;
-      padding: 1in;
-      max-width: 8.5in;
     }
     .form-header {
       text-align: center;
@@ -98,11 +93,10 @@ export function generateNCSummaryEjectmentHTML(
     .indent { margin-left: 24pt; }
     @media print {
       .form-print-toolbar { display: none !important; }
-      body { padding: 0.75in; }
     }
   </style>
 </head>
-<body>
+<body class="court-form-root">
   <div class="caption">NORTH CAROLINA<br/>
   In the General Court of Justice<br/>
   District Court Division<br/>
@@ -172,19 +166,13 @@ export function generateEjectmentHTML(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Application for Ejectment</title>
+  <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
-    @page {
-      size: letter;
-      margin: 1in;
-    }
-    body {
+    ${COURT_FORM_PRINT_BASE}
+    body.court-form-root {
       font-family: 'Times New Roman', serif;
       font-size: 12pt;
       line-height: 1.6;
-      margin: 0;
-      padding: 1in;
-      max-width: 8.5in;
     }
     .form-header {
       text-align: center;
@@ -233,7 +221,7 @@ export function generateEjectmentHTML(
     }
   </style>
 </head>
-<body>
+<body class="court-form-root">
   <div class="form-header">APPLICATION FOR EJECTMENT (Eviction)</div>
   
   <div class="form-section">
@@ -329,19 +317,13 @@ export function generateAffidavitHTML(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Affidavit and Itemization of Accounts</title>
+  <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
-    @page {
-      size: letter;
-      margin: 1in;
-    }
-    body {
+    ${COURT_FORM_PRINT_BASE}
+    body.court-form-root {
       font-family: 'Times New Roman', serif;
       font-size: 12pt;
       line-height: 1.6;
-      margin: 0;
-      padding: 1in;
-      max-width: 8.5in;
     }
     .form-header {
       text-align: center;
@@ -403,7 +385,7 @@ export function generateAffidavitHTML(
     }
   </style>
 </head>
-<body>
+<body class="court-form-root">
   <div class="form-header">AFFIDAVIT AND ITEMIZATION OF ACCOUNTS</div>
   
   <div class="form-section">
@@ -492,19 +474,13 @@ export function generateNCRentLedgerHTML(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Affidavit and Itemization of Accounts — Rent Ledger (NC)</title>
+  <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
-    @page {
-      size: letter;
-      margin: 1in;
-    }
-    body {
+    ${COURT_FORM_PRINT_BASE}
+    body.court-form-root {
       font-family: 'Times New Roman', serif;
       font-size: 12pt;
       line-height: 1.6;
-      margin: 0;
-      padding: 1in;
-      max-width: 8.5in;
     }
     .form-header {
       text-align: center;
@@ -566,7 +542,7 @@ export function generateNCRentLedgerHTML(
     }
   </style>
 </head>
-<body>
+<body class="court-form-root">
   <div class="form-header">Affidavit and Itemization of Accounts (Rent Ledger)</div>
 
   <div class="form-section">

@@ -22,6 +22,32 @@ function isDashboardCountedPropertyType(propertyType: string | null | undefined)
   )
 }
 
+/** DB sometimes stores -1 as a sentinel for tax paid fields; treat as $0 for display and math */
+function effectiveTaxPaid(value: unknown): number {
+  const n = parseFloat(String(value ?? ''))
+  if (!Number.isFinite(n) || n < 0) return 0
+  return n
+}
+
+function formatTaxPaidCell(value: unknown): string {
+  const n = effectiveTaxPaid(value)
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function displayInsuranceField(value: string | null | undefined): string {
+  const t = (value ?? '').trim()
+  if (!t) return '—'
+  const lower = t.toLowerCase()
+  if (lower === 'none' || lower === 'n/a' || lower === 'null') return '—'
+  return t
+}
+
+function formatInsurancePremium(value: unknown): string {
+  const n = parseFloat(String(value ?? ''))
+  if (!Number.isFinite(n) || n <= 0) return '—'
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -269,7 +295,10 @@ export default function Dashboard() {
     setEditingProperty(property)
     setEditingField(field)
     // For numeric fields, preserve decimal format when editing
-    if (field === 'tax_paid_amount_current' || field === 'tax_paid_amount_previous' || field === 'property_tax') {
+    if (field === 'tax_paid_amount_current' || field === 'tax_paid_amount_previous') {
+      const n = effectiveTaxPaid(property[field])
+      setEditingValue(property[field] != null && property[field] !== '' ? n.toFixed(2) : '')
+    } else if (field === 'property_tax') {
       const value = property[field]
       setEditingValue(value != null && value !== '' ? parseFloat(String(value)).toFixed(2) : '')
     } else {
@@ -446,11 +475,11 @@ export default function Dashboard() {
       // Special handling for sorting by owed amount
       if (taxSortField === 'tax_paid_amount_previous') {
         const annualTaxDueA = ((parseFloat(String(a.property_tax || 0)) * 12))
-        const totalPaidA = (parseFloat(String(a.tax_paid_amount_current || 0)) + parseFloat(String(a.tax_paid_amount_previous || 0)))
+        const totalPaidA = effectiveTaxPaid(a.tax_paid_amount_current) + effectiveTaxPaid(a.tax_paid_amount_previous)
         const owedA = Math.max(0, annualTaxDueA - totalPaidA)
         
         const annualTaxDueB = ((parseFloat(String(b.property_tax || 0)) * 12))
-        const totalPaidB = (parseFloat(String(b.tax_paid_amount_current || 0)) + parseFloat(String(b.tax_paid_amount_previous || 0)))
+        const totalPaidB = effectiveTaxPaid(b.tax_paid_amount_current) + effectiveTaxPaid(b.tax_paid_amount_previous)
         const owedB = Math.max(0, annualTaxDueB - totalPaidB)
         
         aValue = owedA
@@ -460,12 +489,12 @@ export default function Dashboard() {
       // Special handling for sorting by monthly tax (owed/12)
       if (taxSortField === 'property_tax') {
         const annualTaxDueA = ((parseFloat(String(a.property_tax || 0)) * 12))
-        const totalPaidA = (parseFloat(String(a.tax_paid_amount_current || 0)) + parseFloat(String(a.tax_paid_amount_previous || 0)))
+        const totalPaidA = effectiveTaxPaid(a.tax_paid_amount_current) + effectiveTaxPaid(a.tax_paid_amount_previous)
         const owedA = Math.max(0, annualTaxDueA - totalPaidA)
         const monthlyOwedA = owedA / 12
         
         const annualTaxDueB = ((parseFloat(String(b.property_tax || 0)) * 12))
-        const totalPaidB = (parseFloat(String(b.tax_paid_amount_current || 0)) + parseFloat(String(b.tax_paid_amount_previous || 0)))
+        const totalPaidB = effectiveTaxPaid(b.tax_paid_amount_current) + effectiveTaxPaid(b.tax_paid_amount_previous)
         const owedB = Math.max(0, annualTaxDueB - totalPaidB)
         const monthlyOwedB = owedB / 12
         
@@ -473,6 +502,11 @@ export default function Dashboard() {
         bValue = monthlyOwedB
       }
       
+      if (taxSortField === 'tax_paid_amount_current') {
+        aValue = effectiveTaxPaid(a.tax_paid_amount_current)
+        bValue = effectiveTaxPaid(b.tax_paid_amount_current)
+      }
+
       // Special handling for sorting by color state
       if (taxSortField === 'color_state') {
         // Sort order: 0 (default) comes last, then 6, 1, 2, 3, 4, 5
@@ -958,7 +992,7 @@ export default function Dashboard() {
                           className="text-xs border rounded px-1 w-full"
                           autoFocus
                         />
-                      ) : (property.insurance_provider || 'None')}
+                      ) : displayInsuranceField(property.insurance_provider)}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -979,7 +1013,7 @@ export default function Dashboard() {
                           className="text-xs border rounded px-1 w-full"
                           autoFocus
                         />
-                      ) : (property.insurance_policy_number || 'None')}
+                      ) : displayInsuranceField(property.insurance_policy_number)}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -1000,7 +1034,7 @@ export default function Dashboard() {
                           className="text-xs border rounded px-1 w-full"
                           autoFocus
                         />
-                      ) : (property.insurance_premium ? `$${property.insurance_premium.toLocaleString()}` : 'Not set')}
+                      ) : formatInsurancePremium(property.insurance_premium)}
                     </span>
                   </div>
                 </div>
@@ -1168,7 +1202,9 @@ export default function Dashboard() {
                 const colorState = taxSelectedProperties.get(property.id) || 0
                 const rowColor = getTaxRowColor(colorState)
                 const annualTaxDue = (parseFloat(String(property.property_tax || 0)) * 12)
-                const totalTaxesPaid = (parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0)))
+                const totalTaxesPaid =
+                  effectiveTaxPaid(property.tax_paid_amount_current) +
+                  effectiveTaxPaid(property.tax_paid_amount_previous)
                 // Use manual tax_owed if set, otherwise calculate
                 const taxesOwed = property.tax_owed !== null && property.tax_owed !== undefined 
                   ? parseFloat(String(property.tax_owed)) 
@@ -1279,7 +1315,7 @@ export default function Dashboard() {
                           className="text-xs border rounded px-1 w-full"
                           autoFocus
                         />
-                      ) : (property.tax_paid_amount_current ? `$${property.tax_paid_amount_current.toLocaleString()}` : '$0')}
+                      ) : formatTaxPaidCell(property.tax_paid_amount_current)}
                     </span>
                   </div>
                   <div className={taxCellText}>
@@ -1287,7 +1323,9 @@ export default function Dashboard() {
                       onDoubleClick={() => {
                         // Use manual tax_owed if set, otherwise calculate
                         const annualTaxDue = parseFloat(String(property.property_tax || 0)) * 12
-                        const totalPaid = parseFloat(String(property.tax_paid_amount_current || 0)) + parseFloat(String(property.tax_paid_amount_previous || 0))
+                        const totalPaid =
+                          effectiveTaxPaid(property.tax_paid_amount_current) +
+                          effectiveTaxPaid(property.tax_paid_amount_previous)
                         const currentOwed = property.tax_owed !== null && property.tax_owed !== undefined
                           ? parseFloat(String(property.tax_owed))
                           : Math.max(0, annualTaxDue - totalPaid)

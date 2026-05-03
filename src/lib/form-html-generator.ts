@@ -2,6 +2,151 @@
  * Generate HTML versions of SC forms with exact formatting
  */
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Printable 7-day notice from plain text (matches generated notice body). */
+export function generateNoticeHTML(plainText: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>7-Day Notice</title>
+  <style>
+    @page { size: letter; margin: 1in; }
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 12pt;
+      line-height: 1.5;
+      margin: 0;
+      padding: 1in;
+      max-width: 8.5in;
+    }
+    pre.notice-body {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: inherit;
+      margin: 0;
+    }
+    @media print {
+      .form-print-toolbar { display: none !important; }
+      body { padding: 0.75in; }
+    }
+  </style>
+</head>
+<body>
+<pre class="notice-body">${escapeHtml(plainText)}</pre>
+</body>
+</html>`
+}
+
+export type NCEjectmentGrounds = 'nonpayment' | 'endtenancy' | 'violation'
+
+/** North Carolina statewide Complaint in Summary Ejectment draft (AOC-CVM-201 style). File the official PDF from nccourts.gov when the clerk requires it. */
+export function generateNCSummaryEjectmentHTML(
+  county: string,
+  plaintiff: string,
+  defendant: string,
+  propertyAddress: string,
+  grounds: NCEjectmentGrounds,
+  rentOwedFormatted: string,
+  violationDescription: string,
+  day: number,
+  month: string,
+  year: number,
+  plaintiffAddress: string,
+  plaintiffCityStateZip: string,
+  plaintiffPhone: string,
+  plaintiffEmail: string,
+  venueNote: string
+): string {
+  const g1 = grounds === 'nonpayment' ? '[X]' : '[ ]'
+  const g2 = grounds === 'endtenancy' ? '[X]' : '[ ]'
+  const g3 = grounds === 'violation' ? '[X]' : '[ ]'
+  const violLine =
+    grounds === 'violation' ? escapeHtml(violationDescription) : '______________________________'
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Complaint in Summary Ejectment</title>
+  <style>
+    @page { size: letter; margin: 1in; }
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 12pt;
+      line-height: 1.45;
+      margin: 0;
+      padding: 1in;
+      max-width: 8.5in;
+    }
+    .form-header {
+      text-align: center;
+      font-weight: bold;
+      font-size: 13pt;
+      margin-bottom: 18pt;
+      text-transform: uppercase;
+    }
+    .form-line { margin-bottom: 8pt; }
+    .caption { text-align: center; margin-bottom: 16pt; font-size: 11pt; }
+    .indent { margin-left: 24pt; }
+    @media print {
+      .form-print-toolbar { display: none !important; }
+      body { padding: 0.75in; }
+    }
+  </style>
+</head>
+<body>
+  <div class="caption">NORTH CAROLINA<br/>
+  In the General Court of Justice<br/>
+  District Court Division<br/>
+  <strong>${escapeHtml(county.toUpperCase())} County</strong><br/>
+  Small Claims — Summary Ejectment</div>
+
+  <div class="form-header">Complaint in Summary Ejectment</div>
+  <div class="form-line" style="font-size:10pt;margin-bottom:14pt;">${escapeHtml(venueNote)}</div>
+
+  <div class="form-line"><strong>Plaintiff:</strong> ${escapeHtml(plaintiff)}</div>
+  <div class="form-line" style="text-align:center;margin:10pt 0;">v.</div>
+  <div class="form-line"><strong>Defendant(s):</strong> ${escapeHtml(defendant)}</div>
+
+  <div class="form-line" style="margin-top:16pt;">
+    Plaintiff seeks possession of the leased premises and any rent owed under N.C. Gen. Stat. Chapter 42 (landlord and tenant).
+    The premises are located at: <span style="border-bottom:1px solid #000;">${escapeHtml(propertyAddress)}</span>
+  </div>
+
+  <div class="form-line" style="margin-top:14pt;font-weight:bold;">Grounds (check one primary basis for relief):</div>
+  <div class="form-line indent">${g1} Nonpayment of rent — amount claimed due and unpaid: <strong>$${escapeHtml(rentOwedFormatted)}</strong></div>
+  <div class="form-line indent">${g2} Holdover after the end of the lease term or tenancy.</div>
+  <div class="form-line indent">${g3} Breach of lease / other violation: ${violLine}</div>
+
+  <div class="form-line" style="margin-top:18pt;">
+    WHEREFORE, Plaintiff requests that the Court enter judgment for restitution of the premises, for unpaid rent and mesne profits as allowed by law, for court costs, and for such other relief as is just.
+  </div>
+
+  <div class="form-line" style="margin-top:22pt;">Date: ${day} day of ${escapeHtml(month)}, ${year}.</div>
+  <div class="form-line" style="margin-top:20pt;border-top:1px solid #000;width:320px;padding-top:6pt;">
+    ${escapeHtml(plaintiff)} / Authorized Agent</div>
+
+  <div class="form-line" style="margin-top:12pt;">Address: ${escapeHtml(plaintiffAddress)}</div>
+  <div class="form-line">City/State/ZIP: ${escapeHtml(plaintiffCityStateZip)}</div>
+  <div class="form-line">Phone: ${escapeHtml(plaintiffPhone)}</div>
+  <div class="form-line">Email: ${escapeHtml(plaintiffEmail)}</div>
+
+  <div class="form-line" style="margin-top:28pt;font-size:9pt;">
+    Draft aligned with statewide form <strong>AOC-CVM-201</strong> (Complaint in Summary Ejectment). Obtain the current official PDF from
+    <span style="word-break:break-all;">https://www.nccourts.gov/documents/forms/complaint-in-summary-ejectment</span> if your clerk requires the court-issued form.
+  </div>
+</body>
+</html>`
+}
+
 export function generateEjectmentHTML(
   county: string,
   plaintiff: string,
@@ -149,7 +294,7 @@ export function generateEjectmentHTML(
   </div>
 
   <div class="form-section" style="margin-top: 36pt;">
-    <div class="form-line" style="font-size: 10pt;">SCCA/732 (Amended 05/2008)</div>
+    <div class="form-line" style="font-size: 10pt;">SCCA/732 — Use official SC Judicial Branch form; Revised 12/2024</div>
   </div>
 </body>
 </html>`
@@ -312,7 +457,7 @@ export function generateAffidavitHTML(
   </div>
 
   <div class="form-section" style="margin-top: 36pt;">
-    <div class="form-line" style="font-size: 10pt;">SCCA/716 (Amended 05/2008)</div>
+    <div class="form-line" style="font-size: 10pt;">SCCA/716 — Use official SC Judicial Branch form</div>
   </div>
 </body>
 </html>`

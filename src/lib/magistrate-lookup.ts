@@ -83,6 +83,16 @@ export function getMagistrateDistrict(
     return 'Magistrate District 1' // Default for Saluda
   }
 
+  // Laurens County
+  if (normalizedCounty === 'laurens' || normalizedCounty === 'laurens county') {
+    return 'Laurens County Magistrate Court'
+  }
+
+  // Gaston County, NC — summary ejectment is filed with Clerk, Small Claims (not SC-style numbered districts)
+  if (normalizedCounty.includes('gaston')) {
+    return 'Gaston County District Court, Small Claims Division'
+  }
+
   // Default: Return generic magistrate reference
   return 'Magistrate'
 }
@@ -111,6 +121,21 @@ export function getMagistrateCourtAddress(county: string, district?: string): st
   if (normalizedCounty.includes('saluda')) {
     return '100 North Church Street, Saluda, SC 29138'
   }
+  if (normalizedCounty.includes('laurens')) {
+    return '100 Hillcrest Square, Laurens, SC 29360'
+  }
+  if (normalizedCounty.includes('gaston')) {
+    return '325 Dr. Martin Luther King Jr. Way, Gastonia, NC 28052'
+  }
 
   return ''
+}
+
+/** Filing venue note for NC Summary Ejectment (Complaint in Summary Ejectment — AOC-CVM-201). */
+export function getNCSummaryEjectmentVenueNote(county: string): string {
+  const c = county?.toLowerCase().trim() || ''
+  if (c.includes('gaston')) {
+    return 'File at Gaston County Clerk of Superior Court — Gaston County Courthouse, 325 Dr. Martin Luther King Jr. Way, Gastonia, NC 28052 (Small Claims / Summary Ejectment).'
+  }
+  return `File in ${county || 'the'} County, North Carolina, Clerk of Superior Court, Small Claims Division (confirm address at nccourts.gov for your county).`
 }

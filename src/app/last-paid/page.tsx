@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
+import { generateNoticeHTML } from '@/lib/form-html-generator'
+import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface PaymentInvoice {
@@ -1798,6 +1800,8 @@ export default function LastPaidPage() {
                   <option value="Cherokee">Cherokee</option>
                   <option value="Union">Union</option>
                   <option value="Saluda">Saluda</option>
+                  <option value="Laurens">Laurens</option>
+                  <option value="Gaston">Gaston (NC)</option>
                 </select>
               </div>
 
@@ -1915,18 +1919,49 @@ export default function LastPaidPage() {
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.notice}</pre>
                   </div>
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
                     <button
+                      type="button"
+                      onClick={() => {
+                        const html =
+                          generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
+                        openPrintPreview(html)
+                      }}
+                      className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+                    >
+                      Print preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html =
+                          generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
+                        printFormDocument(html)
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Print
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf')
+                          downloadAsPDF(
+                            generatedForms.notice,
+                            '7-Day-Notice.pdf',
+                            generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
+                          )
                         } else {
-                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx')
+                          downloadAsWord(
+                            generatedForms.notice,
+                            '7-Day-Notice.docx',
+                            generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
+                          )
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Notice ({downloadFormat.toUpperCase()})
+                      Download ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>
@@ -1934,33 +1969,74 @@ export default function LastPaidPage() {
 
               {generatedForms.ejectment && (
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3">Application for Ejectment (SCCA/732)</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">
+                    {generatedForms.ejectmentFormKind === 'NC'
+                      ? 'Complaint in Summary Ejectment (AOC-CVM-201)'
+                      : 'Application for Ejectment (SCCA/732)'}
+                  </h3>
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
                   </div>
-                  <div className="mt-3 flex justify-end space-x-2">
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html = generatedForms.ejectmentHTML
+                        if (!html) return
+                        openPrintPreview(html)
+                      }}
+                      disabled={!generatedForms.ejectmentHTML}
+                      className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Print preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html = generatedForms.ejectmentHTML
+                        if (!html) return
+                        printFormDocument(html)
+                      }}
+                      disabled={!generatedForms.ejectmentHTML}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Print
+                    </button>
                     {generatedForms.ejectmentHTML && (
                       <button
+                        type="button"
                         onClick={() => {
                           const blob = new Blob([generatedForms.ejectmentHTML], { type: 'text/html' })
                           const url = URL.createObjectURL(blob)
                           const a = document.createElement('a')
                           a.href = url
-                          a.download = 'Application-for-Ejectment.html'
+                          a.download =
+                            generatedForms.ejectmentFormKind === 'NC'
+                              ? 'Complaint-Summary-Ejectment-NC.html'
+                              : 'Application-for-Ejectment.html'
                           a.click()
                           URL.revokeObjectURL(url)
                         }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                       >
-                        View HTML
+                        Download HTML
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => {
+                        const base =
+                          generatedForms.ejectmentFormKind === 'NC'
+                            ? 'Complaint-Summary-Ejectment-NC'
+                            : 'Application-for-Ejectment'
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.ejectment, 'Application-for-Ejectment.pdf', generatedForms.ejectmentHTML)
+                          downloadAsPDF(
+                            generatedForms.ejectment,
+                            `${base}.pdf`,
+                            generatedForms.ejectmentHTML
+                          )
                         } else {
-                          downloadAsWord(generatedForms.ejectment, 'Application-for-Ejectment.docx')
+                          downloadAsWord(generatedForms.ejectment, `${base}.docx`)
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"

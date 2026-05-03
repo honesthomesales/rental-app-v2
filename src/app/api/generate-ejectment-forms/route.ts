@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
-import { getMagistrateDistrict, getMagistrateCourtAddress } from '@/lib/magistrate-lookup'
+import { getMagistrateDistrict, getNCSummaryEjectmentVenueNote } from '@/lib/magistrate-lookup'
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +34,10 @@ export async function POST(request: Request) {
     if (!propertyCounty) {
       return NextResponse.json({ error: 'County information not found for this property. Please ensure the property has a county set.' }, { status: 400 })
     }
+
+    const countyNorm = propertyCounty.toLowerCase().trim()
+    const isNorthCarolina =
+      (property.state?.toUpperCase() || '') === 'NC' || countyNorm.includes('gaston')
 
     // Determine magistrate from address
     const magistrateDistrict = getMagistrateDistrict(
@@ -173,16 +177,8 @@ export async function POST(request: Request) {
       sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
       const sevenDaysFromNowFormatted = dateFormatter.format(sevenDaysFromNow)
 
-      // Determine state and use appropriate language
-      const state = property.state?.toUpperCase() || 'SC'
-      const isNC = state === 'NC' || state === 'NORTH CAROLINA'
-      
-      const stateCode = isNC ? 'NC' : 'SC'
-      const stateName = isNC ? 'North Carolina' : 'South Carolina'
-      const stateStatute = isNC ? 'N.C. Gen. Stat. § 42-26' : 'SC Code Ann. § 27-40-710(B)'
-      const stateLawReference = isNC 
-        ? `Pursuant to North Carolina law (N.C. Gen. Stat. § 42-26), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.`
-        : `Pursuant to South Carolina law (SC Code Ann. § 27-40-710(B)), you have seven (7) days from the date of this notice (${currentDate}) to pay the full amount of rent due or surrender possession of the premises. The deadline for payment or vacating the premises is ${sevenDaysFromNowFormatted}.`
+      // Determine state and use appropriate language (NC if property in NC or Gaston County filing)
+      const isNC = isNorthCarolina
 
       // Determine if we have eviction reasons
       const hasOverdueReason = evictionReasons && evictionReasons.includes('overdue')
@@ -260,7 +256,7 @@ Date Notice Delivered: ${currentDate}
 Method of Delivery: Physical Delivery to Premises and Mailed`
     }
 
-    // Generate Application for Ejectment if requested
+    // Generate Application for Ejectment if requested (SC: SCCA/732; NC e.g. Gaston: AOC-CVM-201 Complaint in Summary Ejectment)
     if (formType === 'ejectment' || formType === 'both') {
       let reasonDescription = ''
       if (ejectmentReason === 'nonpayment') {
@@ -271,46 +267,116 @@ Method of Delivery: Physical Delivery to Premises and Mailed`
         reasonDescription = `The terms or conditions of the lease have been violated as follows: ${violationDescription}`
       }
 
-      // Format ejectment form exactly as SC form (SCCA/732) - matching exact layout from official form
-      let checkbox1 = '[ ]'
-      let checkbox2 = '[ ]'
-      let checkbox3 = '[ ]'
-      let violationLine = '_________________________'
-      
-      if (ejectmentReason === 'nonpayment') {
-        checkbox1 = '[X]'
-      } else if (ejectmentReason === 'endtenancy') {
-        checkbox2 = '[X]'
-      } else {
-        checkbox3 = '[X]'
-        violationLine = violationDescription
-      }
+      const venueNC = getNCSummaryEjectmentVenueNote(propertyCounty)
+      const rentFormatted = totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const premises = `${property.address}${property.city ? `, ${property.city}` : ''}${property.state ? `, ${property.state}` : ''}${property.zip_code ? ` ${property.zip_code}` : ''}`
 
-      // Build grounds section with proper formatting
-      let groundsText = ''
-      if (ejectmentReason === 'nonpayment') {
-        groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+      if (isNorthCarolina) {
+        forms.ejectmentFormKind = 'NC'
+        let groundsPlain = ''
+        if (ejectmentReason === 'nonpayment') {
+          groundsPlain = `Nonpayment of rent — amount claimed due and unpaid: $${rentFormatted}`
+        } else if (ejectmentReason === 'endtenancy') {
+          groundsPlain = 'Holdover after the end of the lease term or tenancy.'
+        } else {
+          groundsPlain = `Breach of lease / violation: ${violationDescription}`
+        }
+
+        forms.ejectment = `COMPLAINT IN SUMMARY EJECTMENT (North Carolina)
+
+(Form reference: AOC-CVM-201 — Complaint in Summary Ejectment; use the official PDF from nccourts.gov when your clerk requires the court-issued form.)
+
+${venueNC}
+
+NORTH CAROLINA
+In the General Court of Justice, District Court Division
+${propertyCounty.toUpperCase()} County — Small Claims / Summary Ejectment
+
+PLAINTIFF: Honest Home Sales, LLC
+
+v.
+
+DEFENDANT(S): ${tenant.first_name} ${tenant.last_name}
+
+PREMISES (leased property): ${premises}
+
+GROUNDS FOR RELIEF:
+${groundsPlain}
+
+Plaintiff requests restitution of the premises and judgment for unpaid rent, court costs, and other relief allowed under N.C. Gen. Stat. Chapter 42.
+
+Date: ${currentDate}
+
+___________________________________
+Honest Home Sales, LLC / Authorized Agent
+
+Address: PO Box 705, Cowpens, SC 29330
+City/State/ZIP: Cowpens, SC 29330
+Phone: 864-322-3432
+Email: honesthomesales@gmail.com
+
+AOC-CVM-201 — Complaint in Summary Ejectment (NC Judicial Branch)`
+
+        const { generateNCSummaryEjectmentHTML } = await import('@/lib/form-html-generator')
+        forms.ejectmentHTML = generateNCSummaryEjectmentHTML(
+          propertyCounty,
+          'Honest Home Sales, LLC',
+          `${tenant.first_name} ${tenant.last_name}`,
+          premises,
+          ejectmentReason,
+          rentFormatted,
+          violationDescription || '',
+          day,
+          month,
+          year,
+          'PO Box 705, Cowpens, SC 29330',
+          'Cowpens, SC 29330',
+          '864-322-3432',
+          'honesthomesales@gmail.com',
+          venueNC
+        )
+      } else {
+        forms.ejectmentFormKind = 'SC'
+
+        // Format ejectment form exactly as SC form (SCCA/732) — same statewide form in Spartanburg, Greenville, Anderson, Cherokee, Saluda, Laurens, Union, etc.
+        let checkbox1 = '[ ]'
+        let checkbox2 = '[ ]'
+        let checkbox3 = '[ ]'
+        let violationLine = '_________________________'
+
+        if (ejectmentReason === 'nonpayment') {
+          checkbox1 = '[X]'
+        } else if (ejectmentReason === 'endtenancy') {
+          checkbox2 = '[X]'
+        } else {
+          checkbox3 = '[X]'
+          violationLine = violationDescription
+        }
+
+        let groundsText = ''
+        if (ejectmentReason === 'nonpayment') {
+          groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
 
 The tenant fails or refuses to pay the rent when due or when demanded. The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.
 
 ${checkbox2} The term of tenancy or occupancy has ended; or
 
 ${checkbox3} The terms or conditions of the lease have been violated as follows:`
-      } else if (ejectmentReason === 'endtenancy') {
-        groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+        } else if (ejectmentReason === 'endtenancy') {
+          groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
 
 ${checkbox2} The term of tenancy or occupancy has ended; or
 
 ${checkbox3} The terms or conditions of the lease have been violated as follows:`
-      } else {
-        groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
+        } else {
+          groundsText = `${checkbox1} The tenant fails or refuses to pay the rent when due or when demanded; or
 
 ${checkbox2} The term of tenancy or occupancy has ended; or
 
 ${checkbox3} The terms or conditions of the lease have been violated as follows: ${violationLine}`
-      }
+        }
 
-      forms.ejectment = `APPLICATION FOR EJECTMENT (Eviction)
+        forms.ejectment = `APPLICATION FOR EJECTMENT (Eviction)
 
 STATE OF SOUTH CAROLINA
 COUNTY OF ${propertyCounty.toUpperCase()}
@@ -325,7 +391,7 @@ CIVIL CASE NUMBER: _________________________
 
 IN THE MAGISTRATE'S COURT
 
-I, Honest Home Sales, LLC, plaintiff in this action, do hereby state that I am the landlord-lessor of premises within the jurisdiction of ${magistrateDistrict}, which is described as: (address and description of premises - apartment, house, etc.) ${property.address}${property.city ? `, ${property.city}` : ''}${property.state ? `, ${property.state}` : ''}${property.zip_code ? ` ${property.zip_code}` : ''}.
+I, Honest Home Sales, LLC, plaintiff in this action, do hereby state that I am the landlord-lessor of premises within the jurisdiction of ${magistrateDistrict}, which is described as: (address and description of premises - apartment, house, etc.) ${premises}.
 
 I further state that, with regard to the above described premises, a landlord-tenant relationship exists between myself and the defendant ${tenant.first_name} ${tenant.last_name}, the tenant-lessee, as evidenced by the following: (Attach lease papers or other written proof.)
 
@@ -352,11 +418,16 @@ Phone Number: 864-322-3432
 
 Email: honesthomesales@gmail.com
 
-SCCA/732 (Amended 05/2008)`
+SCCA/732 — Official statewide form (SC Judicial Branch); Revised 12/2024`
+      }
     }
 
-      // Generate Affidavit of Item of Account if late rent - formatted exactly as SC form (SCCA/716)
-      if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
+      // Generate Affidavit of Item of Account if late rent - SC only (SCCA/716); NC uses separate procedures/forms
+      if (
+        !isNorthCarolina &&
+        (formType === 'ejectment' || formType === 'both') &&
+        ejectmentReason === 'nonpayment'
+      ) {
         // Create itemization lines (form shows exactly 5 lines with dollar signs at the end)
         // IMPORTANT: Itemization shows only RENT amounts (amount_rent), not balance_due (which includes late fees)
         // The TOTAL shows totalDue (which includes all balances with late fees)
@@ -434,8 +505,13 @@ SCCA/716 (Amended 05/2008)`
 
     // Also include HTML versions for better formatting
     const formsWithHTML: any = { ...forms }
-    
-    if (forms.ejectment) {
+
+    if (forms.notice) {
+      const { generateNoticeHTML } = await import('@/lib/form-html-generator')
+      formsWithHTML.noticeHTML = generateNoticeHTML(forms.notice)
+    }
+
+    if (forms.ejectment && forms.ejectmentFormKind === 'SC') {
       const { generateEjectmentHTML } = await import('@/lib/form-html-generator')
       formsWithHTML.ejectmentHTML = generateEjectmentHTML(
         propertyCounty,

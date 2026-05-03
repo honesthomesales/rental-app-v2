@@ -24,4 +24,9 @@ export const COURT_FORM_PRINT_BASE = `
     max-width: none;
     width: 100%;
   }
+  /* Keep sworn / notary commission / plaintiff signature block on one printed page */
+  .signature-block-keep-together {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 `

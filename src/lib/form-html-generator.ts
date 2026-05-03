@@ -124,6 +124,7 @@ export function generateNCSummaryEjectmentHTML(
     WHEREFORE, Plaintiff requests that the Court enter judgment for restitution of the premises, for unpaid rent and mesne profits as allowed by law, for court costs, and for such other relief as is just.
   </div>
 
+  <div class="signature-block-keep-together">
   <div class="form-line" style="margin-top:22pt;">Date: ${day} day of ${escapeHtml(month)}, ${year}.</div>
   <div class="form-line" style="margin-top:20pt;border-top:1px solid #000;width:320px;padding-top:6pt;">
     ${escapeHtml(plaintiff)} / Authorized Agent</div>
@@ -132,6 +133,7 @@ export function generateNCSummaryEjectmentHTML(
   <div class="form-line">City/State/ZIP: ${escapeHtml(plaintiffCityStateZip)}</div>
   <div class="form-line">Phone: ${escapeHtml(plaintiffPhone)}</div>
   <div class="form-line">Email: ${escapeHtml(plaintiffEmail)}</div>
+  </div>
 
   <div class="form-line" style="margin-top:28pt;font-size:9pt;">
     Draft aligned with statewide form <strong>AOC-CVM-201</strong> (Complaint in Summary Ejectment). Obtain the current official PDF from
@@ -266,6 +268,7 @@ export function generateEjectmentHTML(
     <div class="form-line">WHEREFORE, the plaintiff demands possession of the premises, damages, costs, and such other relief as the Court may deem just and proper.</div>
   </div>
 
+  <div class="signature-block-keep-together">
   <div class="form-section spacing" style="margin-top: 24pt;">
     <div class="form-line">Sworn to before me this ${day} day of ${month}, ${year}.</div>
     <div class="signature-line"></div>
@@ -279,6 +282,7 @@ export function generateEjectmentHTML(
     <div class="form-line">City/State/Zip: ${plaintiffCityStateZip}</div>
     <div class="form-line">Phone Number: ${plaintiffPhone}</div>
     <div class="form-line">Email: ${plaintiffEmail}</div>
+  </div>
   </div>
 
   <div class="form-section" style="margin-top: 36pt;">
@@ -427,6 +431,7 @@ export function generateAffidavitHTML(
     <div class="form-line">(Copies of bills, papers or other proof of any of the above accounts should be attached to this document.)</div>
   </div>
 
+  <div class="signature-block-keep-together">
   <div class="form-section spacing" style="margin-top: 24pt;">
     <div class="form-line">Sworn to and Subscribed before me this ${day} day of ${month}, ${year}.</div>
     <div class="signature-line"></div>
@@ -436,6 +441,7 @@ export function generateAffidavitHTML(
 
   <div class="form-section spacing" style="margin-top: 24pt;">
     <div class="form-line">PLAINTIFF (or his attorney): <span class="blank-line"></span></div>
+  </div>
   </div>
 
   <div class="form-section" style="margin-top: 36pt;">
@@ -585,6 +591,7 @@ export function generateNCRentLedgerHTML(
     <div class="form-line">(Copies of bills, invoices, ledger pages, or other proof may be attached.)</div>
   </div>
 
+  <div class="signature-block-keep-together">
   <div class="form-section spacing" style="margin-top: 24pt;">
     <div class="form-line">Sworn to and subscribed before me this ${day} day of ${month}, ${year}.</div>
     <div class="signature-line"></div>
@@ -594,6 +601,7 @@ export function generateNCRentLedgerHTML(
 
   <div class="form-section spacing" style="margin-top: 24pt;">
     <div class="form-line">PLAINTIFF (or attorney): <span class="blank-line"></span></div>
+  </div>
   </div>
 
   <div class="form-section" style="margin-top: 36pt;">

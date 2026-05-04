@@ -109,6 +109,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const propertyData = await request.json()
+    if (
+      propertyData.property_type === '' ||
+      (typeof propertyData.property_type === 'string' &&
+        propertyData.property_type.trim() === '')
+    ) {
+      propertyData.property_type = null
+    }
     
     console.log('Creating new property:', propertyData)
     
@@ -192,6 +199,24 @@ export async function PUT(request: Request) {
     const cleanUpdateData = Object.fromEntries(
       Object.entries(cleanedData).filter(([_, value]) => value !== undefined)
     )
+
+    // Empty string property_type violates CHECK (must be enum value or NULL)
+    if (
+      Object.prototype.hasOwnProperty.call(cleanUpdateData, 'property_type') &&
+      (cleanUpdateData.property_type === '' ||
+        (typeof cleanUpdateData.property_type === 'string' &&
+          cleanUpdateData.property_type.trim() === ''))
+    ) {
+      cleanUpdateData.property_type = null
+    }
+
+    // Property status is only active | retired (lease uses occupied/empty/sold)
+    if (Object.prototype.hasOwnProperty.call(cleanUpdateData, 'status')) {
+      const s = cleanUpdateData.status
+      if (s === 'occupied' || s === 'empty') {
+        cleanUpdateData.status = 'active'
+      }
+    }
     
     console.log('Updating property:', { id, updateData: cleanUpdateData })
     

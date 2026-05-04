@@ -68,6 +68,21 @@ export async function PATCH(
 
     console.log('Fields to update:', fieldsToUpdate)
 
+    if (
+      Object.prototype.hasOwnProperty.call(fieldsToUpdate, 'property_type') &&
+      (fieldsToUpdate.property_type === '' ||
+        (typeof fieldsToUpdate.property_type === 'string' &&
+          fieldsToUpdate.property_type.trim() === ''))
+    ) {
+      fieldsToUpdate.property_type = null
+    }
+    if (Object.prototype.hasOwnProperty.call(fieldsToUpdate, 'status')) {
+      const s = fieldsToUpdate.status
+      if (s === 'occupied' || s === 'empty') {
+        fieldsToUpdate.status = 'active'
+      }
+    }
+
     const { data, error } = await supabaseServer
       .from('RENT_properties')
       .update(fieldsToUpdate)

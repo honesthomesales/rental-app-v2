@@ -233,7 +233,7 @@ export default function PropertiesPage() {
         },
         body: JSON.stringify({
           id: property.id,
-          status: 'occupied'
+          status: 'active'
         })
       })
 
@@ -266,7 +266,13 @@ export default function PropertiesPage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || `Failed to ${editingProperty ? 'update' : 'create'} property`)
+        const msg =
+          errorData.details ||
+          errorData.errorMessage ||
+          errorData.hint ||
+          errorData.error ||
+          `Failed to ${editingProperty ? 'update' : 'create'} property`
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))
       }
 
       // If lease_status was provided, update the lease

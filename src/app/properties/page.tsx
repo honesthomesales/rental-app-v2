@@ -131,8 +131,15 @@ export default function PropertiesPage() {
       // Merge property data with lease data
       // Show all lease statuses (occupied, active, sold, empty)
       const propertiesWithLease = data.map((property: Property) => {
-        // Find any lease for this property - show all statuses
-        const anyLease = leaseData.find((l: any) => l.property_id === property.id)
+        // Prefer newest lease per property (find() alone could pick an older row depending on API order)
+        const leasesForProp = leaseData.filter((l: any) => l.property_id === property.id)
+        const anyLease =
+          leasesForProp.length === 0
+            ? undefined
+            : [...leasesForProp].sort(
+                (a, b) =>
+                  new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+              )[0]
         
         // Check if lease has tenants (occupied or sold) for isOccupied flag
         const isActiveLease = anyLease && (
@@ -275,7 +282,7 @@ export default function PropertiesPage() {
         throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))
       }
 
-      // If lease_status was provided, update the lease
+      // If lease_status was provided, update the lease (requires a linked lease row)
       if (lease_status && editingProperty?.leaseId) {
         try {
           const leaseResponse = await fetch('/api/leases', {
@@ -290,12 +297,22 @@ export default function PropertiesPage() {
           })
 
           if (!leaseResponse.ok) {
-            console.warn('Failed to update lease status, but property was saved')
+            const leaseErr = await leaseResponse.json().catch(() => ({}))
+            const detail =
+              leaseErr.details || leaseErr.error || 'Failed to update lease status'
+            console.error('Lease status update failed:', leaseErr)
+            alert(`Property saved, but lease status was not updated: ${detail}`)
           }
         } catch (leaseError) {
           console.error('Error updating lease status:', leaseError)
-          // Don't fail the whole operation if lease update fails
+          alert(
+            `Property saved, but lease status update failed: ${leaseError instanceof Error ? leaseError.message : 'Unknown error'}`
+          )
         }
+      } else if (lease_status && !editingProperty?.leaseId) {
+        alert(
+          'Property saved. Lease status was not changed because no lease is linked to this property. Add or link a lease on the Leases page, then set Sold here.'
+        )
       }
 
       // Refresh the properties list

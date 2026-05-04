@@ -43,6 +43,21 @@ function formatInsurancePremium(value: unknown): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+/** Same rows for Insurance and Tax: match any of these fields (String() avoids Map_ID number / null bugs) */
+function overviewSearchMatches(property: any, searchLower: string): boolean {
+  if (!searchLower) return true
+  const fields = [
+    property.name,
+    property.owner_name,
+    property.county,
+    property.Map_ID,
+    property.map_id_trailer,
+    property.insurance_provider,
+    property.insurance_policy_number,
+  ]
+  return fields.some((v) => String(v ?? '').toLowerCase().includes(searchLower))
+}
+
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -58,8 +73,8 @@ export default function Dashboard() {
   const [insuranceSortDirection, setInsuranceSortDirection] = useState<'asc' | 'desc'>('asc')
   const [taxSortField, setTaxSortField] = useState<string>('name')
   const [taxSortDirection, setTaxSortDirection] = useState<'asc' | 'desc'>('asc')
-  const [insuranceSearchTerm, setInsuranceSearchTerm] = useState<string>('')
-  const [taxSearchTerm, setTaxSearchTerm] = useState<string>('')
+  /** Single filter for Insurance + Property Tax lists so row counts always match */
+  const [overviewSearchTerm, setOverviewSearchTerm] = useState<string>('')
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
   const [showPotentialIncomeModal, setShowPotentialIncomeModal] = useState(false)
   const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
@@ -416,21 +431,16 @@ export default function Dashboard() {
     }
   }
 
-  const getSortedInsuranceProperties = () => {
+  const getSearchFilteredOverviewProperties = () => {
     const filtered = getFilteredProperties()
-    
-    // Apply search filter
-    const searchFiltered = insuranceSearchTerm
-      ? filtered.filter(property => {
-          const searchLower = insuranceSearchTerm.toLowerCase()
-          return (
-            property.name?.toLowerCase().includes(searchLower) ||
-            property.insurance_provider?.toLowerCase().includes(searchLower) ||
-            property.insurance_policy_number?.toLowerCase().includes(searchLower)
-          )
-        })
-      : filtered
-    
+    const term = overviewSearchTerm.trim().toLowerCase()
+    if (!term) return filtered
+    return filtered.filter((p) => overviewSearchMatches(p, term))
+  }
+
+  const getSortedInsuranceProperties = () => {
+    const searchFiltered = getSearchFilteredOverviewProperties()
+
     // Apply sorting
     return [...searchFiltered].sort((a, b) => {
       let aValue = a[insuranceSortField] || ''
@@ -446,22 +456,8 @@ export default function Dashboard() {
   }
 
   const getSortedTaxProperties = () => {
-    const filtered = getFilteredProperties()
-    
-    // Apply search filter
-    const searchFiltered = taxSearchTerm
-      ? filtered.filter(property => {
-          const searchLower = taxSearchTerm.toLowerCase()
-          return (
-            property.name?.toLowerCase().includes(searchLower) ||
-            property.owner_name?.toLowerCase().includes(searchLower) ||
-            property.county?.toLowerCase().includes(searchLower) ||
-            property.Map_ID?.toLowerCase().includes(searchLower) ||
-            property.map_id_trailer?.toLowerCase().includes(searchLower)
-          )
-        })
-      : filtered
-    
+    const searchFiltered = getSearchFilteredOverviewProperties()
+
     // Apply sorting
     return [...searchFiltered].sort((a, b) => {
       let aValue: any = a[taxSortField] || ''
@@ -867,10 +863,10 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Quick Actions */}
-      <div className="mt-8 flex justify-between items-center">
-        <div className="flex items-center space-x-4">
-          <div className="relative">
+      {/* Quick Actions — type + shared search apply to Insurance and Property Tax lists */}
+      <div className="mt-8 flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center flex-1 min-w-0">
+          <div className="relative shrink-0">
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
@@ -883,9 +879,16 @@ export default function Dashboard() {
               <option value="loan">Loan</option>
             </select>
           </div>
+          <input
+            type="text"
+            placeholder="Search insurance & property tax (name, owner, county, map ID, trailer, provider, policy)…"
+            value={overviewSearchTerm}
+            onChange={(e) => setOverviewSearchTerm(e.target.value)}
+            className="w-full min-w-0 sm:min-w-[280px] sm:max-w-xl flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
         </div>
         
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center">
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center shrink-0">
           <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
@@ -907,17 +910,6 @@ export default function Dashboard() {
         
         {showInsuranceSection && (
           <div className="space-y-2">
-            {/* Search Bar */}
-            <div className="mb-4">
-              <input
-                type="text"
-                placeholder="Search by property name, provider, or policy number..."
-                value={insuranceSearchTerm}
-                onChange={(e) => setInsuranceSearchTerm(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            
             {/* Insurance List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
               <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr' }}>
@@ -959,11 +951,27 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mb-2">
+              {getSearchFilteredOverviewProperties().length} properties (same count as Property Tax below)
+            </p>
             
             {/* Insurance List */}
             {getSortedInsuranceProperties().length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No properties found. Properties in overview: {getFilteredProperties().length}
+              <div className="text-center py-8 text-gray-500 space-y-2">
+                <p>
+                  {overviewSearchTerm.trim()
+                    ? `No matches for this search (${getFilteredProperties().length} properties in overview).`
+                    : `No properties in overview (${getFilteredProperties().length}).`}
+                </p>
+                {overviewSearchTerm.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => setOverviewSearchTerm('')}
+                    className="text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    Clear search
+                  </button>
+                ) : null}
               </div>
             ) : (
               getSortedInsuranceProperties().map((property) => (
@@ -1090,17 +1098,9 @@ export default function Dashboard() {
         
         {showTaxSection && (
           <div className="space-y-2">
-            {/* Search Bar */}
-            <div className="mb-4">
-              <input
-                type="text"
-                placeholder="Search by property name, owner, county, map ID, or trailer..."
-                value={taxSearchTerm}
-                onChange={(e) => setTaxSearchTerm(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            
+            <p className="text-xs text-gray-500 mb-2">
+              {getSearchFilteredOverviewProperties().length} properties (same count as Insurance above; search is next to the type filter).
+            </p>
             {/* Tax List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
               <div className="grid gap-2" style={{ gridTemplateColumns: '0.4fr 1.6fr 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.8fr' }}>
@@ -1190,8 +1190,21 @@ export default function Dashboard() {
             
             {/* Tax List */}
             {getSortedTaxProperties().length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No properties found. Properties in overview: {getFilteredProperties().length}
+              <div className="text-center py-8 text-gray-500 space-y-2">
+                <p>
+                  {overviewSearchTerm.trim()
+                    ? `No matches for this search (${getFilteredProperties().length} properties in overview).`
+                    : `No properties in overview (${getFilteredProperties().length}).`}
+                </p>
+                {overviewSearchTerm.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => setOverviewSearchTerm('')}
+                    className="text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    Clear search
+                  </button>
+                ) : null}
               </div>
             ) : (
               getSortedTaxProperties().map((property) => {

@@ -12,9 +12,17 @@ import {
   ArrowPathIcon
 } from '@heroicons/react/24/outline'
 
-/** Match dashboard metrics API: show all types except `other` in totals and Insurance / Tax overviews */
-function isShownInDashboardOverviews(propertyType: string | null | undefined): boolean {
-  return propertyType !== 'other'
+/**
+ * Insurance + Property Tax tables and dashboard metrics API: only these property_type values.
+ * (Excludes loan, other, and unset/null type — those rows never enter either overview list.)
+ */
+const OVERVIEW_RESIDENTIAL_TYPES = ['house', 'doublewide', 'singlewide'] as const
+
+function isOverviewResidentialType(propertyType: string | null | undefined): boolean {
+  return (
+    propertyType != null &&
+    (OVERVIEW_RESIDENTIAL_TYPES as readonly string[]).includes(propertyType)
+  )
 }
 
 /** DB sometimes stores -1 as a sentinel for tax paid fields; treat as $0 for display and math */
@@ -103,10 +111,12 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    if (typeFilter === 'other') {
+    const allowedTypeFilter = ['', 'house', 'doublewide', 'singlewide']
+    if (!allowedTypeFilter.includes(typeFilter)) {
       setTypeFilter('')
     }
-    if (occupiedPropertiesTypeFilter === 'other') {
+    const allowedOccupiedType = ['all', 'house', 'doublewide', 'singlewide']
+    if (!allowedOccupiedType.includes(occupiedPropertiesTypeFilter)) {
       setOccupiedPropertiesTypeFilter('all')
     }
   }, [typeFilter, occupiedPropertiesTypeFilter])
@@ -217,7 +227,7 @@ export default function Dashboard() {
           // Filter empty properties with rent_value
           // A property is empty if it's not in the occupiedPropertyIds set
           const potentialProps = propertiesData.filter((property: any) => {
-            if (!isShownInDashboardOverviews(property.property_type)) return false
+            if (!isOverviewResidentialType(property.property_type)) return false
             const isOccupied = occupiedPropertyIds.has(property.id)
             const hasRentValue = property.rent_value && property.rent_value > 0
             
@@ -250,11 +260,11 @@ export default function Dashboard() {
               .map((lease: any) => lease.property_id)
           )
           
-          // Filter properties to match dashboard (exclude sold; exclude only type `other`)
+          // Filter properties to match dashboard (exclude sold; house / doublewide / singlewide only)
           const validProperties = propertiesData.filter(
             (property: any) =>
               !soldPropertyIds.has(property.id) &&
-              isShownInDashboardOverviews(property.property_type)
+              isOverviewResidentialType(property.property_type)
           )
           
           const allPropsWithTenants = validProperties.map((property: any) => ({
@@ -431,18 +441,29 @@ export default function Dashboard() {
     }
   }
 
-  const getSearchFilteredOverviewProperties = () => {
-    const filtered = getFilteredProperties()
+  /** Rows after residential + type filter (no search). Used for empty-state counts before search. */
+  const getOverviewTypeFilteredRows = () => {
+    const base = properties.filter((p) => isOverviewResidentialType(p.property_type))
+    if (!typeFilter) return base
+    return base.filter((p) => p.property_type === typeFilter)
+  }
+
+  /**
+   * Single pipeline for both Insurance and Property Tax: same array instance flow.
+   * Only the subsequent `.sort()` differs per section — sort cannot add/remove rows.
+   */
+  const getOverviewRowsUnsorted = () => {
+    const typed = getOverviewTypeFilteredRows()
     const term = overviewSearchTerm.trim().toLowerCase()
-    if (!term) return filtered
-    return filtered.filter((p) => overviewSearchMatches(p, term))
+    if (!term) return typed
+    return typed.filter((p) => overviewSearchMatches(p, term))
   }
 
   const getSortedInsuranceProperties = () => {
-    const searchFiltered = getSearchFilteredOverviewProperties()
+    const rows = getOverviewRowsUnsorted()
 
     // Apply sorting
-    return [...searchFiltered].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       let aValue = a[insuranceSortField] || ''
       let bValue = b[insuranceSortField] || ''
       
@@ -456,10 +477,10 @@ export default function Dashboard() {
   }
 
   const getSortedTaxProperties = () => {
-    const searchFiltered = getSearchFilteredOverviewProperties()
+    const rows = getOverviewRowsUnsorted()
 
     // Apply sorting
-    return [...searchFiltered].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       let aValue: any = a[taxSortField] || ''
       let bValue: any = b[taxSortField] || ''
       
@@ -620,12 +641,6 @@ export default function Dashboard() {
         return newMap
       })
     }
-  }
-
-  const getFilteredProperties = () => {
-    const base = properties.filter(p => isShownInDashboardOverviews(p.property_type))
-    if (!typeFilter) return base
-    return base.filter(p => p.property_type === typeFilter)
   }
 
   if (loading) {
@@ -876,7 +891,6 @@ export default function Dashboard() {
               <option value="house">House</option>
               <option value="doublewide">Doublewide</option>
               <option value="singlewide">Singlewide</option>
-              <option value="loan">Loan</option>
             </select>
           </div>
           <input
@@ -952,7 +966,7 @@ export default function Dashboard() {
               </div>
             </div>
             <p className="text-xs text-gray-500 mb-2">
-              {getSearchFilteredOverviewProperties().length} properties (same count as Property Tax below)
+              {getOverviewRowsUnsorted().length} properties (same count as Property Tax below)
             </p>
             
             {/* Insurance List */}
@@ -960,8 +974,8 @@ export default function Dashboard() {
               <div className="text-center py-8 text-gray-500 space-y-2">
                 <p>
                   {overviewSearchTerm.trim()
-                    ? `No matches for this search (${getFilteredProperties().length} properties in overview).`
-                    : `No properties in overview (${getFilteredProperties().length}).`}
+                    ? `No matches for this search (${getOverviewTypeFilteredRows().length} properties match type filter; clear search to see all).`
+                    : `No properties in overview (${getOverviewTypeFilteredRows().length}).`}
                 </p>
                 {overviewSearchTerm.trim() ? (
                   <button
@@ -1099,7 +1113,7 @@ export default function Dashboard() {
         {showTaxSection && (
           <div className="space-y-2">
             <p className="text-xs text-gray-500 mb-2">
-              {getSearchFilteredOverviewProperties().length} properties (same count as Insurance above; search is next to the type filter).
+              {getOverviewRowsUnsorted().length} properties (same count as Insurance above; search is next to the type filter).
             </p>
             {/* Tax List Header */}
             <div className="bg-gray-100 p-3 rounded-lg border font-medium text-sm text-gray-700">
@@ -1193,8 +1207,8 @@ export default function Dashboard() {
               <div className="text-center py-8 text-gray-500 space-y-2">
                 <p>
                   {overviewSearchTerm.trim()
-                    ? `No matches for this search (${getFilteredProperties().length} properties in overview).`
-                    : `No properties in overview (${getFilteredProperties().length}).`}
+                    ? `No matches for this search (${getOverviewTypeFilteredRows().length} properties match type filter; clear search to see all).`
+                    : `No properties in overview (${getOverviewTypeFilteredRows().length}).`}
                 </p>
                 {overviewSearchTerm.trim() ? (
                   <button
@@ -1668,7 +1682,6 @@ export default function Dashboard() {
                         <option value="house">House</option>
                         <option value="doublewide">Doublewide</option>
                         <option value="singlewide">Singlewide</option>
-                        <option value="loan">Loan</option>
                       </select>
                     </div>
                     <div className="flex items-center gap-2">

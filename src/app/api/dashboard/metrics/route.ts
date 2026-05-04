@@ -4,9 +4,14 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
 
-/** Totals and Insurance / Property Tax overviews: all types except `other` (includes loan and unset type). */
-function isShownInDashboardOverviews(propertyType: string | null | undefined): boolean {
-  return propertyType !== 'other'
+/** Dashboard totals align with Insurance / Property Tax tables: only these types (excludes loan, other, unset). */
+const OVERVIEW_RESIDENTIAL_TYPES = ['house', 'doublewide', 'singlewide'] as const
+
+function isOverviewResidentialType(propertyType: string | null | undefined): boolean {
+  return (
+    propertyType != null &&
+    (OVERVIEW_RESIDENTIAL_TYPES as readonly string[]).includes(propertyType)
+  )
 }
 
 export async function GET(request: Request) {
@@ -41,11 +46,11 @@ export async function GET(request: Request) {
         .map(lease => lease.property_id)
     )
 
-    // Filter out sold properties and type `other` (loan and unset type stay in totals / overviews)
+    // Filter out sold properties; only house / doublewide / singlewide (same rule as dashboard overviews)
     const validProperties =
       allProperties?.filter(
         property =>
-          !soldPropertyIds.has(property.id) && isShownInDashboardOverviews(property.property_type)
+          !soldPropertyIds.has(property.id) && isOverviewResidentialType(property.property_type)
       ) || []
 
     // Fetch occupied properties (properties with active leases)

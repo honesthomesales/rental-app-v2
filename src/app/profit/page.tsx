@@ -6,6 +6,8 @@ import { ProfitMetrics, PropertyProfitData } from '@/types/database'
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
 type SortDirection = 'asc' | 'desc'
 
+type ProfitViewMode = 'detail' | 'sixMonth'
+
 export default function ProfitPage() {
   const [metrics, setMetrics] = useState<ProfitMetrics | null>(null)
   const [propertyData, setPropertyData] = useState<PropertyProfitData[]>([])
@@ -14,10 +16,40 @@ export default function ProfitPage() {
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
   const [sortField, setSortField] = useState<SortField>('property')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [viewMode, setViewMode] = useState<ProfitViewMode>('detail')
+  const [sixMonthRows, setSixMonthRows] = useState<
+    { month: string; label: string; currentProfit: number; potentialProfit: number }[]
+  >([])
+  const [sixMonthLoading, setSixMonthLoading] = useState(false)
 
   useEffect(() => {
     fetchMonthlyMetrics()
   }, [currentDate])
+
+  useEffect(() => {
+    if (viewMode !== 'sixMonth') return
+
+    let cancelled = false
+    const load = async () => {
+      setSixMonthLoading(true)
+      try {
+        const response = await fetch('/api/profit/monthly-summary')
+        if (!response.ok) return
+        const data = await response.json()
+        if (!cancelled && data?.months) {
+          setSixMonthRows(data.months)
+        }
+      } catch (e) {
+        console.error('Error fetching 6-month profit summary:', e)
+      } finally {
+        if (!cancelled) setSixMonthLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [viewMode])
 
   const fetchProfitData = async () => {
     try {
@@ -176,6 +208,55 @@ export default function ProfitPage() {
       return 0
     })
   }, [monthlyMetrics?.propertyDetails, sortField, sortDirection])
+
+  const renderSixMonthView = () => (
+    <div className="space-y-4 max-w-2xl mx-auto">
+      {sixMonthLoading ? (
+        [...Array(6)].map((_, i) => (
+          <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-1/3 mb-4" />
+            <div className="h-10 bg-gray-200 rounded w-2/3 mb-3" />
+            <div className="h-6 bg-gray-200 rounded w-1/2" />
+          </div>
+        ))
+      ) : sixMonthRows.length === 0 ? (
+        <p className="text-center text-sm text-gray-600 py-8">
+          Could not load monthly summary. Try again or refresh the page.
+        </p>
+      ) : (
+        sixMonthRows.map((row) => (
+          <div
+            key={row.month}
+            className="bg-white rounded-lg shadow border border-gray-100 p-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">
+              {row.label}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <div className="text-sm font-medium text-gray-600 mb-1">CURRENT PROFIT</div>
+                <div
+                  className={`text-4xl font-bold ${row.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                >
+                  {formatCurrency(row.currentProfit)}
+                </div>
+              </div>
+              <div className="pt-3 border-t border-gray-100">
+                <div className="text-sm font-medium text-gray-600 mb-1">
+                  Potential if House Debt is paid
+                </div>
+                <div
+                  className={`text-2xl font-bold ${row.potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                >
+                  {formatCurrency(row.potentialProfit)}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  )
 
   const renderMetricsView = () => (
     <div className="space-y-6">
@@ -418,11 +499,45 @@ export default function ProfitPage() {
     </div>
   )
 
-  if (loading) {
+  const viewToggle = (
+    <div
+      className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 shadow-sm"
+      role="group"
+      aria-label="Profit view mode"
+    >
+      <button
+        type="button"
+        onClick={() => setViewMode('detail')}
+        className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+          viewMode === 'detail'
+            ? 'bg-white text-gray-900 shadow'
+            : 'text-gray-600 hover:text-gray-900'
+        }`}
+      >
+        Monthly detail
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode('sixMonth')}
+        className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+          viewMode === 'sixMonth'
+            ? 'bg-white text-gray-900 shadow'
+            : 'text-gray-600 hover:text-gray-900'
+        }`}
+      >
+        Last 6 months
+      </button>
+    </div>
+  )
+
+  if (loading && viewMode === 'detail') {
     return (
       <div className="p-6">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+          {viewToggle}
+        </div>
         <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="bg-white p-6 rounded-lg shadow">
@@ -440,9 +555,12 @@ export default function ProfitPage() {
     <div className="p-6">
       <div className="mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+            <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+            {viewToggle}
+          </div>
           <div className="flex flex-wrap items-end justify-end gap-8 ml-auto">
-            {monthlyMetrics && (
+            {viewMode === 'detail' && monthlyMetrics && (
               <div className="text-right">
                 <p className="text-sm text-gray-600">Current Profit</p>
                 {(() => {
@@ -463,7 +581,7 @@ export default function ProfitPage() {
                 })()}
               </div>
             )}
-            {monthlyMetrics?.averageProfit12Months !== undefined && (
+            {viewMode === 'detail' && monthlyMetrics?.averageProfit12Months !== undefined && (
               <div className="text-right">
                 <p className="text-sm text-gray-600">Average Profit (12 Months)</p>
                 <p
@@ -478,11 +596,15 @@ export default function ProfitPage() {
       </div>
 
 
-      {/* Monthly Metrics View */}
-      {renderMetricsView()}
+      {viewMode === 'sixMonth' ? (
+        renderSixMonthView()
+      ) : (
+        <>
+          {/* Monthly Metrics View */}
+          {renderMetricsView()}
 
-      {/* Detailed Income and Rent by Property */}
-      <div className="bg-white rounded-lg shadow overflow-hidden mt-8">
+          {/* Detailed Income and Rent by Property */}
+          <div className="bg-white rounded-lg shadow overflow-hidden mt-8">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Income and Rent Details - {formatMonth(currentDate)}</h2>
           <p className="text-sm text-gray-600 mt-1">Detailed breakdown by property for the selected month</p>
@@ -636,6 +758,8 @@ export default function ProfitPage() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

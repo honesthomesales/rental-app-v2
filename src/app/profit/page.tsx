@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { StarIcon } from '@heroicons/react/24/solid'
 import { ProfitMetrics, PropertyProfitData } from '@/types/database'
 
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
@@ -21,6 +22,7 @@ export default function ProfitPage() {
     { month: string; label: string; currentProfit: number; potentialProfit: number }[]
   >([])
   const [sixMonthLoading, setSixMonthLoading] = useState(false)
+  const [sixMonthReferenceMonth, setSixMonthReferenceMonth] = useState<string | null>(null)
 
   useEffect(() => {
     fetchMonthlyMetrics()
@@ -38,6 +40,7 @@ export default function ProfitPage() {
         const data = await response.json()
         if (!cancelled && data?.months) {
           setSixMonthRows(data.months)
+          setSixMonthReferenceMonth(data.referenceMonth ?? null)
         }
       } catch (e) {
         console.error('Error fetching 6-month profit summary:', e)
@@ -144,11 +147,17 @@ export default function ProfitPage() {
     return `$${Math.round(amount).toLocaleString()}`
   }
 
-  const formatMonthShort = (monthKey: string) => {
+  const formatMonthSpelled = (monthKey: string) => {
     const [y, m] = monthKey.split('-').map(Number)
-    const d = new Date(y, m - 1, 1)
-    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    })
   }
+
+  const sixMonthSortedDesc = useMemo(() => {
+    return [...sixMonthRows].sort((a, b) => b.month.localeCompare(a.month))
+  }, [sixMonthRows])
 
   const formatMonth = (date: Date) => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -215,10 +224,13 @@ export default function ProfitPage() {
     })
   }, [monthlyMetrics?.propertyDetails, sortField, sortDirection])
 
-  const renderSixMonthView = () => (
-    <div className="mx-auto max-w-4xl">
-      {/* Half-page–friendly panel: 3 stacked rows × 2 columns = 6 tiles */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 shadow-2xl shadow-slate-900/25 ring-1 ring-white/10 sm:p-5">
+  const renderSixMonthView = () => {
+    const refMonth =
+      sixMonthReferenceMonth ?? new Date().toISOString().slice(0, 7)
+
+    return (
+    <div className="mx-auto max-w-3xl">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-3 shadow-2xl shadow-slate-900/25 ring-1 ring-white/10 sm:p-4">
         <div
           className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-teal-400/15 blur-3xl"
           aria-hidden
@@ -228,90 +240,76 @@ export default function ProfitPage() {
           aria-hidden
         />
 
-        <div className="relative mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-white/10 pb-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-teal-300/90">
-              Rolling outlook
-            </p>
-            <h2 className="text-lg font-semibold tracking-tight text-white sm:text-xl">
-              Last six months
-            </h2>
-          </div>
-          <p className="max-w-[14rem] text-right text-[11px] leading-snug text-slate-400">
-            Current profit vs. potential if recurring house debt were cleared.
-          </p>
+        <div className="relative mb-2.5 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.12em] sm:text-[11px]">
+          <span className="text-green-400">Current profit</span>
+          <span className="text-lime-400">Potential if debt paid</span>
         </div>
 
         {sixMonthLoading ? (
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+          <div className="relative grid grid-cols-2 grid-rows-3 gap-2">
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="animate-pulse rounded-xl bg-white/5 p-3 ring-1 ring-white/10 sm:p-4"
+                className="animate-pulse rounded-lg bg-white/5 p-2 ring-1 ring-white/10"
               >
-                <div className="mb-3 h-2.5 w-14 rounded bg-white/10" />
-                <div className="mb-2 h-7 w-24 rounded bg-white/10" />
-                <div className="h-5 w-20 rounded bg-white/5" />
+                <div className="mb-2 h-2 w-20 rounded bg-white/10" />
+                <div className="mb-1 h-5 w-16 rounded bg-white/10" />
+                <div className="h-4 w-14 rounded bg-white/5" />
               </div>
             ))}
           </div>
-        ) : sixMonthRows.length === 0 ? (
+        ) : sixMonthSortedDesc.length === 0 ? (
           <p className="relative py-10 text-center text-sm text-slate-400">
             Could not load monthly summary. Try again or refresh the page.
           </p>
         ) : (
-          <div className="relative grid grid-cols-2 grid-rows-3 gap-2.5 sm:gap-3">
-            {sixMonthRows.map((row, idx) => {
+          <div className="relative grid grid-cols-2 grid-rows-3 gap-2">
+            {sixMonthSortedDesc.map((row) => {
               const curPositive = row.currentProfit >= 0
-              const potPositive = row.potentialProfit >= 0
+              const isCurrentMonth = row.month === refMonth
               return (
                 <article
                   key={row.month}
-                  className="group relative flex flex-col overflow-hidden rounded-xl bg-white/[0.97] p-3 shadow-lg shadow-slate-950/20 ring-1 ring-white/70 transition duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-xl hover:shadow-teal-900/10 hover:ring-teal-200/60 sm:p-3.5"
+                  className="group relative flex flex-col overflow-hidden rounded-lg bg-white/[0.97] p-2 shadow-md shadow-slate-950/15 ring-1 ring-white/70 transition duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:ring-teal-200/50 sm:p-2.5"
                 >
                   <div
-                    className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${
+                    className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${
                       curPositive
                         ? 'from-emerald-500 via-teal-400 to-cyan-400'
                         : 'from-rose-500 via-orange-400 to-amber-400'
                     }`}
                     aria-hidden
                   />
-                  <header className="mb-2 flex items-baseline justify-between gap-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {formatMonthShort(row.month)}
-                    </span>
-                    <span className="font-mono text-[10px] tabular-nums text-slate-400">
-                      {String(idx + 1).padStart(2, '0')}
+
+                  <header className="mb-1.5 flex items-start gap-1">
+                    {isCurrentMonth ? (
+                      <StarIcon
+                        className="mt-0.5 h-3 w-3 shrink-0 text-amber-400"
+                        aria-label="Current month"
+                      />
+                    ) : (
+                      <span className="inline-block w-3 shrink-0" aria-hidden />
+                    )}
+                    <span className="min-w-0 text-[10px] font-medium leading-tight text-slate-700 sm:text-[11px]">
+                      {formatMonthSpelled(row.month)}
                     </span>
                   </header>
 
-                  <div className="flex flex-1 flex-col justify-between gap-2">
-                    <div>
-                      <p className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400">
-                        Current profit
-                      </p>
-                      <p
-                        className={`font-mono text-xl font-bold tabular-nums tracking-tight sm:text-2xl ${
-                          curPositive ? 'text-emerald-600' : 'text-rose-600'
-                        }`}
-                      >
-                        {formatCurrency(row.currentProfit)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-lg bg-slate-50/90 px-2 py-1.5 ring-1 ring-slate-100">
-                      <p className="text-[8px] font-semibold uppercase leading-tight tracking-wide text-slate-500">
-                        Potential if debt paid
-                      </p>
-                      <p
-                        className={`font-mono text-base font-semibold tabular-nums sm:text-lg ${
-                          potPositive ? 'text-teal-700' : 'text-rose-700'
-                        }`}
-                      >
-                        {formatCurrency(row.potentialProfit)}
-                      </p>
-                    </div>
+                  <div className="flex flex-1 flex-col justify-between gap-1">
+                    <p
+                      className={`font-mono text-base font-bold tabular-nums leading-tight sm:text-lg ${
+                        curPositive ? 'text-green-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {formatCurrency(row.currentProfit)}
+                    </p>
+                    <p
+                      className={`font-mono text-sm font-semibold tabular-nums leading-tight ${
+                        row.potentialProfit >= 0 ? 'text-lime-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {formatCurrency(row.potentialProfit)}
+                    </p>
                   </div>
                 </article>
               )
@@ -320,7 +318,8 @@ export default function ProfitPage() {
         )}
       </div>
     </div>
-  )
+    )
+  }
 
   const renderMetricsView = () => (
     <div className="space-y-6">

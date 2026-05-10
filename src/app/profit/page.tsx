@@ -144,6 +144,12 @@ export default function ProfitPage() {
     return `$${Math.round(amount).toLocaleString()}`
   }
 
+  const formatMonthShort = (monthKey: string) => {
+    const [y, m] = monthKey.split('-').map(Number)
+    const d = new Date(y, m - 1, 1)
+    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  }
+
   const formatMonth = (date: Date) => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   }
@@ -210,51 +216,109 @@ export default function ProfitPage() {
   }, [monthlyMetrics?.propertyDetails, sortField, sortDirection])
 
   const renderSixMonthView = () => (
-    <div className="space-y-4 max-w-2xl mx-auto">
-      {sixMonthLoading ? (
-        [...Array(6)].map((_, i) => (
-          <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
-            <div className="h-4 bg-gray-200 rounded w-1/3 mb-4" />
-            <div className="h-10 bg-gray-200 rounded w-2/3 mb-3" />
-            <div className="h-6 bg-gray-200 rounded w-1/2" />
+    <div className="mx-auto max-w-4xl">
+      {/* Half-page–friendly panel: 3 stacked rows × 2 columns = 6 tiles */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 shadow-2xl shadow-slate-900/25 ring-1 ring-white/10 sm:p-5">
+        <div
+          className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-teal-400/15 blur-3xl"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute -bottom-20 -left-12 h-48 w-48 rounded-full bg-indigo-500/20 blur-3xl"
+          aria-hidden
+        />
+
+        <div className="relative mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-white/10 pb-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-teal-300/90">
+              Rolling outlook
+            </p>
+            <h2 className="text-lg font-semibold tracking-tight text-white sm:text-xl">
+              Last six months
+            </h2>
           </div>
-        ))
-      ) : sixMonthRows.length === 0 ? (
-        <p className="text-center text-sm text-gray-600 py-8">
-          Could not load monthly summary. Try again or refresh the page.
-        </p>
-      ) : (
-        sixMonthRows.map((row) => (
-          <div
-            key={row.month}
-            className="bg-white rounded-lg shadow border border-gray-100 p-6"
-          >
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">
-              {row.label}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm font-medium text-gray-600 mb-1">CURRENT PROFIT</div>
-                <div
-                  className={`text-4xl font-bold ${row.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}
-                >
-                  {formatCurrency(row.currentProfit)}
-                </div>
+          <p className="max-w-[14rem] text-right text-[11px] leading-snug text-slate-400">
+            Current profit vs. potential if recurring house debt were cleared.
+          </p>
+        </div>
+
+        {sixMonthLoading ? (
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            {[...Array(6)].map((_, i) => (
+              <div
+                key={i}
+                className="animate-pulse rounded-xl bg-white/5 p-3 ring-1 ring-white/10 sm:p-4"
+              >
+                <div className="mb-3 h-2.5 w-14 rounded bg-white/10" />
+                <div className="mb-2 h-7 w-24 rounded bg-white/10" />
+                <div className="h-5 w-20 rounded bg-white/5" />
               </div>
-              <div className="pt-3 border-t border-gray-100">
-                <div className="text-sm font-medium text-gray-600 mb-1">
-                  Potential if House Debt is paid
-                </div>
-                <div
-                  className={`text-2xl font-bold ${row.potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}
-                >
-                  {formatCurrency(row.potentialProfit)}
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
-        ))
-      )}
+        ) : sixMonthRows.length === 0 ? (
+          <p className="relative py-10 text-center text-sm text-slate-400">
+            Could not load monthly summary. Try again or refresh the page.
+          </p>
+        ) : (
+          <div className="relative grid grid-cols-2 grid-rows-3 gap-2.5 sm:gap-3">
+            {sixMonthRows.map((row, idx) => {
+              const curPositive = row.currentProfit >= 0
+              const potPositive = row.potentialProfit >= 0
+              return (
+                <article
+                  key={row.month}
+                  className="group relative flex flex-col overflow-hidden rounded-xl bg-white/[0.97] p-3 shadow-lg shadow-slate-950/20 ring-1 ring-white/70 transition duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-xl hover:shadow-teal-900/10 hover:ring-teal-200/60 sm:p-3.5"
+                >
+                  <div
+                    className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${
+                      curPositive
+                        ? 'from-emerald-500 via-teal-400 to-cyan-400'
+                        : 'from-rose-500 via-orange-400 to-amber-400'
+                    }`}
+                    aria-hidden
+                  />
+                  <header className="mb-2 flex items-baseline justify-between gap-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {formatMonthShort(row.month)}
+                    </span>
+                    <span className="font-mono text-[10px] tabular-nums text-slate-400">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                  </header>
+
+                  <div className="flex flex-1 flex-col justify-between gap-2">
+                    <div>
+                      <p className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400">
+                        Current profit
+                      </p>
+                      <p
+                        className={`font-mono text-xl font-bold tabular-nums tracking-tight sm:text-2xl ${
+                          curPositive ? 'text-emerald-600' : 'text-rose-600'
+                        }`}
+                      >
+                        {formatCurrency(row.currentProfit)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-slate-50/90 px-2 py-1.5 ring-1 ring-slate-100">
+                      <p className="text-[8px] font-semibold uppercase leading-tight tracking-wide text-slate-500">
+                        Potential if debt paid
+                      </p>
+                      <p
+                        className={`font-mono text-base font-semibold tabular-nums sm:text-lg ${
+                          potPositive ? 'text-teal-700' : 'text-rose-700'
+                        }`}
+                      >
+                        {formatCurrency(row.potentialProfit)}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 

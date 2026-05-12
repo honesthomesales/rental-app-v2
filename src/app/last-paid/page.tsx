@@ -46,6 +46,25 @@ type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 
 type SortDirection = 'asc' | 'desc'
 type MonthlySortField = 'property' | 'cadence' | 'dayDue' | 'thisMonth' | 'lastMonth' | 'twoMonthsAgo'
 
+/** Max payment_date over real payments (amount > 0, linked to an invoice). Ignores invoice balance. */
+function getLastPaymentReceivedDate(prop: PropertyPayments): string {
+  let best = ''
+  let bestMs = -Infinity
+  for (const p of prop.payments) {
+    if (!p.invoice) continue
+    const amt = parseFloat(String(p.amount)) || 0
+    if (amt <= 0) continue
+    if (!p.payment_date) continue
+    const t = new Date(p.payment_date).getTime()
+    if (Number.isNaN(t)) continue
+    if (t > bestMs) {
+      bestMs = t
+      best = p.payment_date
+    }
+  }
+  return best
+}
+
 export default function LastPaidPage() {
   const [data, setData] = useState<PropertyPayments[]>([])
   const [loading, setLoading] = useState(true)
@@ -470,23 +489,8 @@ export default function LastPaidPage() {
         case 'cadence':
           return dir * (a.cadence || '').localeCompare(b.cadence || '')
         case 'lastPaid': {
-          // Find most recent paid payment for each property
-          const getLastPaidDate = (prop: PropertyPayments) => {
-            const paidPayments = prop.payments.filter((p: PaymentEntry) => {
-              if (!p.invoice) return false
-              const balance = parseFloat(p.invoice.recalculated_balance as any || 0)
-              return balance <= 0 && p.amount > 0
-            })
-            if (paidPayments.length === 0) return ''
-            paidPayments.sort((a: PaymentEntry, b: PaymentEntry) => {
-              const dateA = new Date(a.payment_date).getTime()
-              const dateB = new Date(b.payment_date).getTime()
-              return dateB - dateA
-            })
-            return paidPayments[0]?.payment_date || ''
-          }
-          const dateA = getLastPaidDate(a)
-          const dateB = getLastPaidDate(b)
+          const dateA = getLastPaymentReceivedDate(a)
+          const dateB = getLastPaymentReceivedDate(b)
           return dir * dateA.localeCompare(dateB)
         }
         case 'totalOwed': {
@@ -1176,21 +1180,7 @@ export default function LastPaidPage() {
               </tr>
             ) : (
               filteredAndSorted.map((property) => {
-                // Find the most recent paid payment (where invoice balance <= 0)
-                const paidPayments = property.payments.filter((p: PaymentEntry) => {
-                  if (!p.invoice) return false
-                  const balance = parseFloat(p.invoice.recalculated_balance as any || 0)
-                  return balance <= 0 && p.amount > 0 // Only actual payments, not unpaid invoice placeholders
-                })
-                
-                // Sort paid payments by date (most recent first)
-                paidPayments.sort((a: PaymentEntry, b: PaymentEntry) => {
-                  const dateA = new Date(a.payment_date).getTime()
-                  const dateB = new Date(b.payment_date).getTime()
-                  return dateB - dateA
-                })
-                
-                const lastPaidPayment = paidPayments[0]
+                const lastPaymentDate = getLastPaymentReceivedDate(property)
                 const lastPayment = property.payments[0] // For tenant name display
                 const isExpanded = expandedProperty === property.property_id
 
@@ -1215,7 +1205,7 @@ export default function LastPaidPage() {
                       {cadenceBadge(property.cadence)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {lastPaidPayment ? formatDate(lastPaidPayment.payment_date) : 'Never'}
+                      {lastPaymentDate ? formatDate(lastPaymentDate) : 'Never'}
                     </td>
                     <td className={`px-4 py-3 text-sm text-right font-medium ${property.totalOwed > 0 ? 'text-red-700' : 'text-green-700'}`}>
                       {formatCurrency(property.totalOwed)}

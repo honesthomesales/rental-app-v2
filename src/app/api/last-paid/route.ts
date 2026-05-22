@@ -442,7 +442,7 @@ export async function GET() {
           const isPaid = parseFloat(invoice.balance_due as any || 0) <= 0
           propertyPayments.push({
             id: `invoice-${invoice.id}`,
-            payment_date: isPaid ? null : invoice.due_date,
+            payment_date: isPaid ? '' : invoice.due_date,
             amount: 0,
             payment_type: isPaid ? 'Paid' : 'Invoice',
             notes: '',

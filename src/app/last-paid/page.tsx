@@ -20,13 +20,36 @@ interface PaymentInvoice {
   recalculated_balance: number
 }
 
+interface PaymentEntry {
+  id: string
+  payment_date: string
+  amount: number
+  payment_type: string
+  notes: string
+  tenant_name: string | null
+  invoice: PaymentInvoice | null
+}
+
+interface PropertyPayments {
+  property_id: string
+  property_name: string
+  property_address: string
+  property_type: string
+  cadence: string | null
+  rent: number | null
+  rent_due_day: number | null
+  lease_id: string | null
+  totalOwed: number
+  payments: PaymentEntry[]
+}
+
 /** Real last paid date for a detail row (not invoice due date). */
 function getEntryLastPaidDate(
   payment: PaymentEntry,
   allPayments: PaymentEntry[]
 ): string | null {
   const amt = parseFloat(String(payment.amount)) || 0
-  if (amt > 0 && payment.payment_date) {
+  if (amt > 0 && payment.payment_date?.trim()) {
     return payment.payment_date
   }
 
@@ -61,29 +84,6 @@ function lastPaidSortKey(payment: PaymentEntry, allPayments: PaymentEntry[]): nu
     if (!Number.isNaN(t)) return t - 1e15
   }
   return -Infinity
-}
-
-interface PaymentEntry {
-  id: string
-  payment_date: string
-  amount: number
-  payment_type: string
-  notes: string
-  tenant_name: string | null
-  invoice: PaymentInvoice | null
-}
-
-interface PropertyPayments {
-  property_id: string
-  property_name: string
-  property_address: string
-  property_type: string
-  cadence: string | null
-  rent: number | null
-  rent_due_day: number | null
-  lease_id: string | null
-  totalOwed: number
-  payments: PaymentEntry[]
 }
 
 type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 'latestWeek'

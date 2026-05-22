@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { generateNoticeHTML } from '@/lib/form-html-generator'
 import { getEjectmentPacketPrintHtml } from '@/lib/combine-html-print'
+import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
@@ -65,13 +66,30 @@ function getLastPaymentReceivedDate(prop: PropertyPayments): string {
   return best
 }
 
+/** Sort detail rows by last paid date (most recent first); unpaid rows sort last. */
+function sortPaymentsByLastPaidDate(payments: PaymentEntry[]): PaymentEntry[] {
+  const lastPaidMs = (p: PaymentEntry) => {
+    const amt = parseFloat(String(p.amount)) || 0
+    if (amt <= 0 || !p.payment_date) return -Infinity
+    const t = new Date(p.payment_date + 'T00:00:00').getTime()
+    return Number.isNaN(t) ? -Infinity : t
+  }
+  return [...payments].sort((a, b) => lastPaidMs(b) - lastPaidMs(a))
+}
+
+function formatLastPaidCell(payment: PaymentEntry, formatDate: (d: string | null) => string) {
+  const amt = parseFloat(String(payment.amount)) || 0
+  if (amt <= 0 || !payment.payment_date) return '-'
+  return formatDate(payment.payment_date)
+}
+
 export default function LastPaidPage() {
   const [data, setData] = useState<PropertyPayments[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [cadenceFilter, setCadenceFilter] = useState('')
-  const [sortField, setSortField] = useState<SortField>('property')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [sortField, setSortField] = useState<SortField>('lastPaid')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [expandedProperty, setExpandedProperty] = useState<string | null>(null)
   const [selectedLease, setSelectedLease] = useState<any>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
@@ -489,9 +507,13 @@ export default function LastPaidPage() {
         case 'cadence':
           return dir * (a.cadence || '').localeCompare(b.cadence || '')
         case 'lastPaid': {
-          const dateA = getLastPaymentReceivedDate(a)
-          const dateB = getLastPaymentReceivedDate(b)
-          return dir * dateA.localeCompare(dateB)
+          const ms = (prop: PropertyPayments) => {
+            const d = getLastPaymentReceivedDate(prop)
+            if (!d) return sortDirection === 'desc' ? -Infinity : Infinity
+            const t = new Date(d + 'T00:00:00').getTime()
+            return Number.isNaN(t) ? (sortDirection === 'desc' ? -Infinity : Infinity) : t
+          }
+          return dir * (ms(a) - ms(b))
         }
         case 'totalOwed': {
           return dir * ((a.totalOwed || 0) - (b.totalOwed || 0))
@@ -1426,6 +1448,7 @@ export default function LastPaidPage() {
       {expandedProperty && (() => {
         const property = filteredAndSorted.find(p => p.property_id === expandedProperty)
         if (!property) return null
+        const detailPayments = sortPaymentsByLastPaidDate(property.payments)
 
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setExpandedProperty(null)}>
@@ -1462,7 +1485,7 @@ export default function LastPaidPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Last Paid</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Payment Amount</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Invoice Period</th>
@@ -1472,9 +1495,9 @@ export default function LastPaidPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {property.payments.map((payment) => (
+                    {detailPayments.map((payment) => (
                       <tr key={payment.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-sm text-gray-900">{formatDate(payment.payment_date)}</td>
+                        <td className="px-3 py-2 text-sm text-gray-900">{formatLastPaidCell(payment, formatDate)}</td>
                         <td className="px-3 py-2 text-sm text-right font-medium text-green-700">{formatCurrency(payment.amount)}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{payment.payment_type || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">
@@ -1968,78 +1991,10 @@ export default function LastPaidPage() {
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
                   </div>
-                  <div className="mt-3 flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const html = getEjectmentPacketPrintHtml(generatedForms)
-                        if (!html) return
-                        openPrintPreview(html)
-                      }}
-                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
-                      className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Print preview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const html = getEjectmentPacketPrintHtml(generatedForms)
-                        if (!html) return
-                        printFormDocument(html)
-                      }}
-                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Print
-                    </button>
-                    {generatedForms.ejectmentHTML && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const blob = new Blob([generatedForms.ejectmentHTML], { type: 'text/html' })
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download =
-                            generatedForms.ejectmentFormKind === 'NC'
-                              ? 'Complaint-Summary-Ejectment-NC.html'
-                              : 'Application-for-Ejectment.html'
-                          a.click()
-                          URL.revokeObjectURL(url)
-                        }}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                      >
-                        Download HTML
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const base =
-                          generatedForms.ejectmentFormKind === 'NC'
-                            ? 'Complaint-Summary-Ejectment-NC'
-                            : 'Application-for-Ejectment'
-                        const packetHtml = getEjectmentPacketPrintHtml(generatedForms)
-                        const pdfHtml = packetHtml ?? generatedForms.ejectmentHTML
-                        const textPacket =
-                          generatedForms.affidavit &&
-                          `${generatedForms.ejectment}\n\n---\n\n${generatedForms.affidavit}`
-                        if (downloadFormat === 'pdf') {
-                          downloadAsPDF(
-                            textPacket || generatedForms.ejectment,
-                            `${base}.pdf`,
-                            pdfHtml
-                          )
-                        } else {
-                          downloadAsWord(textPacket || generatedForms.ejectment, `${base}.docx`)
-                        }
-                      }}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      Download ({downloadFormat.toUpperCase()})
-                    </button>
-                  </div>
+                  <EjectmentFormDownloadActions
+                    forms={generatedForms}
+                    downloadFormat={downloadFormat}
+                  />
                 </div>
               )}
 

@@ -406,10 +406,8 @@ export async function GET() {
       // For each invoice, find all payments linked to it (from ALL payments, not just recent ones)
       allOtherInvoices.forEach((invoice: any) => {
         // Find all payments for this invoice from the full payments array
-        const invoicePayments = payments?.filter(p => 
-          p.invoice_id === invoice.id && 
-          (p.property_id === property.id || (p.lease_id && p.lease_id === activeLease?.id))
-        ) || []
+        const invoicePayments =
+          payments?.filter((p) => p.invoice_id === invoice.id) || []
         
         const lease = activeLease
         const tenantData = lease?.RENT_tenants
@@ -440,12 +438,13 @@ export async function GET() {
             })
           })
         } else {
-          // Invoice with no payments - add as placeholder
+          // Invoice with no payment rows in DB — placeholder (due date only for open balances)
+          const isPaid = parseFloat(invoice.balance_due as any || 0) <= 0
           propertyPayments.push({
             id: `invoice-${invoice.id}`,
-            payment_date: invoice.due_date,
+            payment_date: isPaid ? null : invoice.due_date,
             amount: 0,
-            payment_type: 'Invoice',
+            payment_type: isPaid ? 'Paid' : 'Invoice',
             notes: '',
             tenant_name: tenantName,
             invoice: {
@@ -463,15 +462,22 @@ export async function GET() {
         }
       })
       
-      // Sort all payments by date (most recent first), with unpaid past invoices first
+      // Sort by actual payment date when present (most recent first); placeholders last
       propertyPayments.sort((a, b) => {
-        // Unpaid invoices (with amount 0) should come first
-        if (a.amount === 0 && b.amount !== 0) return -1
-        if (a.amount !== 0 && b.amount === 0) return 1
-        // Then sort by date (most recent first)
-        const dateA = new Date(a.payment_date).getTime()
-        const dateB = new Date(b.payment_date).getTime()
-        return dateB - dateA
+        const amtA = parseFloat(a.amount as any) || 0
+        const amtB = parseFloat(b.amount as any) || 0
+        const hasPaidA = amtA > 0 && a.payment_date
+        const hasPaidB = amtB > 0 && b.payment_date
+        if (hasPaidA && !hasPaidB) return -1
+        if (!hasPaidA && hasPaidB) return 1
+        if (hasPaidA && hasPaidB) {
+          return (
+            new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
+          )
+        }
+        const dueA = a.invoice?.due_date ? new Date(a.invoice.due_date).getTime() : 0
+        const dueB = b.invoice?.due_date ? new Date(b.invoice.due_date).getTime() : 0
+        return dueB - dueA
       })
       
       paymentsByProperty.set(property.id, propertyPayments)

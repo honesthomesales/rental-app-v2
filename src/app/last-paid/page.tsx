@@ -20,6 +20,49 @@ interface PaymentInvoice {
   recalculated_balance: number
 }
 
+/** Real last paid date for a detail row (not invoice due date). */
+function getEntryLastPaidDate(
+  payment: PaymentEntry,
+  allPayments: PaymentEntry[]
+): string | null {
+  const amt = parseFloat(String(payment.amount)) || 0
+  if (amt > 0 && payment.payment_date) {
+    return payment.payment_date
+  }
+
+  const invoiceId = payment.invoice?.id
+  if (!invoiceId) return null
+
+  let best = ''
+  let bestMs = -Infinity
+  for (const p of allPayments) {
+    if (p.invoice?.id !== invoiceId) continue
+    const a = parseFloat(String(p.amount)) || 0
+    if (a <= 0 || !p.payment_date) continue
+    const t = new Date(p.payment_date + 'T00:00:00').getTime()
+    if (!Number.isNaN(t) && t > bestMs) {
+      bestMs = t
+      best = p.payment_date
+    }
+  }
+  return best || null
+}
+
+function lastPaidSortKey(payment: PaymentEntry, allPayments: PaymentEntry[]): number {
+  const lastPaid = getEntryLastPaidDate(payment, allPayments)
+  if (lastPaid) {
+    const t = new Date(lastPaid + 'T00:00:00').getTime()
+    if (!Number.isNaN(t)) return t
+  }
+  // Unpaid / no payment: sort after paid rows, by due date descending
+  const due = payment.invoice?.due_date
+  if (due) {
+    const t = new Date(due + 'T00:00:00').getTime()
+    if (!Number.isNaN(t)) return t - 1e15
+  }
+  return -Infinity
+}
+
 interface PaymentEntry {
   id: string
   payment_date: string
@@ -66,21 +109,20 @@ function getLastPaymentReceivedDate(prop: PropertyPayments): string {
   return best
 }
 
-/** Sort detail rows by last paid date (most recent first); unpaid rows sort last. */
+/** Sort detail rows by Last Paid (most recent payment first); unpaid rows after paid. */
 function sortPaymentsByLastPaidDate(payments: PaymentEntry[]): PaymentEntry[] {
-  const lastPaidMs = (p: PaymentEntry) => {
-    const amt = parseFloat(String(p.amount)) || 0
-    if (amt <= 0 || !p.payment_date) return -Infinity
-    const t = new Date(p.payment_date + 'T00:00:00').getTime()
-    return Number.isNaN(t) ? -Infinity : t
-  }
-  return [...payments].sort((a, b) => lastPaidMs(b) - lastPaidMs(a))
+  return [...payments].sort(
+    (a, b) => lastPaidSortKey(b, payments) - lastPaidSortKey(a, payments)
+  )
 }
 
-function formatLastPaidCell(payment: PaymentEntry, formatDate: (d: string | null) => string) {
-  const amt = parseFloat(String(payment.amount)) || 0
-  if (amt <= 0 || !payment.payment_date) return '-'
-  return formatDate(payment.payment_date)
+function formatLastPaidCell(
+  payment: PaymentEntry,
+  allPayments: PaymentEntry[],
+  formatDate: (d: string | null) => string
+) {
+  const lastPaid = getEntryLastPaidDate(payment, allPayments)
+  return lastPaid ? formatDate(lastPaid) : '-'
 }
 
 export default function LastPaidPage() {
@@ -1497,7 +1539,9 @@ export default function LastPaidPage() {
                   <tbody className="divide-y divide-gray-100">
                     {detailPayments.map((payment) => (
                       <tr key={payment.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-sm text-gray-900">{formatLastPaidCell(payment, formatDate)}</td>
+                        <td className="px-3 py-2 text-sm text-gray-900">
+                          {formatLastPaidCell(payment, detailPayments, formatDate)}
+                        </td>
                         <td className="px-3 py-2 text-sm text-right font-medium text-green-700">{formatCurrency(payment.amount)}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{payment.payment_type || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">

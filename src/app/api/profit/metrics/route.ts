@@ -4,6 +4,124 @@ import { supabaseServer } from '@/lib/supabase-server'
 // Cache profit metrics for 60 seconds - historical data doesn't change
 export const revalidate = 60
 
+const PAYMENTS_INVOICE_CHUNK = 150
+
+/** Payments linked to invoices due in the month (matches Payments page paid status, not payment_date). */
+async function fetchPaymentsForInvoiceIds(invoiceIds: string[]) {
+  if (invoiceIds.length === 0) return []
+
+  const rows: Array<{
+    property_id?: string | null
+    lease_id?: string | null
+    tenant_id?: string | null
+    invoice_id?: string | null
+    amount?: string | number | null
+    payment_date?: string | null
+  }> = []
+
+  for (let i = 0; i < invoiceIds.length; i += PAYMENTS_INVOICE_CHUNK) {
+    const chunk = invoiceIds.slice(i, i + PAYMENTS_INVOICE_CHUNK)
+    const { data, error } = await supabaseServer
+      .from('RENT_payments')
+      .select('property_id, lease_id, tenant_id, invoice_id, amount, payment_date')
+      .in('invoice_id', chunk)
+
+    if (error) throw error
+    if (data) rows.push(...data)
+  }
+
+  return rows
+}
+
+function buildLeaseToPropertyMap(allLeases: Array<{ id?: string; property_id?: string | null }>) {
+  const map = new Map<string, string>()
+  allLeases.forEach((lease) => {
+    if (lease.id && lease.property_id) map.set(lease.id, lease.property_id)
+  })
+  return map
+}
+
+function enrichInvoicesWithProperty(
+  invoices: Array<{ property_id?: string | null; lease_id?: string | null }>,
+  leaseToPropertyMap: Map<string, string>
+) {
+  return invoices.map((inv) => ({
+    ...inv,
+    property_id: inv.property_id || leaseToPropertyMap.get(inv.lease_id || '') || null,
+  }))
+}
+
+function buildInvoiceToPropertyMap(
+  invoices: Array<{ id?: string; property_id?: string | null }>
+) {
+  const map = new Map<string, string>()
+  invoices.forEach((inv) => {
+    if (inv.id && inv.property_id) map.set(inv.id, inv.property_id)
+  })
+  return map
+}
+
+function resolvePaymentPropertyId(
+  payment: {
+    property_id?: string | null
+    lease_id?: string | null
+    invoice_id?: string | null
+  },
+  leaseToPropertyMap: Map<string, string>,
+  invoiceToPropertyMap: Map<string, string>
+): string | null {
+  if (payment.property_id) return payment.property_id
+  if (payment.lease_id) {
+    const fromLease = leaseToPropertyMap.get(payment.lease_id)
+    if (fromLease) return fromLease
+  }
+  if (payment.invoice_id) {
+    const fromInvoice = invoiceToPropertyMap.get(payment.invoice_id)
+    if (fromInvoice) return fromInvoice
+  }
+  return null
+}
+
+function sumPaymentsByProperty(
+  payments: Array<{
+    property_id?: string | null
+    lease_id?: string | null
+    invoice_id?: string | null
+    amount?: string | number | null
+  }>,
+  leaseToPropertyMap: Map<string, string>,
+  invoiceToPropertyMap: Map<string, string>
+) {
+  const map = new Map<string, number>()
+  payments.forEach((p) => {
+    const propId = resolvePaymentPropertyId(p, leaseToPropertyMap, invoiceToPropertyMap)
+    if (!propId) return
+    map.set(propId, (map.get(propId) || 0) + (parseFloat(String(p.amount)) || 0))
+  })
+  return map
+}
+
+async function fetchRentCollectedForDueMonth(pastStartOfMonth: string, pastEndOfMonth: string) {
+  const { data: invoices, error: invError } = await supabaseServer
+    .from('RENT_invoices')
+    .select('id, lease_id, property_id')
+    .gte('due_date', pastStartOfMonth)
+    .lte('due_date', pastEndOfMonth)
+
+  if (invError) throw invError
+  if (!invoices?.length) return 0
+
+  const { data: leases } = await supabaseServer
+    .from('RENT_leases')
+    .select('id, property_id')
+
+  const leaseToPropertyMap = buildLeaseToPropertyMap(leases || [])
+  const invoicesWithProperty = enrichInvoicesWithProperty(invoices, leaseToPropertyMap)
+  const invoiceIds = invoicesWithProperty.map((i) => i.id).filter(Boolean) as string[]
+  const payments = await fetchPaymentsForInvoiceIds(invoiceIds)
+  return payments.reduce((sum, p) => sum + (parseFloat(String(p.amount)) || 0), 0)
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -103,63 +221,152 @@ export async function GET(request: Request) {
     console.log('Total payments from expenses:', totalPayments)
     console.log('Potential payments (excluding balance > 0):', potentialPayments)
     
-    // Get rent collected from payments (more reliable than invoices)
+    // Rent collected: payments applied to invoices DUE in this month (matches Payments page "paid" status).
+    // Early payments (e.g. 04/28 for a 05/01 due invoice) count in the due month, not the payment_date month.
     let rentCollected = 0
     let expectedRent = 0
-    
+    const propertyDetails: any[] = []
+
     try {
-      // Get payments for the month - ONLY payments linked to invoices
-      const { data: payments, error: paymentsError } = await supabaseServer
-        .from('RENT_payments')
-        .select('amount, payment_date, payment_type')
-        .not('invoice_id', 'is', null)  // Only include payments with invoice_id
-        .gte('payment_date', startOfMonth)
-        .lte('payment_date', endOfMonth)
-      
-      if (paymentsError) {
-        console.error('Error fetching payments:', paymentsError)
-      } else {
-        console.log('Successfully fetched', payments?.length || 0, 'payments')
-        
-        if (payments && payments.length > 0) {
-          // Sum all payments as rent collected - EXACT same calculation as payments page
-          // Only payments with invoice_id are included (matching payments page logic)
-          rentCollected = payments.reduce((sum, payment: any) => {
-            return sum + (parseFloat(payment.amount) || 0)
-          }, 0)
-        }
+      const [invoicesResult, leasesResult] = await Promise.all([
+        supabaseServer
+          .from('RENT_invoices')
+          .select('id, lease_id, property_id, due_date')
+          .gte('due_date', startOfMonth)
+          .lte('due_date', endOfMonth),
+        supabaseServer
+          .from('RENT_leases')
+          .select('id, property_id, rent, rent_cadence, lease_start_date, lease_end_date, status'),
+      ])
+
+      if (invoicesResult.error) {
+        console.error('Error fetching invoices for month:', invoicesResult.error)
       }
-      
-      // Calculate expected rent from active leases (matching dashboard logic exactly)
-      // Match Payments page logic: filter by status only, no date range check
-      // Only include 'occupied' status (exclude 'sold' for money calculations)
-      const { data: leases, error: leasesError } = await supabaseServer
-        .from('RENT_leases')
-        .select('rent, rent_cadence')
-        .in('status', ['occupied'])
-      
-      if (!leasesError && leases) {
-        // Calculate expected rent based on active leases and their cadence
-        // Match Dashboard logic EXACTLY: weekly * 4, biweekly * 2, monthly * 1
-        leases.forEach((lease: any) => {
-          const rent = Number(lease.rent) || 0
-          const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
-          
-          // Match dashboard calculation exactly
-          switch (cadence) {
-            case 'weekly':
-              expectedRent += rent * 4 // Weekly rent * 4 weeks per month
-              break
-            case 'bi-weekly':
-            case 'biweekly':
-              expectedRent += rent * 2 // Bi-weekly rent * 2 periods per month
-              break
-            case 'monthly':
-            default:
-              expectedRent += rent // Monthly rent as-is
-              break
+      if (leasesResult.error) {
+        console.error('Error fetching leases:', leasesResult.error)
+      }
+
+      const invoicesForMonth = invoicesResult.data || []
+      const allLeasesForRent = leasesResult.data || []
+      const leaseToPropertyMap = buildLeaseToPropertyMap(allLeasesForRent)
+      const invoicesWithProperty = enrichInvoicesWithProperty(invoicesForMonth, leaseToPropertyMap)
+      const invoiceToPropertyMap = buildInvoiceToPropertyMap(invoicesWithProperty)
+      const invoiceIds = invoicesWithProperty
+        .map((inv) => inv.id)
+        .filter(Boolean) as string[]
+
+      const monthRentPayments = await fetchPaymentsForInvoiceIds(invoiceIds)
+      rentCollected = monthRentPayments.reduce(
+        (sum, payment) => sum + (parseFloat(String(payment.amount)) || 0),
+        0
+      )
+
+      console.log(
+        'Rent collected for invoices due in month:',
+        rentCollected,
+        'from',
+        monthRentPayments.length,
+        'payments on',
+        invoiceIds.length,
+        'invoices'
+      )
+
+      const activeLeases = allLeasesForRent.filter((l: any) => l.status === 'occupied')
+      activeLeases.forEach((lease: any) => {
+        const rent = Number(lease.rent) || 0
+        const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
+        switch (cadence) {
+          case 'weekly':
+            expectedRent += rent * 4
+            break
+          case 'bi-weekly':
+          case 'biweekly':
+            expectedRent += rent * 2
+            break
+          case 'monthly':
+          default:
+            expectedRent += rent
+            break
+        }
+      })
+
+      if (validProperties && validProperties.length > 0) {
+        const { data: miscIncomeByProperty, error: miscError } = await supabaseServer
+          .from('RENT_expenses')
+          .select('property_id, amount_owed')
+          .eq('interest_rate', 9.9999)
+          .gte('last_paid_date', startOfMonth)
+          .lte('last_paid_date', endOfMonth)
+
+        if (miscError) {
+          console.error('Error fetching misc income:', miscError)
+        }
+
+        const paymentsByPropertyMap = sumPaymentsByProperty(
+          monthRentPayments,
+          leaseToPropertyMap,
+          invoiceToPropertyMap
+        )
+
+        const miscIncomeByPropertyMap = new Map<string, number>()
+        miscIncomeByProperty?.forEach((m: any) => {
+          const propId = m.property_id || 'no-property'
+          miscIncomeByPropertyMap.set(
+            propId,
+            (miscIncomeByPropertyMap.get(propId) || 0) + (Number(m.amount_owed) || 0)
+          )
+        })
+
+        validProperties.forEach((property: any) => {
+          const rentCollectedForProperty = paymentsByPropertyMap.get(property.id) || 0
+          let expectedRentForProperty = 0
+          const miscIncomeForProperty = miscIncomeByPropertyMap.get(property.id) || 0
+
+          const propertyLeases = activeLeases.filter((l: any) => l.property_id === property.id)
+          propertyLeases.forEach((lease: any) => {
+            const leaseStart = new Date(lease.lease_start_date)
+            const leaseEnd = lease.lease_end_date
+              ? new Date(lease.lease_end_date)
+              : new Date(endOfMonth)
+            const monthStart = new Date(startOfMonth)
+            const monthEnd = new Date(endOfMonth)
+
+            if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
+              const rent = Number(lease.rent) || 0
+              const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
+              switch (cadence) {
+                case 'weekly':
+                  expectedRentForProperty += rent * 4
+                  break
+                case 'bi-weekly':
+                case 'biweekly':
+                  expectedRentForProperty += rent * 2
+                  break
+                case 'monthly':
+                default:
+                  expectedRentForProperty += rent
+                  break
+              }
+            }
+          })
+
+          if (
+            rentCollectedForProperty > 0 ||
+            expectedRentForProperty > 0 ||
+            miscIncomeForProperty > 0
+          ) {
+            propertyDetails.push({
+              property_id: property.id,
+              property_name: property.name,
+              property_address: property.address,
+              expected_rent: expectedRentForProperty,
+              rent_collected: rentCollectedForProperty,
+              misc_income: miscIncomeForProperty,
+            })
           }
         })
+
+        console.log('Property details built. Count:', propertyDetails.length)
       }
     } catch (error) {
       console.error('Error fetching rent data:', error)
@@ -211,194 +418,6 @@ export async function GET(request: Request) {
     
     const totalIncome = rentCollected + miscIncome
     
-    // Get property-level details for income and rent
-    const propertyDetails: any[] = []
-    
-    try {
-      // Use validProperties (already filtered to exclude sold and other type)
-      // This ensures we only show properties that match dashboard logic
-      if (validProperties && validProperties.length > 0) {
-        // OPTIMIZED: Fetch all data in parallel
-        const [paymentsResult, invoicesResult, leasesResult, miscIncomeResult] = await Promise.all([
-          supabaseServer
-            .from('RENT_payments')
-            .select('property_id, lease_id, tenant_id, invoice_id, amount')
-            .not('invoice_id', 'is', null)  // Only include payments with invoice_id
-            .gte('payment_date', startOfMonth)
-            .lte('payment_date', endOfMonth),
-          supabaseServer
-            .from('RENT_invoices')
-            .select(`
-              id,
-              lease_id,
-              property_id,
-              amount_total,
-              amount,
-              amount_rent,
-              amount_late,
-              amount_other,
-              due_date
-            `)
-            .gte('due_date', startOfMonth)
-            .lte('due_date', endOfMonth),
-          supabaseServer
-            .from('RENT_leases')
-            .select('id, property_id, rent, rent_cadence, lease_start_date, lease_end_date, status'),
-          supabaseServer
-            .from('RENT_expenses')
-            .select('property_id, amount_owed')
-            .eq('interest_rate', 9.9999)
-            .gte('last_paid_date', startOfMonth)
-            .lte('last_paid_date', endOfMonth)
-        ])
-
-        const { data: paymentsByProperty, error: paymentsError } = paymentsResult
-        const { data: invoicesData, error: invoicesError } = invoicesResult
-        const { data: allLeases, error: leasesError } = leasesResult
-        const { data: miscIncomeByProperty, error: miscError } = miscIncomeResult
-
-        if (paymentsError) {
-          console.error('Error fetching payments:', paymentsError)
-        }
-        if (invoicesError) {
-          console.error('Error fetching invoices:', invoicesError)
-        }
-        if (leasesError) {
-          console.error('Error fetching leases:', leasesError)
-        }
-        if (miscError) {
-          console.error('Error fetching misc income:', miscError)
-        }
-
-        if (allLeases) {
-          // Create a map of lease_id to property_id for invoice mapping
-          const leaseToPropertyMap = new Map<string, string>()
-          allLeases.forEach((lease: any) => {
-            if (lease.property_id) {
-              leaseToPropertyMap.set(lease.id, lease.property_id)
-            }
-          })
-          
-          // Map invoices to include property_id from lease
-          const invoicesWithLeases = invoicesData?.map((inv: any) => ({
-            ...inv,
-            property_id: inv.property_id || leaseToPropertyMap.get(inv.lease_id) || null
-          })) || []
-          
-          // Filter leases with tenants for expected rent calculation
-          // Only include 'occupied' status (exclude 'sold' for money calculations)
-          const activeLeases = allLeases.filter((l: any) => l.status === 'occupied')
-        
-          // Map invoice_id -> property_id (payments page attributes via lease, not payment.property_id alone)
-          const invoiceToPropertyMap = new Map<string, string>()
-          invoicesWithLeases.forEach((inv: any) => {
-            if (inv.id && inv.property_id) {
-              invoiceToPropertyMap.set(inv.id, inv.property_id)
-            }
-          })
-
-          const resolvePaymentPropertyId = (payment: {
-            property_id?: string | null
-            lease_id?: string | null
-            tenant_id?: string | null
-            invoice_id?: string | null
-          }): string | null => {
-            if (payment.property_id) return payment.property_id
-            if (payment.lease_id) {
-              const fromLease = leaseToPropertyMap.get(payment.lease_id)
-              if (fromLease) return fromLease
-            }
-            if (payment.invoice_id) {
-              const fromInvoice = invoiceToPropertyMap.get(payment.invoice_id)
-              if (fromInvoice) return fromInvoice
-            }
-            return null
-          }
-
-          // OPTIMIZED: Use Maps for O(1) lookups instead of filtering arrays
-          const paymentsByPropertyMap = new Map<string, number>()
-          paymentsByProperty?.forEach((p: any) => {
-            const propId = resolvePaymentPropertyId(p)
-            if (!propId) return
-            paymentsByPropertyMap.set(
-              propId,
-              (paymentsByPropertyMap.get(propId) || 0) + (parseFloat(p.amount) || 0)
-            )
-          })
-          
-          // Don't use invoices for expected rent - calculate from leases instead (matching dashboard)
-          // This ensures we match the dashboard calculation exactly
-          const invoicesByPropertyMap = new Map<string, number>()
-          
-          const miscIncomeByPropertyMap = new Map<string, number>()
-          miscIncomeByProperty?.forEach((m: any) => {
-            const propId = m.property_id || 'no-property'
-            miscIncomeByPropertyMap.set(propId, (miscIncomeByPropertyMap.get(propId) || 0) + (Number(m.amount_owed) || 0))
-          })
-          
-          // Build property details using efficient Map lookups
-          // Calculate expected rent from active leases (matching dashboard logic exactly)
-          console.log('Building property details. Total valid properties:', validProperties?.length || 0)
-          console.log('Payments by property count:', paymentsByProperty?.length || 0)
-          console.log('Misc income by property count:', miscIncomeByProperty?.length || 0)
-          
-          validProperties.forEach((property: any) => {
-            const rentCollectedForProperty = paymentsByPropertyMap.get(property.id) || 0
-            let expectedRentForProperty = 0
-            const miscIncomeForProperty = miscIncomeByPropertyMap.get(property.id) || 0
-            
-            // Calculate expected rent from active leases for this property (matching dashboard logic)
-            if (activeLeases) {
-              const propertyLeases = activeLeases.filter((l: any) => l.property_id === property.id)
-              propertyLeases.forEach((lease: any) => {
-                const leaseStart = new Date(lease.lease_start_date)
-                const leaseEnd = lease.lease_end_date ? new Date(lease.lease_end_date) : new Date(endOfMonth)
-                const monthStart = new Date(startOfMonth)
-                const monthEnd = new Date(endOfMonth)
-                
-                // Only include if lease is active during this month
-                if (leaseStart <= monthEnd && leaseEnd >= monthStart) {
-                  const rent = Number(lease.rent) || 0
-                  const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
-                  
-                  // Match dashboard calculation exactly
-                  switch (cadence) {
-                    case 'weekly':
-                      expectedRentForProperty += rent * 4 // Weekly rent * 4 weeks per month
-                      break
-                    case 'bi-weekly':
-                    case 'biweekly':
-                      expectedRentForProperty += rent * 2 // Bi-weekly rent * 2 periods per month
-                      break
-                    case 'monthly':
-                    default:
-                      expectedRentForProperty += rent // Monthly rent as-is
-                      break
-                  }
-                }
-              })
-            }
-            
-            // Include property if it has any activity (rent, expected rent, or misc income)
-            if (rentCollectedForProperty > 0 || expectedRentForProperty > 0 || miscIncomeForProperty > 0) {
-              propertyDetails.push({
-                property_id: property.id,
-                property_name: property.name,
-                property_address: property.address,
-                expected_rent: expectedRentForProperty,
-                rent_collected: rentCollectedForProperty,
-                misc_income: miscIncomeForProperty
-              })
-            }
-          })
-        
-          console.log('Property details built. Count:', propertyDetails.length)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching property details:', error)
-    }
-    
     // Collection rate as percentage (0-100)
     const collectionRatePercent = expectedRent > 0 ? (rentCollected / expectedRent) * 100 : 0
     // Collection rate as decimal (0-1) for gauge
@@ -421,16 +440,10 @@ export async function GET(request: Request) {
         const pastMonthNum = pastMonth.getMonth()
         const pastEndOfMonth = new Date(pastYear, pastMonthNum + 1, 0).toISOString().slice(0, 10)
         
-        // Fetch payments for that month
-        const { data: pastPayments } = await supabaseServer
-          .from('RENT_payments')
-          .select('amount')
-          .not('invoice_id', 'is', null)
-          .gte('payment_date', pastStartOfMonth)
-          .lte('payment_date', pastEndOfMonth)
-        
-        // Use parseFloat to match payments page calculation exactly
-        const pastRentCollected = pastPayments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0
+        const pastRentCollected = await fetchRentCollectedForDueMonth(
+          pastStartOfMonth,
+          pastEndOfMonth
+        )
         
         // Fetch misc income for that month
         const { data: pastMiscIncome } = await supabaseServer

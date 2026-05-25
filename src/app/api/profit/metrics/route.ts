@@ -222,7 +222,7 @@ export async function GET(request: Request) {
         const [paymentsResult, invoicesResult, leasesResult, miscIncomeResult] = await Promise.all([
           supabaseServer
             .from('RENT_payments')
-            .select('property_id, amount')
+            .select('property_id, lease_id, tenant_id, invoice_id, amount')
             .not('invoice_id', 'is', null)  // Only include payments with invoice_id
             .gte('payment_date', startOfMonth)
             .lte('payment_date', endOfMonth),
@@ -289,12 +289,41 @@ export async function GET(request: Request) {
           // Only include 'occupied' status (exclude 'sold' for money calculations)
           const activeLeases = allLeases.filter((l: any) => l.status === 'occupied')
         
+          // Map invoice_id -> property_id (payments page attributes via lease, not payment.property_id alone)
+          const invoiceToPropertyMap = new Map<string, string>()
+          invoicesWithLeases.forEach((inv: any) => {
+            if (inv.id && inv.property_id) {
+              invoiceToPropertyMap.set(inv.id, inv.property_id)
+            }
+          })
+
+          const resolvePaymentPropertyId = (payment: {
+            property_id?: string | null
+            lease_id?: string | null
+            tenant_id?: string | null
+            invoice_id?: string | null
+          }): string | null => {
+            if (payment.property_id) return payment.property_id
+            if (payment.lease_id) {
+              const fromLease = leaseToPropertyMap.get(payment.lease_id)
+              if (fromLease) return fromLease
+            }
+            if (payment.invoice_id) {
+              const fromInvoice = invoiceToPropertyMap.get(payment.invoice_id)
+              if (fromInvoice) return fromInvoice
+            }
+            return null
+          }
+
           // OPTIMIZED: Use Maps for O(1) lookups instead of filtering arrays
           const paymentsByPropertyMap = new Map<string, number>()
           paymentsByProperty?.forEach((p: any) => {
-            const propId = p.property_id || 'no-property'
-            // Use parseFloat to match payments page calculation exactly
-            paymentsByPropertyMap.set(propId, (paymentsByPropertyMap.get(propId) || 0) + (parseFloat(p.amount) || 0))
+            const propId = resolvePaymentPropertyId(p)
+            if (!propId) return
+            paymentsByPropertyMap.set(
+              propId,
+              (paymentsByPropertyMap.get(propId) || 0) + (parseFloat(p.amount) || 0)
+            )
           })
           
           // Don't use invoices for expected rent - calculate from leases instead (matching dashboard)

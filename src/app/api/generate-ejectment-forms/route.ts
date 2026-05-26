@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { getMagistrateDistrict, getNCSummaryEjectmentVenueNote } from '@/lib/magistrate-lookup'
+import { buildEjectmentCourtPdfFillData } from '@/lib/build-ejectment-pdf-fill-data'
 
 export async function POST(request: Request) {
   try {
@@ -624,6 +625,32 @@ SCCA/716 — Official statewide form (SC Judicial Branch)`
         formsWithHTML.ejectmentHTML,
         formsWithHTML.affidavitHTML
       )
+    }
+
+    if (formsWithHTML.ejectmentFormKind && (formType === 'ejectment' || formType === 'both')) {
+      const earliestDue = unpaidInvoices[0]?.due_date ?? null
+      formsWithHTML.ejectmentPdfFillData = buildEjectmentCourtPdfFillData({
+        formKind: formsWithHTML.ejectmentFormKind,
+        propertyCounty,
+        tenantFirstName: tenant.first_name || '',
+        tenantLastName: tenant.last_name || '',
+        propertyAddress: property.address || '',
+        propertyCity: property.city,
+        propertyState: property.state,
+        propertyZip: property.zip_code || property.postal_code,
+        ejectmentReason,
+        totalDue,
+        violationDescription,
+        swornDay: day,
+        swornMonth: month,
+        swornYear: year,
+        swornDate: todayDate,
+        earliestUnpaidDueDate: earliestDue,
+        leaseEndDate: leaseData.lease_end_date ?? null,
+        monthlyRent: leaseData.rent != null ? parseFloat(String(leaseData.rent)) : null,
+        rentCadence: leaseData.rent_cadence ?? null,
+        hasWrittenLease: true,
+      })
     }
 
     return NextResponse.json(formsWithHTML)

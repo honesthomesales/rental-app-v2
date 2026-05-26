@@ -5,6 +5,7 @@ import { LateTenantData } from '@/types/database'
 import { ExclamationTriangleIcon, PhoneIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { getEjectmentPacketPrintHtml } from '@/lib/combine-html-print'
+import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 
 export default function LateTenantsPage() {
@@ -1377,74 +1378,10 @@ export default function LateTenantsPage() {
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                     <pre className="whitespace-pre-wrap text-sm font-mono">{generatedForms.ejectment}</pre>
                   </div>
-                  <div className="mt-3 flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const html = getEjectmentPacketPrintHtml(generatedForms)
-                        if (!html) return
-                        openPrintPreview(html)
-                      }}
-                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
-                      className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Print preview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const html = getEjectmentPacketPrintHtml(generatedForms)
-                        if (!html) return
-                        printFormDocument(html)
-                      }}
-                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Print
-                    </button>
-                    {generatedForms.ejectmentHTML && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const blob = new Blob([generatedForms.ejectmentHTML], { type: 'text/html' })
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download =
-                            generatedForms.ejectmentFormKind === 'NC'
-                              ? 'Complaint-Summary-Ejectment-NC.html'
-                              : 'Application-for-Ejectment.html'
-                          a.click()
-                          URL.revokeObjectURL(url)
-                        }}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                      >
-                        Download HTML
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const base =
-                          generatedForms.ejectmentFormKind === 'NC'
-                            ? 'Complaint-Summary-Ejectment-NC'
-                            : 'Application-for-Ejectment'
-                        const packetHtml = getEjectmentPacketPrintHtml(generatedForms)
-                        const pdfHtml = packetHtml ?? generatedForms.ejectmentHTML
-                        const textPacket =
-                          generatedForms.affidavit &&
-                          `${generatedForms.ejectment}\n\n---\n\n${generatedForms.affidavit}`
-                        if (downloadFormat === 'pdf') {
-                          downloadAsPDF(textPacket || generatedForms.ejectment, `${base}.pdf`, pdfHtml)
-                        } else {
-                          downloadAsWord(textPacket || generatedForms.ejectment, `${base}.docx`)
-                        }
-                      }}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      Download ({downloadFormat.toUpperCase()})
-                    </button>
-                  </div>
+                  <EjectmentFormDownloadActions
+                    forms={generatedForms}
+                    downloadFormat={downloadFormat}
+                  />
                 </div>
               )}
 

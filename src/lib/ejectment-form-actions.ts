@@ -2,7 +2,7 @@
  * Shared download / print actions for generated ejectment forms.
  */
 
-import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
+import { downloadAsWord } from '@/lib/form-downloads'
 import {
   downloadFilledEjectmentCourtPdf,
   ejectmentPdfFilename,
@@ -45,10 +45,9 @@ export async function downloadEjectmentForm(
   }
 
   if (format === 'pdf') {
-    const packetHtml = getEjectmentPacketPrintHtml(forms)
-    const pdfHtml = packetHtml ?? forms.ejectmentHTML
-    await downloadAsPDF(textPacket, `${base}.pdf`, pdfHtml)
-    return
+    throw new Error(
+      'Court PDF template data is missing. Ejectment PDFs must be generated from the official court templates.'
+    )
   }
 
   await downloadAsWord(textPacket, `${base}.docx`)

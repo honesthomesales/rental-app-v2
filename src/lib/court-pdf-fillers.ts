@@ -12,12 +12,30 @@ const TEMPLATE_PATHS = {
   NC: '/forms/NC_eviction.pdf',
 } as const
 
+const NOTICE_TEXT_GUARD = '7-DAY NOTICE TO PAY RENT OR QUIT'
+
 async function loadTemplateBytes(path: string): Promise<Uint8Array> {
+  console.log('COURT FORM PDF TEMPLATE PATH USED:', path)
   const response = await fetch(path)
   if (!response.ok) {
     throw new Error(`Failed to load court PDF template ${path}: ${response.status}`)
   }
   return new Uint8Array(await response.arrayBuffer())
+}
+
+function assertNoNoticeContent(label: string, content: unknown) {
+  const text =
+    typeof content === 'string'
+      ? content
+      : content instanceof Uint8Array
+        ? new TextDecoder().decode(content)
+        : JSON.stringify(content)
+
+  if (text?.includes(NOTICE_TEXT_GUARD)) {
+    throw new Error(
+      `${label} unexpectedly contains "${NOTICE_TEXT_GUARD}". Refusing to download a notice as a court form.`
+    )
+  }
 }
 
 function valueOrBlank(value: string | number | undefined | null): string {
@@ -101,7 +119,12 @@ async function loadPdfForDrawing(
   formKind: 'SC' | 'NC',
   templateBytes?: Uint8Array
 ): Promise<{ pdfDoc: PDFDocument; pages: PDFPage[]; font: PDFFont }> {
-  const bytes = templateBytes ?? (await loadTemplateBytes(TEMPLATE_PATHS[formKind]))
+  const templatePath = TEMPLATE_PATHS[formKind]
+  if (templateBytes) {
+    console.log('COURT FORM PDF TEMPLATE PATH USED:', templatePath)
+  }
+  const bytes = templateBytes ?? (await loadTemplateBytes(templatePath))
+  assertNoNoticeContent('Court PDF template bytes', bytes)
   const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true })
 
   // Remove interactive blank widgets so our direct page content is what prints/downloads.
@@ -119,6 +142,7 @@ export async function fillSouthCarolinaEjectmentPdf(
   data: EjectmentCourtPdfFillData,
   templateBytes?: Uint8Array
 ): Promise<Uint8Array> {
+  assertNoNoticeContent('South Carolina court form data', data)
   const { pdfDoc, pages, font } = await loadPdfForDrawing('SC', templateBytes)
   const c = SCCA732_COORDS
 
@@ -149,13 +173,16 @@ export async function fillSouthCarolinaEjectmentPdf(
     drawText(pages, font, c.violationDescription, data.violationDescription || 'Lease violation')
   }
 
-  return pdfDoc.save()
+  const pdfBytes = await pdfDoc.save()
+  assertNoNoticeContent('South Carolina filled court PDF bytes', pdfBytes)
+  return pdfBytes
 }
 
 export async function fillNorthCarolinaSummaryEjectmentPdf(
   data: EjectmentCourtPdfFillData,
   templateBytes?: Uint8Array
 ): Promise<Uint8Array> {
+  assertNoNoticeContent('North Carolina court form data', data)
   const { pdfDoc, pages, font } = await loadPdfForDrawing('NC', templateBytes)
   const c = NC_EVICTION_COORDS
 
@@ -219,7 +246,9 @@ export async function fillNorthCarolinaSummaryEjectmentPdf(
   drawText(pages, font, c.plaintiffSignatureName, data.plaintiffName)
   drawText(pages, font, c.agentName, data.agentName)
 
-  return pdfDoc.save()
+  const pdfBytes = await pdfDoc.save()
+  assertNoNoticeContent('North Carolina filled court PDF bytes', pdfBytes)
+  return pdfBytes
 }
 
 export async function fillEjectmentCourtPdf(data: EjectmentCourtPdfFillData): Promise<Uint8Array> {

@@ -3,7 +3,10 @@
  */
 
 import type { EjectmentCourtPdfFillData } from '@/types/ejectment-court-pdf'
-import { fillEjectmentCourtPdf } from '@/lib/court-pdf-fillers'
+import {
+  fillNorthCarolinaSummaryEjectmentPdf,
+  fillSouthCarolinaEjectmentPdf,
+} from '@/lib/court-pdf-fillers'
 
 function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -17,7 +20,10 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 export async function buildFilledEjectmentPdfBlob(
   data: EjectmentCourtPdfFillData
 ): Promise<Blob> {
-  const bytes = await fillEjectmentCourtPdf(data)
+  const bytes =
+    data.formKind === 'SC'
+      ? await fillSouthCarolinaEjectmentPdf(data)
+      : await fillNorthCarolinaSummaryEjectmentPdf(data)
   return new Blob([bytes as BlobPart], { type: 'application/pdf' })
 }
 

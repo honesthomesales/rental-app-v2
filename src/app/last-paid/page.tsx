@@ -1245,6 +1245,7 @@ export default function LastPaidPage() {
               filteredAndSorted.map((property) => {
                 const lastPaymentDate = getLastPaymentReceivedDate(property)
                 const lastPayment = property.payments[0] // For tenant name display
+                const tenantName = lastPayment?.tenant_name || '-'
                 const isExpanded = expandedProperty === property.property_id
 
                 return (
@@ -1259,10 +1260,10 @@ export default function LastPaidPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="text-sm font-medium text-gray-900">{property.property_name}</div>
-                      <div className="text-xs text-gray-500">{property.property_address}</div>
+                      <div className="text-xs text-gray-500">{tenantName}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {lastPayment?.tenant_name || '-'}
+                      {tenantName}
                     </td>
                     <td className="px-4 py-3">
                       {cadenceBadge(property.cadence)}
@@ -1455,29 +1456,32 @@ export default function LastPaidPage() {
                     </td>
                   </tr>
                 ) : (
-                  monthlyTotalsSorted.map(({ property, paidThisMonth, paidLastMonth, paidTwoMonthsAgo }) => (
-                    <tr key={property.property_id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="text-sm font-medium text-gray-900">{property.property_name}</div>
-                        <div className="text-xs text-gray-500">{property.property_address}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {cadenceBadge(property.cadence)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-900">
-                        {property.rent_due_day != null ? property.rent_due_day : '–'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {formatCurrency(paidThisMonth)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {formatCurrency(paidLastMonth)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {formatCurrency(paidTwoMonthsAgo)}
-                      </td>
-                    </tr>
-                  ))
+                  monthlyTotalsSorted.map(({ property, paidThisMonth, paidLastMonth, paidTwoMonthsAgo }) => {
+                    const tenantName = property.payments[0]?.tenant_name || '-'
+                    return (
+                      <tr key={property.property_id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-medium text-gray-900">{property.property_name}</div>
+                          <div className="text-xs text-gray-500">{tenantName}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {cadenceBadge(property.cadence)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-center text-gray-900">
+                          {property.rent_due_day != null ? property.rent_due_day : '–'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-900">
+                          {formatCurrency(paidThisMonth)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-900">
+                          {formatCurrency(paidLastMonth)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-900">
+                          {formatCurrency(paidTwoMonthsAgo)}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>

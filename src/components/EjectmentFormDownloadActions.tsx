@@ -10,13 +10,13 @@ import {
 
 type Props = {
   forms: GeneratedEjectmentForms
-  downloadFormat: 'pdf' | 'docx'
+  downloadFormat?: 'pdf' | 'docx'
 }
 
 export function EjectmentFormDownloadActions({ forms, downloadFormat }: Props) {
   async function handleDownload() {
     try {
-      await downloadEjectmentForm(forms, downloadFormat)
+      await downloadEjectmentForm(forms, downloadFormat ?? 'pdf')
     } catch (error) {
       console.error(error)
       alert(error instanceof Error ? error.message : 'Unable to download court form PDF.')
@@ -50,7 +50,7 @@ export function EjectmentFormDownloadActions({ forms, downloadFormat }: Props) {
           onClick={handleDownload}
           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
         >
-          Download ({downloadFormat.toUpperCase()})
+          Download Court PDF
         </button>
       </div>
     </>

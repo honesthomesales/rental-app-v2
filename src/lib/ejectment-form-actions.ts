@@ -8,17 +8,14 @@ import {
   ejectmentPdfFilename,
   openFilledEjectmentCourtPdfPreview,
 } from '@/lib/ejectment-pdf-download'
-import { getEjectmentPacketPrintHtml } from '@/lib/combine-html-print'
 import type { EjectmentCourtPdfFillData } from '@/types/ejectment-court-pdf'
 
 export type GeneratedEjectmentForms = {
   ejectment?: string
   ejectmentFormKind?: 'SC' | 'NC'
-  ejectmentHTML?: string
   ejectmentPdfFillData?: EjectmentCourtPdfFillData
   affidavit?: string
   affidavitHTML?: string
-  ejectmentAndLedgerPrintHTML?: string
 }
 
 export function getEjectmentDownloadBaseName(formKind?: 'SC' | 'NC'): string {
@@ -58,14 +55,7 @@ export async function previewEjectmentForm(forms: GeneratedEjectmentForms): Prom
     await openFilledEjectmentCourtPdfPreview(forms.ejectmentPdfFillData)
     return
   }
-  const { openPrintPreview } = await import('@/lib/print-form')
-  const { generateNoticeHTML } = await import('@/lib/form-html-generator')
-  const html = getEjectmentPacketPrintHtml(forms) ?? forms.ejectmentHTML
-  if (html) {
-    openPrintPreview(html)
-  } else if (forms.ejectment) {
-    openPrintPreview(generateNoticeHTML(forms.ejectment))
-  }
+  alert('Court PDF template data is missing. Generate the form again before previewing.')
 }
 
 export async function printEjectmentForm(forms: GeneratedEjectmentForms): Promise<void> {
@@ -73,13 +63,9 @@ export async function printEjectmentForm(forms: GeneratedEjectmentForms): Promis
     await openFilledEjectmentCourtPdfPreview(forms.ejectmentPdfFillData)
     return
   }
-  const { printFormDocument } = await import('@/lib/print-form')
-  const html = getEjectmentPacketPrintHtml(forms) ?? forms.ejectmentHTML
-  if (html) {
-    printFormDocument(html)
-  }
+  alert('Court PDF template data is missing. Generate the form again before printing.')
 }
 
 export function canPreviewEjectmentForm(forms: GeneratedEjectmentForms): boolean {
-  return Boolean(forms.ejectmentPdfFillData || getEjectmentPacketPrintHtml(forms) || forms.ejectmentHTML)
+  return Boolean(forms.ejectmentPdfFillData)
 }

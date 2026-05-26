@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo } from 'react'
 import { LateTenantData } from '@/types/database'
 import { ExclamationTriangleIcon, PhoneIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
-import { getEjectmentPacketPrintHtml } from '@/lib/combine-html-print'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 
@@ -1362,7 +1361,7 @@ export default function LateTenantsPage() {
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
-                      Download Notice ({downloadFormat.toUpperCase()})
+                      Download Notice Letter ({downloadFormat.toUpperCase()})
                     </button>
                   </div>
                 </div>
@@ -1399,26 +1398,26 @@ export default function LateTenantsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const html = getEjectmentPacketPrintHtml(generatedForms)
+                        const html = generatedForms.affidavitHTML
                         if (!html) return
                         openPrintPreview(html)
                       }}
-                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
+                      disabled={!generatedForms.affidavitHTML}
                       className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Print preview (full packet)
+                      Print preview ledger
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        const html = getEjectmentPacketPrintHtml(generatedForms)
+                        const html = generatedForms.affidavitHTML
                         if (!html) return
                         printFormDocument(html)
                       }}
-                      disabled={!getEjectmentPacketPrintHtml(generatedForms)}
+                      disabled={!generatedForms.affidavitHTML}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Print (full packet)
+                      Print ledger
                     </button>
                     <button
                       type="button"

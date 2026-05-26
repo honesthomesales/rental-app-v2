@@ -3,7 +3,7 @@
  */
 
 import type { EjectmentCourtPdfFillData } from '@/types/ejectment-court-pdf'
-import { fillEjectmentCourtPdf } from '@/lib/fill-court-pdf-template'
+import { fillEjectmentCourtPdf } from '@/lib/court-pdf-fillers'
 
 function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)

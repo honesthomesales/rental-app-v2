@@ -318,24 +318,6 @@ Email: honesthomesales@gmail.com
 
 AOC-CVM-201 — Complaint in Summary Ejectment (NC Judicial Branch)`
 
-        const { generateNCSummaryEjectmentHTML } = await import('@/lib/form-html-generator')
-        forms.ejectmentHTML = generateNCSummaryEjectmentHTML(
-          propertyCounty,
-          'Honest Home Sales, LLC',
-          `${tenant.first_name} ${tenant.last_name}`,
-          premises,
-          ejectmentReason,
-          rentFormatted,
-          violationDescription || '',
-          day,
-          month,
-          year,
-          'PO Box 705, Cowpens, SC 29330',
-          'Cowpens, SC 29330',
-          '864-322-3432',
-          'honesthomesales@gmail.com',
-          venueNC
-        )
       } else {
         forms.ejectmentFormKind = 'SC'
 
@@ -551,27 +533,6 @@ SCCA/716 — Official statewide form (SC Judicial Branch)`
       formsWithHTML.noticeHTML = generateNoticeHTML(forms.notice)
     }
 
-    if (forms.ejectment && forms.ejectmentFormKind === 'SC') {
-      const { generateEjectmentHTML } = await import('@/lib/form-html-generator')
-      formsWithHTML.ejectmentHTML = generateEjectmentHTML(
-        propertyCounty,
-        'Honest Home Sales, LLC',
-        `${tenant.first_name} ${tenant.last_name}`,
-        magistrateDistrict,
-        `${property.address}${property.city ? `, ${property.city}` : ''}${property.state ? `, ${property.state}` : ''}${property.zip_code ? ` ${property.zip_code}` : ''}`,
-        ejectmentReason,
-        ejectmentReason === 'nonpayment' ? `The amount owed is $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} and the tenant is ${numberOfPeriods} rent cycle(s) behind.` : 
-        ejectmentReason === 'violation' ? violationDescription : '',
-        day,
-        month,
-        year,
-        'PO Box 705, Cowpens, SC 29330',
-        'Cowpens, SC 29330',
-        '864-322-3432',
-        'honesthomesales@gmail.com'
-      )
-    }
-    
     if (forms.affidavit) {
       // Use amount_rent for itemization (not balance_due); TOTAL uses totalDue (includes late fees)
       const invoiceItemsForHTML =
@@ -617,14 +578,6 @@ SCCA/716 — Official statewide form (SC Judicial Branch)`
           year
         )
       }
-    }
-
-    if (formsWithHTML.ejectmentHTML && formsWithHTML.affidavitHTML) {
-      const { combineHtmlDocumentsForPrint } = await import('@/lib/combine-html-print')
-      formsWithHTML.ejectmentAndLedgerPrintHTML = combineHtmlDocumentsForPrint(
-        formsWithHTML.ejectmentHTML,
-        formsWithHTML.affidavitHTML
-      )
     }
 
     if (formsWithHTML.ejectmentFormKind && (formType === 'ejectment' || formType === 'both')) {

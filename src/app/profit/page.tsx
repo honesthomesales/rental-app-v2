@@ -46,8 +46,12 @@ export default function ProfitPage() {
     let cancelled = false
     const load = async () => {
       setRollingMonthLoading(true)
+      setRollingMonthRows([])
       try {
-        const response = await fetch(`/api/profit/monthly-summary?months=${rollingMonthCount}`)
+        const response = await fetch(
+          `/api/profit/monthly-summary?months=${rollingMonthCount}`,
+          { cache: 'no-store' }
+        )
         if (!response.ok) return
         const data = await response.json()
         if (!cancelled && data?.months) {

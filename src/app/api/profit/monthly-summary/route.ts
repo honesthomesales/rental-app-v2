@@ -26,6 +26,25 @@ function labelForMonth(month: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+const SUPABASE_PAGE_SIZE = 1000
+
+/** PostgREST defaults to 1000 rows; paginate so 12-month ranges include all payments. */
+async function fetchAllPages<T>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const rows: T[] = []
+  let from = 0
+  while (true) {
+    const { data, error } = await fetchPage(from, from + SUPABASE_PAGE_SIZE - 1)
+    if (error) throw error
+    if (!data?.length) break
+    rows.push(...data)
+    if (data.length < SUPABASE_PAGE_SIZE) break
+    from += SUPABASE_PAGE_SIZE
+  }
+  return rows
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -91,30 +110,38 @@ export async function GET(request: Request) {
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
 
-    const [paymentsRes, miscRes, oneTimeRes] = await Promise.all([
-      supabaseServer
-        .from('RENT_payments')
-        .select('amount, payment_date')
-        .not('invoice_id', 'is', null)
-        .gte('payment_date', rangeStart)
-        .lte('payment_date', rangeEnd),
-      supabaseServer
-        .from('RENT_expenses')
-        .select('amount_owed, last_paid_date')
-        .eq('interest_rate', 9.9999)
-        .gte('last_paid_date', rangeStart)
-        .lte('last_paid_date', rangeEnd),
-      supabaseServer
-        .from('RENT_expenses')
-        .select('amount_owed, last_paid_date')
-        .eq('interest_rate', -9.9999)
-        .gte('last_paid_date', rangeStart)
-        .lte('last_paid_date', rangeEnd),
+    const [payments, miscExpenses, oneTimeExpenses] = await Promise.all([
+      fetchAllPages<{ amount: string | number; payment_date: string }>((from, to) =>
+        supabaseServer
+          .from('RENT_payments')
+          .select('amount, payment_date')
+          .not('invoice_id', 'is', null)
+          .gte('payment_date', rangeStart)
+          .lte('payment_date', rangeEnd)
+          .order('payment_date', { ascending: true })
+          .range(from, to)
+      ),
+      fetchAllPages<{ amount_owed: number | null; last_paid_date: string }>((from, to) =>
+        supabaseServer
+          .from('RENT_expenses')
+          .select('amount_owed, last_paid_date')
+          .eq('interest_rate', 9.9999)
+          .gte('last_paid_date', rangeStart)
+          .lte('last_paid_date', rangeEnd)
+          .order('last_paid_date', { ascending: true })
+          .range(from, to)
+      ),
+      fetchAllPages<{ amount_owed: number | null; last_paid_date: string }>((from, to) =>
+        supabaseServer
+          .from('RENT_expenses')
+          .select('amount_owed, last_paid_date')
+          .eq('interest_rate', -9.9999)
+          .gte('last_paid_date', rangeStart)
+          .lte('last_paid_date', rangeEnd)
+          .order('last_paid_date', { ascending: true })
+          .range(from, to)
+      ),
     ])
-
-    if (paymentsRes.error) throw paymentsRes.error
-    if (miscRes.error) throw miscRes.error
-    if (oneTimeRes.error) throw oneTimeRes.error
 
     const rentByMonth = new Map<string, number>()
     const miscByMonth = new Map<string, number>()
@@ -125,15 +152,15 @@ export async function GET(request: Request) {
       map.set(key, (map.get(key) || 0) + amount)
     }
 
-    paymentsRes.data?.forEach((p: { amount: string | number; payment_date: string }) => {
+    payments.forEach((p) => {
       addToMonth(rentByMonth, p.payment_date, parseFloat(String(p.amount)) || 0)
     })
 
-    miscRes.data?.forEach((e: { amount_owed: number | null; last_paid_date: string }) => {
+    miscExpenses.forEach((e) => {
       addToMonth(miscByMonth, e.last_paid_date, Number(e.amount_owed) || 0)
     })
 
-    oneTimeRes.data?.forEach((e: { amount_owed: number | null; last_paid_date: string }) => {
+    oneTimeExpenses.forEach((e) => {
       addToMonth(otherByMonth, e.last_paid_date, Number(e.amount_owed) || 0)
     })
 

@@ -7,7 +7,20 @@ import { ProfitMetrics, PropertyProfitData } from '@/types/database'
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
 type SortDirection = 'asc' | 'desc'
 
-type ProfitViewMode = 'detail' | 'sixMonth'
+type ProfitViewMode = 'detail' | 'sixMonth' | 'twelveMonth'
+
+type RollingMonthRow = {
+  month: string
+  label: string
+  currentProfit: number
+  potentialProfit: number
+}
+
+function rollingMonthCountForView(view: ProfitViewMode): 6 | 12 | null {
+  if (view === 'sixMonth') return 6
+  if (view === 'twelveMonth') return 12
+  return null
+}
 
 export default function ProfitPage() {
   const [metrics, setMetrics] = useState<ProfitMetrics | null>(null)
@@ -18,41 +31,40 @@ export default function ProfitPage() {
   const [sortField, setSortField] = useState<SortField>('property')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [viewMode, setViewMode] = useState<ProfitViewMode>('detail')
-  const [sixMonthRows, setSixMonthRows] = useState<
-    { month: string; label: string; currentProfit: number; potentialProfit: number }[]
-  >([])
-  const [sixMonthLoading, setSixMonthLoading] = useState(false)
-  const [sixMonthReferenceMonth, setSixMonthReferenceMonth] = useState<string | null>(null)
+  const [rollingMonthRows, setRollingMonthRows] = useState<RollingMonthRow[]>([])
+  const [rollingMonthLoading, setRollingMonthLoading] = useState(false)
+  const [rollingMonthReferenceMonth, setRollingMonthReferenceMonth] = useState<string | null>(null)
+  const rollingMonthCount = rollingMonthCountForView(viewMode)
 
   useEffect(() => {
     fetchMonthlyMetrics()
   }, [currentDate])
 
   useEffect(() => {
-    if (viewMode !== 'sixMonth') return
+    if (!rollingMonthCount) return
 
     let cancelled = false
     const load = async () => {
-      setSixMonthLoading(true)
+      setRollingMonthLoading(true)
       try {
-        const response = await fetch('/api/profit/monthly-summary')
+        const response = await fetch(`/api/profit/monthly-summary?months=${rollingMonthCount}`)
         if (!response.ok) return
         const data = await response.json()
         if (!cancelled && data?.months) {
-          setSixMonthRows(data.months)
-          setSixMonthReferenceMonth(data.referenceMonth ?? null)
+          setRollingMonthRows(data.months)
+          setRollingMonthReferenceMonth(data.referenceMonth ?? null)
         }
       } catch (e) {
-        console.error('Error fetching 6-month profit summary:', e)
+        console.error(`Error fetching ${rollingMonthCount}-month profit summary:`, e)
       } finally {
-        if (!cancelled) setSixMonthLoading(false)
+        if (!cancelled) setRollingMonthLoading(false)
       }
     }
     load()
     return () => {
       cancelled = true
     }
-  }, [viewMode])
+  }, [rollingMonthCount])
 
   const fetchProfitData = async () => {
     try {
@@ -155,9 +167,21 @@ export default function ProfitPage() {
     })
   }
 
-  const sixMonthSortedDesc = useMemo(() => {
-    return [...sixMonthRows].sort((a, b) => b.month.localeCompare(a.month))
-  }, [sixMonthRows])
+  const rollingMonthsSortedDesc = useMemo(() => {
+    return [...rollingMonthRows].sort((a, b) => b.month.localeCompare(a.month))
+  }, [rollingMonthRows])
+
+  const rollingMonthAverages = useMemo(() => {
+    if (rollingMonthsSortedDesc.length === 0) {
+      return { currentProfit: 0, potentialProfit: 0 }
+    }
+    const n = rollingMonthsSortedDesc.length
+    const currentProfit =
+      rollingMonthsSortedDesc.reduce((sum, row) => sum + row.currentProfit, 0) / n
+    const potentialProfit =
+      rollingMonthsSortedDesc.reduce((sum, row) => sum + row.potentialProfit, 0) / n
+    return { currentProfit, potentialProfit }
+  }, [rollingMonthsSortedDesc])
 
   const formatMonth = (date: Date) => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -224,12 +248,16 @@ export default function ProfitPage() {
     })
   }, [monthlyMetrics?.propertyDetails, sortField, sortDirection])
 
-  const renderSixMonthView = () => {
+  const renderRollingMonthsView = (monthCount: 6 | 12) => {
     const refMonth =
-      sixMonthReferenceMonth ?? new Date().toISOString().slice(0, 7)
+      rollingMonthReferenceMonth ?? new Date().toISOString().slice(0, 7)
+    const periodLabel = monthCount === 12 ? '12 months' : '6 months'
+    const skeletonCount = monthCount
+    const gridClass =
+      monthCount === 12 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'
 
     return (
-    <div className="mx-auto max-w-3xl">
+    <div className={`mx-auto ${monthCount === 12 ? 'max-w-5xl' : 'max-w-3xl'}`}>
       <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-3 shadow-2xl shadow-slate-900/25 ring-1 ring-white/10 sm:p-4">
         <div
           className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-teal-400/15 blur-3xl"
@@ -240,14 +268,34 @@ export default function ProfitPage() {
           aria-hidden
         />
 
-        <div className="relative mb-2.5 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.12em] sm:text-[11px]">
-          <span className="text-green-400">Current profit</span>
-          <span className="text-lime-400">Potential if debt paid</span>
+        <div className="relative mb-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] sm:text-[11px]">
+          <div>
+            <span className="text-green-400">Current profit</span>
+            <p className="mt-0.5 font-mono text-sm normal-case tracking-normal text-green-300">
+              {rollingMonthLoading
+                ? '…'
+                : formatCurrency(rollingMonthAverages.currentProfit)}{' '}
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-green-400/80">
+                avg ({periodLabel})
+              </span>
+            </p>
+          </div>
+          <div>
+            <span className="text-lime-400">Potential if debt paid</span>
+            <p className="mt-0.5 font-mono text-sm normal-case tracking-normal text-lime-300">
+              {rollingMonthLoading
+                ? '…'
+                : formatCurrency(rollingMonthAverages.potentialProfit)}{' '}
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-lime-400/80">
+                avg ({periodLabel})
+              </span>
+            </p>
+          </div>
         </div>
 
-        {sixMonthLoading ? (
-          <div className="relative grid grid-cols-2 grid-rows-3 gap-2">
-            {[...Array(6)].map((_, i) => (
+        {rollingMonthLoading ? (
+          <div className={`relative grid ${gridClass} gap-2`}>
+            {[...Array(skeletonCount)].map((_, i) => (
               <div
                 key={i}
                 className="animate-pulse rounded-lg bg-white/5 p-2 ring-1 ring-white/10"
@@ -258,13 +306,13 @@ export default function ProfitPage() {
               </div>
             ))}
           </div>
-        ) : sixMonthSortedDesc.length === 0 ? (
+        ) : rollingMonthsSortedDesc.length === 0 ? (
           <p className="relative py-10 text-center text-sm text-slate-400">
             Could not load monthly summary. Try again or refresh the page.
           </p>
         ) : (
-          <div className="relative grid grid-cols-2 grid-rows-3 gap-2">
-            {sixMonthSortedDesc.map((row) => {
+          <div className={`relative grid ${gridClass} gap-2`}>
+            {rollingMonthsSortedDesc.map((row) => {
               const curPositive = row.currentProfit >= 0
               const isCurrentMonth = row.month === refMonth
               return (
@@ -590,6 +638,17 @@ export default function ProfitPage() {
       >
         Last 6 months
       </button>
+      <button
+        type="button"
+        onClick={() => setViewMode('twelveMonth')}
+        className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+          viewMode === 'twelveMonth'
+            ? 'bg-white text-gray-900 shadow'
+            : 'text-gray-600 hover:text-gray-900'
+        }`}
+      >
+        Last 12 months
+      </button>
     </div>
   )
 
@@ -659,8 +718,8 @@ export default function ProfitPage() {
       </div>
 
 
-      {viewMode === 'sixMonth' ? (
-        renderSixMonthView()
+      {rollingMonthCount ? (
+        renderRollingMonthsView(rollingMonthCount)
       ) : (
         <>
           {/* Monthly Metrics View */}

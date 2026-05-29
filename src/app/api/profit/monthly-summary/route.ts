@@ -11,10 +11,10 @@ function endOfMonthIso(year: number, monthIndex0: number): string {
   return new Date(year, monthIndex0 + 1, 0).toISOString().slice(0, 10)
 }
 
-/** Last 6 calendar months, oldest → newest (for stacked display). */
-function getSixMonthKeys(reference: Date): string[] {
+/** Last N calendar months, oldest → newest (for stacked display). */
+function getMonthKeys(reference: Date, count: number): string[] {
   const keys: string[] = []
-  for (let back = 5; back >= 0; back--) {
+  for (let back = count - 1; back >= 0; back--) {
     const d = new Date(reference.getFullYear(), reference.getMonth() - back, 1)
     keys.push(monthKeyFromDate(d))
   }
@@ -30,9 +30,11 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const asOfParam = searchParams.get('asOf')
+    const monthsParam = searchParams.get('months')
+    const monthCount = monthsParam === '12' ? 12 : 6
     const reference = asOfParam ? new Date(asOfParam + 'T12:00:00') : new Date()
 
-    const monthKeys = getSixMonthKeys(reference)
+    const monthKeys = getMonthKeys(reference, monthCount)
     const rangeStart = `${monthKeys[0]}-01`
     const lastMonth = monthKeys[monthKeys.length - 1]
     const [ly, lm] = lastMonth.split('-').map(Number)
@@ -151,7 +153,11 @@ export async function GET(request: Request) {
       }
     })
 
-    return NextResponse.json({ months, referenceMonth: monthKeyFromDate(reference) })
+    return NextResponse.json({
+      months,
+      monthCount,
+      referenceMonth: monthKeyFromDate(reference),
+    })
   } catch (error) {
     console.error('Error in profit monthly-summary API:', error)
     return NextResponse.json(

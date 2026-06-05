@@ -5,11 +5,18 @@ import { buildEjectmentCourtPdfFillData } from '@/lib/build-ejectment-pdf-fill-d
 
 export async function POST(request: Request) {
   try {
-    const { tenantId, county, formType, ejectmentReason, violationDescription, evictionReasons, leaseId } = await request.json()
+    const { tenantId, county, formType, ejectmentReason, violationDescription, evictionReasons, leaseId, formDate: formDateParam } = await request.json()
 
     if (!leaseId) {
       return NextResponse.json({ error: 'Lease ID is required' }, { status: 400 })
     }
+
+    const formDateIso =
+      typeof formDateParam === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(formDateParam)
+        ? formDateParam
+        : new Date().toISOString().split('T')[0]
+    const formDate = new Date(formDateIso + 'T12:00:00')
+    formDate.setHours(0, 0, 0, 0)
 
     // Fetch lease, property, and tenant details
     const { data: leaseData, error: leaseError } = await supabaseServer
@@ -47,17 +54,12 @@ export async function POST(request: Request) {
       property.zip_code || property.postal_code
     )
 
-    // Get today's date for filtering invoices (matching payments page logic)
-    const today = new Date().toISOString().split('T')[0]
-    const todayDate = new Date(today + 'T12:00:00')
-    todayDate.setHours(0, 0, 0, 0)
-    
-    // Fetch all invoices for this lease (matching payments page logic)
+    // Use selected form date for invoice cutoff and all form date fields
     const { data: allInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
       .select('*')
       .eq('lease_id', leaseId)
-      .lte('due_date', todayDate.toISOString().split('T')[0])
+      .lte('due_date', formDateIso)
       .order('due_date', { ascending: true })
 
     if (invoicesError) {
@@ -164,17 +166,17 @@ export async function POST(request: Request) {
       month: 'long', 
       day: 'numeric' 
     })
-    const currentDate = dateFormatter.format(todayDate)
-    const todayFormatted = todayDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    const day = todayDate.getDate()
-    const month = todayDate.toLocaleDateString('en-US', { month: 'long' })
-    const year = todayDate.getFullYear()
+    const currentDate = dateFormatter.format(formDate)
+    const todayFormatted = formDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const day = formDate.getDate()
+    const month = formDate.toLocaleDateString('en-US', { month: 'long' })
+    const year = formDate.getFullYear()
 
     const forms: any = {}
 
     // Generate 7-Day Notice if requested
     if (formType === 'notice' || formType === 'both') {
-      const sevenDaysFromNow = new Date()
+      const sevenDaysFromNow = new Date(formDate)
       sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
       const sevenDaysFromNowFormatted = dateFormatter.format(sevenDaysFromNow)
 
@@ -597,7 +599,7 @@ SCCA/716 — Official statewide form (SC Judicial Branch)`
         swornDay: day,
         swornMonth: month,
         swornYear: year,
-        swornDate: todayDate,
+        swornDate: formDate,
         earliestUnpaidDueDate: earliestDue,
         leaseEndDate: leaseData.lease_end_date ?? null,
         monthlyRent: leaseData.rent != null ? parseFloat(String(leaseData.rent)) : null,

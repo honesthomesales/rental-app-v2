@@ -152,6 +152,7 @@ export default function LastPaidPage() {
   const [formType, setFormType] = useState<'notice' | 'ejectment' | 'both'>('notice')
   const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
   const [violationDescription, setViolationDescription] = useState('')
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0])
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
@@ -422,6 +423,7 @@ export default function LastPaidPage() {
           formType,
           ejectmentReason,
           violationDescription,
+          formDate,
           leaseId: selectedPropertyForGenerate.lease_id,
         }),
       })
@@ -1286,6 +1288,7 @@ export default function LastPaidPage() {
                           <button
                             onClick={() => {
                               setSelectedPropertyForGenerate(property)
+                              setFormDate(new Date().toISOString().split('T')[0])
                               setShowGenerateModal(true)
                             }}
                             className="px-3 py-1 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
@@ -1387,6 +1390,7 @@ export default function LastPaidPage() {
                             <button
                               onClick={() => {
                                 setSelectedPropertyForGenerate(property)
+                                setFormDate(new Date().toISOString().split('T')[0])
                                 setShowGenerateModal(true)
                               }}
                               className="px-3 py-1 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
@@ -1825,6 +1829,7 @@ export default function LastPaidPage() {
                   setFormType('notice')
                   setEjectmentReason('nonpayment')
                   setViolationDescription('')
+                  setFormDate(new Date().toISOString().split('T')[0])
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1879,6 +1884,18 @@ export default function LastPaidPage() {
                   <option value="ejectment">Application for Ejectment</option>
                   <option value="both">Both (Notice + Ejectment)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Form Date
+                </label>
+                <input
+                  type="date"
+                  value={formDate}
+                  onChange={(e) => setFormDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
 
               {(formType === 'ejectment' || formType === 'both') && (
@@ -1938,6 +1955,7 @@ export default function LastPaidPage() {
                     setFormType('notice')
                     setEjectmentReason('nonpayment')
                     setViolationDescription('')
+                    setFormDate(new Date().toISOString().split('T')[0])
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                 >

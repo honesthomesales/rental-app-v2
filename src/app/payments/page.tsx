@@ -112,6 +112,7 @@ export default function PaymentsPage() {
   const [ejectmentReason, setEjectmentReason] = useState<'nonpayment' | 'endtenancy' | 'violation'>('nonpayment')
   const [violationDescription, setViolationDescription] = useState('')
   const [evictionReasons, setEvictionReasons] = useState<string[]>([])
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0])
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
@@ -2048,6 +2049,7 @@ return'<div class="s">'+l+'</div>';
                   console.log('Generate Forms button clicked - start')
                   try {
                     console.log('Setting showGenerateModal to true')
+                    setFormDate(new Date().toISOString().split('T')[0])
                     setShowGenerateModal(true)
                     console.log('showGenerateModal set successfully')
                   } catch (error) {
@@ -3324,6 +3326,7 @@ return'<div class="s">'+l+'</div>';
                     setEjectmentReason('nonpayment')
                     setViolationDescription('')
                     setEvictionReasons([])
+                    setFormDate(new Date().toISOString().split('T')[0])
                   }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -3363,6 +3366,18 @@ return'<div class="s">'+l+'</div>';
                   <option value="ejectment">Application for Ejectment</option>
                   <option value="both">Both (Notice + Ejectment)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Form Date
+                </label>
+                <input
+                  type="date"
+                  value={formDate}
+                  onChange={(e) => setFormDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
 
               {(formType === 'ejectment' || formType === 'both') && (
@@ -3508,6 +3523,7 @@ return'<div class="s">'+l+'</div>';
                     setEjectmentReason('nonpayment')
                     setViolationDescription('')
                     setEvictionReasons([])
+                    setFormDate(new Date().toISOString().split('T')[0])
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                 >
@@ -3565,6 +3581,7 @@ return'<div class="s">'+l+'</div>';
                           ejectmentReason,
                           violationDescription,
                           evictionReasons: evictionReasons,
+                          formDate,
                           leaseId: tenant.lease.id,
                         }),
                       })

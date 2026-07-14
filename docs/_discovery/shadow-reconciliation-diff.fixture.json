@@ -1,0 +1,117 @@
+{
+  "generatedAt": "2026-07-14T22:21:28.569Z",
+  "mode": "fixture",
+  "writeMethodsUsed": [],
+  "liveWrites": 0,
+  "databaseWrites": 0,
+  "visibleScreensUnchanged": true,
+  "candidateDisabledForUi": true,
+  "baselineLeaseCount": 2,
+  "candidateAccountCount": 2,
+  "summary": {
+    "baselineAccountCount": 2,
+    "baselineExactMatchCount": 0,
+    "candidateDifferenceCount": 2,
+    "countsByCategory": {
+      "overpayment_credit": 0,
+      "unlinked_payment": 1,
+      "missing_invoice": 2,
+      "partial_invoice_status": 0,
+      "payment_after_lease_end": 1,
+      "lease_not_extended": 1,
+      "holdover_candidate": 1,
+      "duplicate_invoice": 0,
+      "recorded_late_fee": 0,
+      "grace_period_change": 1,
+      "ambiguous_account": 0,
+      "other": 0
+    },
+    "totalUnlinkedPaymentAmount": 50,
+    "totalCandidateCredit": 0,
+    "holdoverCandidateCount": 1,
+    "ambiguousAccountCount": 0,
+    "gracePeriodStatusChangeCount": 1
+  },
+  "report": {
+    "asOfDate": "2026-03-15",
+    "baselineAccountCount": 2,
+    "baselineExactMatchCount": 0,
+    "candidateDifferenceCount": 2,
+    "countsByCategory": {
+      "overpayment_credit": 0,
+      "unlinked_payment": 1,
+      "missing_invoice": 2,
+      "partial_invoice_status": 0,
+      "payment_after_lease_end": 1,
+      "lease_not_extended": 1,
+      "holdover_candidate": 1,
+      "duplicate_invoice": 0,
+      "recorded_late_fee": 0,
+      "grace_period_change": 1,
+      "ambiguous_account": 0,
+      "other": 0
+    },
+    "totalUnlinkedPaymentAmount": 50,
+    "totalCandidateCredit": 0,
+    "holdoverCandidateCount": 1,
+    "ambiguousAccountCount": 0,
+    "gracePeriodStatusChangeCount": 1,
+    "differences": [
+      {
+        "accountKey": "redacted:0",
+        "anonymizedAccountId": "ACCT-001-11",
+        "anonymizedLeaseIds": [
+          "LEASE-001-1"
+        ],
+        "baselineTotal": 800,
+        "candidateTotal": 1300,
+        "numericDifference": 500,
+        "baselineLateOrCurrent": "late",
+        "candidateGraceStatus": "late",
+        "linkedPaymentsAmount": 200,
+        "unlinkedPaymentsAmount": 0,
+        "carriedCredit": 0,
+        "missingExpectedObligations": 1,
+        "holdoverCandidate": false,
+        "categories": [
+          "missing_invoice"
+        ],
+        "dataProblems": [
+          "missing_expected_obligation"
+        ]
+      },
+      {
+        "accountKey": "redacted:1",
+        "anonymizedAccountId": "ACCT-002-22",
+        "anonymizedLeaseIds": [
+          "LEASE-001-2"
+        ],
+        "baselineTotal": 0,
+        "candidateTotal": 2350,
+        "numericDifference": 2350,
+        "baselineLateOrCurrent": "current",
+        "candidateGraceStatus": "late",
+        "linkedPaymentsAmount": 50,
+        "unlinkedPaymentsAmount": 50,
+        "carriedCredit": 0,
+        "missingExpectedObligations": 6,
+        "holdoverCandidate": true,
+        "categories": [
+          "unlinked_payment",
+          "missing_invoice",
+          "payment_after_lease_end",
+          "holdover_candidate",
+          "lease_not_extended",
+          "grace_period_change"
+        ],
+        "dataProblems": [
+          "holdover_candidate",
+          "payment_after_lease_end",
+          "missing_expected_obligation",
+          "unlinked_payment"
+        ]
+      }
+    ],
+    "note": "Candidate is DISABLED_FOR_UI. Payments page remains source of truth until Billy approves. totalLateOwed semantics unchanged on visible screens."
+  }
+}

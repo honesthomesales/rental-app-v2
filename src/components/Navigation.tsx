@@ -13,7 +13,8 @@ import {
   XMarkIcon,
   ReceiptPercentIcon,
   ShoppingBagIcon,
-  ClockIcon
+  ClockIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
 import { useState } from 'react'
 
@@ -23,6 +24,7 @@ const navigation = [
   { name: 'Tenants', href: '/tenants', icon: UsersIcon },
   { name: 'Leases', href: '/leases', icon: DocumentTextIcon },
   { name: 'Payments', href: '/payments', icon: CurrencyDollarIcon },
+  { name: 'Late Tenants', href: '/late-tenants', icon: ExclamationTriangleIcon },
   { name: 'Expenses', href: '/expenses', icon: ReceiptPercentIcon },
   { name: 'Last Paid', href: '/last-paid', icon: ClockIcon },
   { name: 'Profit', href: '/profit', icon: ChartBarIcon },

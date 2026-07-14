@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { LateTenantData } from '@/types/database'
 import { ExclamationTriangleIcon, PhoneIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
@@ -11,6 +10,7 @@ export default function LateTenantsPage() {
   const [summary, setSummary] = useState<any>({
     lateLeases: 0,
     totalLateOwed: 0,
+    totalAllOwed: 0,
     thirtyPlusLate: 0,
     avgDaysLate: 0
   })
@@ -49,11 +49,7 @@ export default function LateTenantsPage() {
 
   const fetchLateTenants = async () => {
     try {
-      console.log('Fetching late tenants...')
-      // CRITICAL: Calculate today the EXACT same way as Payments page (line 436)
-      // Payments page: const today = new Date().toISOString().split('T')[0]
       const today = new Date().toISOString().split('T')[0]
-      // Add cache-busting timestamp to ensure fresh data
       const timestamp = new Date().getTime()
       const response = await fetch(`/api/late-tenants?t=${timestamp}&today=${today}`, {
         cache: 'no-store',
@@ -61,116 +57,25 @@ export default function LateTenantsPage() {
           'Cache-Control': 'no-cache'
         }
       })
-      console.log('Late tenants response status:', response.status)
-      
+
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('API error:', errorData)
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Late tenants API error')
         throw new Error(errorData.error || 'Failed to fetch late tenants')
       }
-      
+
       const data = await response.json()
-      console.log('📥 API Response Version:', data?.version || 'unknown')
-      console.log('📥 API Response:', data?.rows?.length, 'tenants loaded')
-      console.log('📥 Sample tenant:', data?.rows?.[0])
-      
-      // Find and log the specific tenant for debugging
-      const mainStTenant = data?.rows?.find((t: any) => 
-        t.property?.address?.toLowerCase().includes('5667') || 
-        t.property?.address?.toLowerCase().includes('main')
-      )
-      if (mainStTenant) {
-        console.log('🔍 5667 N Main St tenant data:', {
-          totalAllOwed: mainStTenant.totalAllOwed,
-          totalOwedLate: mainStTenant.totalOwedLate,
-          unpaidCount: mainStTenant.lateInvoices?.length || 0,
-          unpaidInvoiceCount: mainStTenant.unpaidInvoiceCount,
-          unpaidInvoiceIds: mainStTenant.unpaidInvoiceIds,
-          address: mainStTenant.property?.address,
-          hasInvoiceFilterDebug: !!mainStTenant.invoiceFilterDebug
-        })
-        console.log('🔍 Late Tenants API - Invoice IDs being counted:', mainStTenant.unpaidInvoiceIds?.join(', ') || 'none')
-        
-        // CRITICAL: Log if invoiceFilterDebug exists
-        if (mainStTenant.invoiceFilterDebug) {
-          console.log('✅ invoiceFilterDebug EXISTS in response')
-        } else {
-          console.error('❌ invoiceFilterDebug MISSING from response!')
-        }
-        
-        // Log detailed filter check results
-        if (mainStTenant.filterCheckResults) {
-          console.log('\n🔍 ========== FILTER CHECK RESULTS (COPY THIS) ==========')
-          console.log(JSON.stringify(mainStTenant.filterCheckResults, null, 2))
-          console.log('🔍 ========== END FILTER CHECK RESULTS ==========\n')
-          
-          // Also show as a table for easy reading
-          console.table(mainStTenant.filterCheckResults.map((r: any) => ({
-            Invoice: r.invoiceId.substring(0, 8) + '...',
-            Status: r.status,
-            'Is Open': r.isOpen,
-            'Balance (raw)': r.recalculatedBalanceDue_raw,
-            'Balance (parsed)': r.recalculatedBalanceDue_parsed,
-            'Has Balance': r.hasBalance,
-            'INCLUDED': r.included
-          })))
-        }
-        
-        // Log payment check results
-        if (mainStTenant.paymentCheckResults) {
-          console.log('\n💰 ========== PAYMENT CHECK RESULTS (COPY THIS) ==========')
-          console.log(JSON.stringify(mainStTenant.paymentCheckResults, null, 2))
-          console.log('💰 ========== END PAYMENT CHECK RESULTS ==========\n')
-        }
-        
-        // Log all payments data
-        if (mainStTenant.allPaymentsData) {
-          console.log('\n💰 ========== ALL PAYMENTS FOR LEASE (COPY THIS) ==========')
-          console.log(JSON.stringify(mainStTenant.allPaymentsData, null, 2))
-          console.log('💰 ========== END ALL PAYMENTS ==========\n')
-        }
-        
-        // Log all invoice IDs
-        if (mainStTenant.allInvoiceIdsData) {
-          console.log('\n📋 ========== ALL INVOICE IDs FOR LEASE (COPY THIS) ==========')
-          console.log(JSON.stringify(mainStTenant.allInvoiceIdsData, null, 2))
-          console.log('📋 ========== END ALL INVOICE IDs ==========\n')
-        }
-        
-        // Log payments map data
-        if (mainStTenant.paymentsMapData) {
-          console.log('\n🗺️ ========== PAYMENTS BY INVOICE MAP (COPY THIS) ==========')
-          console.log(JSON.stringify(mainStTenant.paymentsMapData, null, 2))
-          console.log('🗺️ ========== END PAYMENTS MAP ==========\n')
-        }
-        
-        // Log invoice filter debug data - CRITICAL for understanding why filter isn't working
-        if (mainStTenant.invoiceFilterDebug) {
-          console.log('\n🔍 ========== INVOICE FILTER DEBUG (COPY THIS) ==========')
-          console.log(JSON.stringify(mainStTenant.invoiceFilterDebug, null, 2))
-          console.log('🔍 ========== END INVOICE FILTER DEBUG ==========\n')
-        }
-        
-        // Log API debug info
-        if (data?.debug) {
-          console.log('\n🔍 ========== API DEBUG INFO (COPY THIS) ==========')
-          console.log(JSON.stringify(data.debug, null, 2))
-          console.log('🔍 ========== END API DEBUG INFO ==========\n')
-        }
-      }
-      
       setAllLateTenants(data?.rows || [])
       setSummary({
-        ...(data?.summary || {
-          lateLeases: 0,
-          totalLateOwed: 0,
-          thirtyPlusLate: 0,
-          avgDaysLate: 0
-        }),
+        lateLeases: data?.summary?.lateLeases ?? 0,
+        totalLateOwed: data?.summary?.totalLateOwed ?? 0,
+        totalAllOwed: data?.summary?.totalAllOwed ?? 0,
+        thirtyPlusLate: data?.summary?.thirtyPlusLate ?? 0,
+        avgDaysLate: data?.summary?.avgDaysLate ?? 0,
         version: data?.version || 'unknown'
       })
     } catch (error) {
-      console.error('Error fetching late tenants:', error)
+      console.error('Error fetching late tenants')
       setAllLateTenants([])
     } finally {
       setLoading(false)
@@ -179,7 +84,6 @@ export default function LateTenantsPage() {
 
   // Filter and sort late tenants
   const filteredLateTenants = useMemo(() => {
-    console.log('🔄 Filtering with:', filters, 'Total tenants:', allLateTenants.length)
     let filtered = allLateTenants.filter(tenant => {
       // Days late filter
       if (filters.daysLate !== 'all') {
@@ -278,8 +182,6 @@ export default function LateTenantsPage() {
     try {
       const currentDate = new Date().toISOString().split('T')[0]
       
-      console.log('🔍 Frontend Waive Debug - Tenant:', tenant)
-      console.log('🔍 Frontend Waive Debug - Lease ID:', tenant.leaseId)
       
       const response = await fetch('/api/late-fees/waive', {
         method: 'POST',
@@ -296,16 +198,14 @@ export default function LateTenantsPage() {
 
       if (result.success) {
         // Refresh the data
-        console.log('🔍 Refreshing data after waiver...')
         await fetchLateTenants()
-        console.log('🔍 Data refreshed, showing success message')
         alert(`Late fees waived successfully! ${result.invoicesUpdated || 0} invoices updated.`)
       } else {
-        console.error('🔍 Waive late fee failed:', result.error)
+        console.error('Waive late fee failed')
         alert(`Error: ${result.error}`)
       }
     } catch (error) {
-      console.error('Error waiving late fees:', error)
+      console.error('Error waiving late fees')
       alert('Failed to waive late fees. Please try again.')
     }
   }
@@ -321,7 +221,6 @@ export default function LateTenantsPage() {
 
   const handleAddPayment = () => {
     // TODO: Implement add payment for specific period
-    console.log('Add payment for period:', selectedPeriod)
     setShowPeriodModal(false)
   }
 
@@ -354,7 +253,7 @@ export default function LateTenantsPage() {
         alert(`Error: ${result.error}`)
       }
     } catch (error) {
-      console.error('Error waiving late fee for period:', error)
+      console.error('Error waiving late fee for period')
       alert('Failed to waive late fee. Please try again.')
     }
   }
@@ -371,7 +270,7 @@ export default function LateTenantsPage() {
         console.error('Failed to fetch payments')
       }
     } catch (error) {
-      console.error('Error fetching payments:', error)
+      console.error('Error fetching payments')
     }
   }
 
@@ -427,7 +326,7 @@ export default function LateTenantsPage() {
         alert(`Error generating forms: ${errorData.error || 'Unknown error'}`)
       }
     } catch (error) {
-      console.error('Error generating forms:', error)
+      console.error('Error generating forms')
       alert('Failed to generate forms. Please try again.')
     } finally {
       setGeneratingForm(false)
@@ -650,7 +549,7 @@ export default function LateTenantsPage() {
                     <div>
                       <p className="text-sm text-gray-500">Total Owed</p>
                       <p className="text-lg font-semibold text-gray-900">
-                        ${(tenant.totalAllOwed || tenant.totalOwedLate || 0).toLocaleString()}
+                        ${(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -859,7 +758,7 @@ export default function LateTenantsPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          ${(tenant.totalAllOwed || tenant.totalOwedLate || 0).toLocaleString()}
+                          ${(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
                         </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -929,7 +828,7 @@ export default function LateTenantsPage() {
                   <div className="mb-3">
                     <div className="text-xs text-gray-500">Total Owed</div>
                     <div className="text-lg font-semibold text-gray-900">
-                      ${(tenant.totalAllOwed || tenant.totalOwedLate || 0).toLocaleString()}
+                      ${(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
                     </div>
                   </div>
 
@@ -1066,7 +965,7 @@ export default function LateTenantsPage() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <div className="text-red-600 font-medium">Amount Owed</div>
-                        <div className="text-gray-900">${selectedTenantInfo?.totalAllOwed?.toLocaleString() || selectedTenantInfo?.totalOwedLate?.toLocaleString() || '0'}</div>
+                        <div className="text-gray-900">${(selectedTenantInfo?.accountTotalOwed ?? selectedTenantInfo?.totalOwedLate ?? 0).toLocaleString()}</div>
                       </div>
                       <div>
                         <div className="text-red-600 font-medium">Date Owed</div>

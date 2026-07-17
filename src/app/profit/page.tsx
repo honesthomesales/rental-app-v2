@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { StarIcon } from '@heroicons/react/24/solid'
-import { ProfitMetrics, PropertyProfitData } from '@/types/database'
 
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
 type SortDirection = 'asc' | 'desc'
@@ -23,8 +22,6 @@ function rollingMonthCountForView(view: ProfitViewMode): 6 | 12 | null {
 }
 
 export default function ProfitPage() {
-  const [metrics, setMetrics] = useState<ProfitMetrics | null>(null)
-  const [propertyData, setPropertyData] = useState<PropertyProfitData[]>([])
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
@@ -70,82 +67,16 @@ export default function ProfitPage() {
     }
   }, [rollingMonthCount])
 
-  const fetchProfitData = async () => {
-    try {
-      // Mock data for now
-      const mockMetrics: ProfitMetrics = {
-        grossCollected: 18000,
-        effectiveGrossIncome: 18000,
-        operatingExpenses: 4500,
-        netOperatingIncome: 13500,
-        cashFlowAfterDebt: 12000,
-        collectionRate: 0.95,
-        lateFeeYield: 0.02
-      }
-
-      const mockPropertyData: PropertyProfitData[] = [
-        {
-          property: {
-            id: '1',
-            name: '123 Main Street',
-            address: '123 Main Street',
-            city: 'Anytown',
-            state: 'CA',
-            zip_code: '12345'
-          },
-          scheduledRent: 2000,
-          rentCollected: 1900,
-          lateFees: 45,
-          otherIncome: 0,
-          effectiveGrossIncome: 1945,
-          operatingExpenses: 500,
-          netOperatingIncome: 1445,
-          debtService: 300,
-          cashFlowAfterDebt: 1145
-        },
-        {
-          property: {
-            id: '2',
-            name: '456 Oak Avenue',
-            address: '456 Oak Avenue',
-            city: 'Anytown',
-            state: 'CA',
-            zip_code: '12345'
-          },
-          scheduledRent: 1200,
-          rentCollected: 1200,
-          lateFees: 0,
-          otherIncome: 0,
-          effectiveGrossIncome: 1200,
-          operatingExpenses: 200,
-          netOperatingIncome: 1000,
-          debtService: 150,
-          cashFlowAfterDebt: 850
-        }
-      ]
-
-      setMetrics(mockMetrics)
-      setPropertyData(mockPropertyData)
-    } catch (error) {
-      console.error('Error fetching profit data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Live profit metrics come from /api/profit/metrics and /api/profit/monthly-summary.
+  // Unused mock fetchProfitData removed — do not reintroduce hard-coded property rows.
 
   const fetchMonthlyMetrics = async () => {
     try {
       const monthParam = currentDate.toISOString().slice(0, 7) // YYYY-MM format
-      console.log('Fetching monthly metrics for:', monthParam)
       
       const response = await fetch(`/api/profit/metrics?month=${monthParam}`)
       if (response.ok) {
         const data = await response.json()
-        console.log('Monthly metrics received:', data)
-        console.log('Rent collected from API:', data?.rentCollection?.collected)
-        console.log('Expected rent from API:', data?.rentCollection?.expected)
-        console.log('Property details from API:', data?.propertyDetails)
-        console.log('Property details count:', data?.propertyDetails?.length || 0)
         setMonthlyMetrics(data)
       } else {
         console.error('Failed to fetch monthly metrics:', response.status)

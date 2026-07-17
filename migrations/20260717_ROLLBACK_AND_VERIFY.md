@@ -1,0 +1,24 @@
+-- =====================================================
+-- Rollback guidance (manual — do not auto-run)
+-- =====================================================
+-- Prospective rent change:
+--   DROP FUNCTION IF EXISTS public.rent_apply_prospective_change(uuid, numeric, date, date);
+--   -- Optional columns may remain; do not DROP columns in production without approval.
+--
+-- Late fees:
+--   DROP FUNCTION IF EXISTS public.rent_reconcile_late_fees(date, uuid[], boolean);
+--
+-- Read-only verification (rent change eligibility for a lease):
+--   SELECT id, due_date, status, amount_rent, amount_total, balance_due
+--   FROM "RENT_invoices"
+--   WHERE lease_id = :lease_id
+--   ORDER BY due_date;
+--
+-- Late-fee backfill preview (dry run):
+--   SELECT public.rent_reconcile_late_fees(CURRENT_DATE, NULL, true);
+--
+-- Late-fee apply (OWNER APPROVAL REQUIRED):
+--   SELECT public.rent_reconcile_late_fees(CURRENT_DATE, NULL, false);
+--
+-- Cron: configure CRON_SECRET and Vercel cron for /api/cron/late-fees.
+-- Do not run late-fee backfill automatically during deploy.

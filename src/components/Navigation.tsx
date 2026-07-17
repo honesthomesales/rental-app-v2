@@ -13,9 +13,11 @@ import {
   XMarkIcon,
   ReceiptPercentIcon,
   ShoppingBagIcon,
-  ClockIcon
+  ClockIcon,
+  ExclamationTriangleIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
@@ -23,9 +25,14 @@ const navigation = [
   { name: 'Tenants', href: '/tenants', icon: UsersIcon },
   { name: 'Leases', href: '/leases', icon: DocumentTextIcon },
   { name: 'Payments', href: '/payments', icon: CurrencyDollarIcon },
+  { name: 'Late Tenants', href: '/late-tenants', icon: ExclamationTriangleIcon },
   { name: 'Expenses', href: '/expenses', icon: ReceiptPercentIcon },
   { name: 'Last Paid', href: '/last-paid', icon: ClockIcon },
   { name: 'Profit', href: '/profit', icon: ChartBarIcon },
+]
+
+const ownerNavigation = [
+  { name: 'Data Health', href: '/data-health', icon: ShieldCheckIcon },
 ]
 
 const DEAL_DOCS = { deals: '/deals', docs: '/documents' } as const
@@ -126,6 +133,27 @@ function DealDocsNavItem({
 export function Navigation() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/auth/session', {
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        setIsOwner(data.role === 'owner')
+      } catch {
+        /* ignore */
+      }
+    })()
+  }, [])
+
+  const navItems = isOwner
+    ? [...navigation, ...ownerNavigation]
+    : navigation
 
   const renderNavLink = (
     item: (typeof navigation)[0],
@@ -169,7 +197,7 @@ export function Navigation() {
   }
 
   const desktopItems: React.ReactNode[] = []
-  navigation.forEach((item) => {
+  navItems.forEach((item) => {
     if (item.name === 'Payments') {
       desktopItems.push(
         <DealDocsNavItem key="deal-docs" layout="desktop" />
@@ -179,7 +207,7 @@ export function Navigation() {
   })
 
   const mobileItems: React.ReactNode[] = []
-  navigation.forEach((item) => {
+  navItems.forEach((item) => {
     if (item.name === 'Payments') {
       mobileItems.push(
         <DealDocsNavItem
@@ -208,6 +236,19 @@ export function Navigation() {
 
             <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
               {desktopItems}
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch("/api/auth/logout", {
+                    method: "POST",
+                    credentials: "include",
+                  })
+                  window.location.href = "/login"
+                }}
+                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+              >
+                Log out
+              </button>
             </div>
 
             <div className="md:hidden flex items-center">
@@ -228,7 +269,22 @@ export function Navigation() {
 
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-gray-200 bg-white">
-            <div className="px-2 pt-2 pb-3 space-y-1">{mobileItems}</div>
+            <div className="px-2 pt-2 pb-3 space-y-1">
+              {mobileItems}
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch("/api/auth/logout", {
+                    method: "POST",
+                    credentials: "include",
+                  })
+                  window.location.href = "/login"
+                }}
+                className="w-full text-left px-3 py-2 text-base font-medium text-gray-600 hover:bg-gray-50 rounded-md"
+              >
+                Log out
+              </button>
+            </div>
           </div>
         )}
       </nav>

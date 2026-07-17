@@ -5,6 +5,11 @@ import { XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
+import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
+import {
+  TextTenantModal,
+  type CommunicationTarget,
+} from '@/components/communications/TextTenantModal'
 
 interface Lease {
   id: string
@@ -28,6 +33,7 @@ interface Tenant {
   full_name: string
   first_name: string
   last_name: string
+  phone?: string
 }
 
 interface Invoice {
@@ -97,6 +103,7 @@ export default function PaymentsPage() {
   const [noticeContent, setNoticeContent] = useState('')
   const [noticeTitle, setNoticeTitle] = useState('')
   const [showMiscIncomeModal, setShowMiscIncomeModal] = useState(false)
+  const [commTarget, setCommTarget] = useState<CommunicationTarget | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [showPastInvoiceApprovalModal, setShowPastInvoiceApprovalModal] = useState(false)
   const [pastInvoicesToApprove, setPastInvoicesToApprove] = useState<any[]>([])
@@ -116,15 +123,18 @@ export default function PaymentsPage() {
   const [generatedForms, setGeneratedForms] = useState<any>(null)
   const [showFormsModal, setShowFormsModal] = useState(false)
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf')
+  const [showMissingPreviewModal, setShowMissingPreviewModal] = useState(false)
+  const [missingPreviewRows, setMissingPreviewRows] = useState<any[]>([])
+  const [loadingMissingPreview, setLoadingMissingPreview] = useState(false)
+  const [missingPreviewError, setMissingPreviewError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchLeases()
     fetchProperties()
   }, [])
 
-  // Debug: Log when showGenerateModal changes
   useEffect(() => {
-    console.log('showGenerateModal changed to:', showGenerateModal)
+    // intentionally no debug logging
   }, [showGenerateModal])
 
   // Handle scrolling to and highlighting newly created/shown invoice
@@ -141,244 +151,15 @@ export default function PaymentsPage() {
     }
   }, [highlightedInvoiceId])
 
-  // Generate expected invoices for periods that don't have invoices yet
-  const generateExpectedInvoices = (lease: Lease, fromDate: string, toDate: string, existingInvoices: Invoice[]): Invoice[] => {
-    const expected: Invoice[] = []
-    const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
-    const rentDueDay = lease.rent_due_day || 1
-    const rentAmount = lease.rent || 0
-    
-    // Pre-build lookup structures for O(1) checks instead of O(n) loops
-    // Set of normalized due dates for quick lookup
-    const existingDueDates = new Set<string>()
-    // Array of period ranges for overlap checking (only for real invoices)
-    const existingPeriodRanges: Array<{ start: Date; end: Date }> = []
-    
-    // Build lookup structures once
-    for (const inv of existingInvoices) {
-      // Skip expected invoices (virtual invoices)
-      if (inv.id?.startsWith('expected-')) {
-        continue
-      }
-      
-      // Normalize and add due_date to set
-      const invDueDate = (inv.due_date?.split('T')[0] || inv.due_date) || ''
-      if (invDueDate) {
-        existingDueDates.add(invDueDate)
-      }
-      
-      // Add period range for overlap checking
-      const invPeriodStart = (inv.period_start?.split('T')[0] || inv.period_start) || ''
-      const invPeriodEnd = (inv.period_end?.split('T')[0] || inv.period_end) || ''
-      if (invPeriodStart && invPeriodEnd) {
-        existingPeriodRanges.push({
-          start: new Date(invPeriodStart),
-          end: new Date(invPeriodEnd)
-        })
-      }
-    }
-    
-    // Optimized function to check if a period overlaps with any existing invoice
-    const hasInvoiceForPeriod = (periodStart: string, periodEnd: string, dueDate: string, cadenceType: string): boolean => {
-      const dueDateNormalized = dueDate.split('T')[0]
-      
-      // Quick check: exact due_date match (most common case, and sufficient for weekly/biweekly)
-      if (existingDueDates.has(dueDateNormalized)) {
-        return true
-      }
-      
-      // For weekly and biweekly, due_date match is sufficient - no need for period overlap check
-      // Period overlap check is only needed for monthly invoices where due_date might differ slightly
-      if (cadenceType === 'weekly' || cadenceType === 'biweekly') {
-        return false // If due_date doesn't match, no invoice exists
-      }
-      
-      // For monthly: Check period overlap only if due_date doesn't match
-      const periodStartDate = new Date(periodStart)
-      const periodEndDate = new Date(periodEnd)
-      
-      // Check if any existing period overlaps: start1 <= end2 && start2 <= end1
-      for (const range of existingPeriodRanges) {
-        if (periodStartDate <= range.end && range.start <= periodEndDate) {
-          return true
-        }
-      }
-      
-      return false
-    }
-    
-    if (cadence === 'weekly') {
-      // Generate weekly invoices: every 7 days from lease start
-      // Limit to last 6 months to prevent performance issues with very old leases
-      const start = new Date(fromDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(toDate)
-      end.setHours(0, 0, 0, 0)
-      
-      // Limit start date to 6 months before today to prevent excessive iterations
-      const sixMonthsAgo = new Date(end)
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-      const effectiveStart = start > sixMonthsAgo ? start : sixMonthsAgo
-      
-      const current = new Date(effectiveStart)
-      
-      while (current <= end) {
-        const dueDate = current.toISOString().split('T')[0]
-        
-        // Only create expected invoice if:
-        // 1. The due date is on or after lease start
-        // 2. The due date is on or before today
-        // 3. There's no existing invoice for this period
-        if (dueDate >= fromDate && dueDate <= toDate) {
-          // Calculate period: 7 days (period_start to period_start + 6 days)
-          const periodStart = dueDate
-          const periodEndDate = new Date(current)
-          periodEndDate.setDate(periodEndDate.getDate() + 6)
-          const periodEnd = periodEndDate.toISOString().split('T')[0]
-          
-          // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'weekly')) {
-            current.setDate(current.getDate() + 7) // Move to next week
-            continue // Skip - real invoice exists for this period
-          }
-          
-          expected.push({
-            id: `expected-${dueDate}`,
-            invoice_no: `EXPECTED-${dueDate}`,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            lease_id: lease.id,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN',
-            paid_in_full_at: null
-          } as Invoice)
-        }
-        
-        // Move to next week (7 days later)
-        current.setDate(current.getDate() + 7)
-        
-        // Stop if we've exceeded today's date
-        if (current > end) {
-          break
-        }
-      }
-    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      // Generate biweekly invoices: every 14 days from lease start
-      // Limit to last 6 months to prevent performance issues with very old leases
-      const start = new Date(fromDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(toDate)
-      end.setHours(0, 0, 0, 0)
-      
-      // Limit start date to 6 months before today to prevent excessive iterations
-      const sixMonthsAgo = new Date(end)
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-      const effectiveStart = start > sixMonthsAgo ? start : sixMonthsAgo
-      
-      const current = new Date(effectiveStart)
-      
-      while (current <= end) {
-        const dueDate = current.toISOString().split('T')[0]
-        
-        if (dueDate >= fromDate && dueDate <= toDate) {
-          // Calculate period: 14 days (period_start to period_start + 13 days)
-          const periodStart = dueDate
-          const periodEndDate = new Date(current)
-          periodEndDate.setDate(periodEndDate.getDate() + 13)
-          const periodEnd = periodEndDate.toISOString().split('T')[0]
-          
-          // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'weekly')) {
-            current.setDate(current.getDate() + 7) // Move to next week
-            continue // Skip - real invoice exists for this period
-          }
-          
-          expected.push({
-            id: `expected-${dueDate}`,
-            invoice_no: `EXPECTED-${dueDate}`,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            lease_id: lease.id,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN',
-            paid_in_full_at: null
-          } as Invoice)
-        }
-        
-        // Move to next biweekly period (14 days later)
-        current.setDate(current.getDate() + 14)
-        
-        // Stop if we've exceeded today's date
-        if (current > end) {
-          break
-        }
-      }
-    } else if (cadence === 'monthly') {
-      // Generate monthly invoices: each month from lease start to today
-      const start = new Date(fromDate)
-      const end = new Date(toDate)
-      const current = new Date(start.getFullYear(), start.getMonth(), 1)
-      
-      while (current <= end) {
-        // Calculate due date for this month (rent_due_day of the month)
-        const year = current.getFullYear()
-        const month = current.getMonth()
-        const daysInMonth = new Date(year, month + 1, 0).getDate()
-        const dueDay = Math.min(rentDueDay, daysInMonth)
-        const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
-        
-        // Only create expected invoice if:
-        // 1. The due date is on or after lease start
-        // 2. The due date is on or before today
-        // 3. There's no existing invoice for this period
-        if (dueDate >= fromDate && dueDate <= toDate) {
-          // Calculate period start and end (first and last day of the month)
-          const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
-          const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
-          
-          // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'monthly')) {
-            // Move to next month
-            current.setMonth(current.getMonth() + 1)
-            continue // Skip - real invoice exists for this period
-          }
-          
-          expected.push({
-            id: `expected-${dueDate}`,
-            invoice_no: `EXPECTED-${dueDate}`,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            lease_id: lease.id,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN',
-            paid_in_full_at: null
-          } as Invoice)
-        }
-        
-        // Move to next month
-        current.setMonth(current.getMonth() + 1)
-      }
-    }
-    
-    return expected
+  // Client-side virtual expected invoices removed — missing invoices are
+  // preview-only via /api/invoices/missing-preview until explicitly approved.
+  const generateExpectedInvoices = (
+    _lease: Lease,
+    _fromDate: string,
+    _toDate: string,
+    _existingInvoices: Invoice[],
+  ): Invoice[] => {
+    return []
   }
 
   const handlePrintNotice = () => {
@@ -433,278 +214,94 @@ return'<div class="s">'+l+'</div>';
   const fetchLeases = async () => {
     try {
       setLoading(true)
-      
-      // Fetch all active leases with related data
-      const response = await fetch('/api/leases')
-      
+
+      const response = await fetch(
+        '/api/portfolio/collections-summary?pageSize=200&sort=totalOwed_desc',
+        { credentials: 'include', cache: 'no-store' },
+      )
+
       if (!response.ok) {
         console.error('API Error:', response.status, response.statusText)
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({}))
         console.error('Error details:', errorData)
         setLeases([])
         return
       }
-      
+
       const data = await response.json()
-      console.log('Leases API response:', data)
-      
-      if (!Array.isArray(data)) {
-        console.error('No leases data received, got:', typeof data, data)
-        setLeases([])
-        return
-      }
+      const rows = Array.isArray(data?.rows) ? data.rows : []
 
-      // Get invoices for all leases
-      const today = new Date().toISOString().split('T')[0]
-      
-      const leasesWithData: LeaseRow[] = await Promise.all(
-        data
-          .filter((lease: any) => lease.status === 'occupied')
-          .map(async (leaseData: any) => {
-            // Fetch ALL invoices for this lease (no date filter to show history)
-            const invoicesResponse = await fetch(
-              `/api/invoices?leaseId=${leaseData.id}&to=${today}`
-            )
-            const invoicesData = await invoicesResponse.json()
-            const invoices = Array.isArray(invoicesData) ? invoicesData : []
-            
-            // Filter invoices within lease start date range (matching late tenants logic)
-            const leaseStartDate = leaseData.lease_start_date
-            const validInvoices = invoices.filter((invoice: Invoice) => 
-              !leaseStartDate || invoice.due_date >= leaseStartDate
-            )
-            
-            // Automatically generate missing invoices up to 3 months ahead
-            // This ensures invoices always exist without needing virtual invoices
-            try {
-              const generateResponse = await fetch('/api/invoices/generate-missing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ leaseId: leaseData.id })
-              })
-              
-              if (generateResponse.ok) {
-                const generateData = await generateResponse.json()
-                // If invoices were created, refetch to get updated list
-                if (generateData.created > 0) {
-                  const refreshResponse = await fetch(`/api/invoices?leaseId=${leaseData.id}&to=${today}`)
-                  if (refreshResponse.ok) {
-                    const refreshData = await refreshResponse.json()
-                    const refreshedInvoices = Array.isArray(refreshData) ? refreshData : []
-                    // Filter by lease_start_date (matching late tenants logic)
-                    const refreshedValidInvoices = refreshedInvoices.filter((invoice: Invoice) => 
-                      !leaseStartDate || invoice.due_date >= leaseStartDate
-                    )
-                    
-                    // Fetch payments for this lease to recalculate balance_due (matching late tenants API logic)
-                    const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseData.id}`)
-                    const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
-                    const payments = Array.isArray(paymentsData) ? paymentsData : []
-                    
-                    // Group payments by invoice_id to calculate actual paid amounts
-                    const paymentsByInvoice = new Map<string, any[]>()
-                    payments.forEach((payment: any) => {
-                      if (payment.invoice_id) {
-                        if (!paymentsByInvoice.has(payment.invoice_id)) {
-                          paymentsByInvoice.set(payment.invoice_id, [])
-                        }
-                        paymentsByInvoice.get(payment.invoice_id)!.push(payment)
-                      }
-                    })
-                    
-                    // Recalculate balance_due using actual payment totals (EXACT same as late tenants API)
-                    const invoicesWithRecalculatedBalance = refreshedValidInvoices.map((invoice: Invoice) => {
-                      const linkedPayments = paymentsByInvoice.get(invoice.id) || []
-                      const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
-                        sum + parseFloat(payment.amount || 0), 0
-                      )
-                      const amountTotal = parseFloat(invoice.amount_total as any || 0)
-                      const recalculatedBalanceDue = amountTotal - actualPaid
-                      return {
-                        ...invoice,
-                        balance_due: recalculatedBalanceDue
-                      }
-                    })
-                    
-                    // Filter unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
-                    // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants API logic)
-                    const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-                      inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-                    )
-                    
-                    // Calculate total owed from unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
-                    const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
-                      sum + parseFloat(inv.balance_due as any || 0), 0
-                    )
-                    
-                    const totalUnpaidCount = unpaidInvoices.length
-
-                    // Calculate last paid date from payments linked to invoices (EXACT same as invoice modal)
-                    let lastPaidDate: string | null = null
-                    if (payments.length > 0 && refreshedValidInvoices.length > 0) {
-                      // Get set of invoice IDs (same invoices used in invoice modal)
-                      const invoiceIds = new Set(refreshedValidInvoices.map((inv: Invoice) => inv.id))
-                      
-                      // Filter to only payments linked to these invoices (EXACT same as invoice modal: p.invoice_id === invoice.id)
-                      const linkedPayments = payments.filter((p: any) => 
-                        p.invoice_id && 
-                        typeof p.invoice_id === 'string' && 
-                        !p.invoice_id.startsWith('expected-') &&
-                        invoiceIds.has(p.invoice_id)
-                      )
-                      
-                      if (linkedPayments.length > 0) {
-                        // Filter out payments with invalid dates and sort by date descending (most recent first)
-                        const validPayments = linkedPayments.filter((p: any) => {
-                          if (!p.payment_date) return false
-                          const date = new Date(p.payment_date)
-                          return !isNaN(date.getTime())
-                        })
-                        
-                        if (validPayments.length > 0) {
-                          // Sort payments by date descending (most recent first)
-                          const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                            const dateA = new Date(a.payment_date).getTime()
-                            const dateB = new Date(b.payment_date).getTime()
-                            return dateB - dateA // Sort descending (most recent first)
-                          })
-                          // Get the most recent payment date (first in sorted array)
-                          lastPaidDate = sortedPayments[0]?.payment_date || null
-                        }
-                      }
-                    }
-
-                    return {
-                      lease: leaseData,
-                      property: leaseData.RENT_properties || {},
-                      tenant: leaseData.RENT_tenants || {},
-                      unpaidInvoicesCount: totalUnpaidCount,
-                      totalOwed,
-                      lastPaidDate
-                    }
-                  }
-                }
-              }
-            } catch (error) {
-              console.error('Error generating missing invoices in fetchLeases:', error)
-              // Continue with existing invoices if generation fails
-            }
-            
-            // Fetch payments for this lease to recalculate balance_due (matching late tenants API logic)
-            const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseData.id}`)
-            const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
-            const payments = Array.isArray(paymentsData) ? paymentsData : []
-            
-            // Calculate last paid date from payments linked to invoices (EXACT same as invoice modal)
-            // The invoice modal: fetches invoices, then for each invoice gets payments where p.invoice_id === invoice.id
-            // We need to do the same: use invoices we fetched, filter payments to only those linked to those invoices
-            let lastPaidDate: string | null = null
-            if (payments.length > 0 && validInvoices.length > 0) {
-              // Get set of invoice IDs (same invoices used in invoice modal)
-              const invoiceIds = new Set(validInvoices.map((inv: Invoice) => inv.id))
-              
-              // Filter to only payments linked to these invoices (EXACT same as invoice modal: p.invoice_id === invoice.id)
-              const linkedPayments = payments.filter((p: any) => 
-                p.invoice_id && 
-                typeof p.invoice_id === 'string' && 
-                !p.invoice_id.startsWith('expected-') &&
-                invoiceIds.has(p.invoice_id)
-              )
-              
-              if (linkedPayments.length > 0) {
-                // Filter out payments with invalid dates and sort by date descending (most recent first)
-                const validPayments = linkedPayments.filter((p: any) => {
-                  if (!p.payment_date) return false
-                  const date = new Date(p.payment_date)
-                  return !isNaN(date.getTime())
-                })
-                
-                if (validPayments.length > 0) {
-                  // Sort payments by date descending (most recent first)
-                  const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                    const dateA = new Date(a.payment_date).getTime()
-                    const dateB = new Date(b.payment_date).getTime()
-                    return dateB - dateA // Sort descending (most recent first)
-                  })
-                  
-                  // Get the most recent payment date (first in sorted array)
-                  lastPaidDate = sortedPayments[0]?.payment_date || null
-                }
-              }
-            }
-            
-            // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)
-            const paymentsByInvoice = new Map<string, any[]>()
-            payments.forEach((payment: any) => {
-              if (payment.invoice_id) {
-                if (!paymentsByInvoice.has(payment.invoice_id)) {
-                  paymentsByInvoice.set(payment.invoice_id, [])
-                }
-                paymentsByInvoice.get(payment.invoice_id)!.push(payment)
-              }
-            })
-            
-            // Recalculate balance_due using actual payment totals (EXACT same as late tenants API)
-            const invoicesWithRecalculatedBalance = validInvoices.map((invoice: Invoice) => {
-              // Get actual payments linked to this invoice
-              const linkedPayments = paymentsByInvoice.get(invoice.id) || []
-              const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
-                sum + parseFloat(payment.amount || 0), 0
-              )
-              
-              // Recalculate balance_due using actual paid amount (matching late tenants API logic)
-              const amountTotal = parseFloat(invoice.amount_total as any || 0)
-              const recalculatedBalanceDue = amountTotal - actualPaid
-              
-              return {
-                ...invoice,
-                balance_due: recalculatedBalanceDue // Use recalculated balance
-              }
-            })
-            
-            // Filter unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
-            // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants API logic)
-            const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-              inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-            )
-            
-            // Calculate total owed from unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
-            const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
-              sum + parseFloat(inv.balance_due as any || 0), 0
-            )
-            
-            const totalUnpaidCount = unpaidInvoices.length
-
-            // Debug logging to compare with late tenants API
-            if (totalOwed > 0 && (leaseData.RENT_properties?.address?.toLowerCase().includes('5667') || leaseData.RENT_properties?.address?.toLowerCase().includes('main'))) {
-              console.log(`Payments Page - Lease ${leaseData.id} (${leaseData.RENT_properties?.address}): totalOwed=${totalOwed}, unpaidCount=${totalUnpaidCount}, validInvoices=${validInvoices.length}, invoicesWithRecalc=${invoicesWithRecalculatedBalance.length}`)
-              console.log(`Payments Page - Unpaid invoices:`, unpaidInvoices.map(inv => ({
-                id: inv.id,
-                due_date: inv.due_date,
-                amount_total: inv.amount_total,
-                balance_due: inv.balance_due,
-                status: inv.status
-              })))
-              console.log(`Payments Page - Invoice IDs being counted:`, unpaidInvoices.map(inv => inv.id).join(', '))
-              console.log(`Payments Page - ALL invoices fetched (before filtering):`, invoices.length)
-            }
-
-            return {
-              lease: leaseData,
-              property: leaseData.RENT_properties || {},
-              tenant: leaseData.RENT_tenants || {},
-              unpaidInvoicesCount: totalUnpaidCount,
-              totalOwed,
-              lastPaidDate
-            }
-          })
-      )
+      // Map ledger collections rows into existing Payments LeaseRow shape.
+      // totalOwed / lastPaidDate come from portfolio-ledger (Payments baseline).
+      const leasesWithData: LeaseRow[] = rows.map((row: any) => ({
+        lease: row.lease || {
+          id: row.leaseId,
+          status: row.leaseStatus,
+          rent: row.currentRent,
+          rent_cadence: row.cadence,
+          property_id: row.propertyId,
+          tenant_id: row.tenantId,
+          lease_start_date: row.leaseStartDate,
+        },
+        property: row.property || {
+          id: row.propertyId,
+          name: row.propertyName,
+          address: row.propertyAddress || row.propertyName,
+        },
+        tenant: row.tenant || {
+          id: row.tenantId,
+          full_name: row.tenantName,
+        },
+        unpaidInvoicesCount: row.unpaidInvoicesCount || 0,
+        totalOwed: Number(row.totalOwed) || 0,
+        lastPaidDate: row.lastPaidDate || null,
+      }))
 
       setLeases(leasesWithData)
+
+      if (typeof window !== 'undefined') {
+        const focusLease = new URLSearchParams(window.location.search).get(
+          'focusLease',
+        )
+        if (focusLease) {
+          const match = leasesWithData.find((r) => r.lease.id === focusLease)
+          if (match) {
+            // Defer so state is committed before opening the standard invoice/payment UI
+            setTimeout(() => {
+              void handleViewInvoices(match)
+            }, 0)
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching leases:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+
+  const reviewMissingInvoices = async () => {
+    if (!selectedLease) return
+    setLoadingMissingPreview(true)
+    setMissingPreviewError(null)
+    setMissingPreviewRows([])
+    setShowMissingPreviewModal(true)
+    try {
+      const response = await fetch(
+        `/api/invoices/missing-preview?leaseId=${selectedLease.lease.id}`,
+        { method: 'GET', cache: 'no-store' }
+      )
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to load missing-invoice preview')
+      }
+      const data = await response.json()
+      setMissingPreviewRows(Array.isArray(data.rows) ? data.rows : [])
+    } catch (error) {
+      setMissingPreviewError(error instanceof Error ? error.message : 'Preview failed')
+    } finally {
+      setLoadingMissingPreview(false)
     }
   }
 
@@ -724,128 +321,25 @@ return'<div class="s">'+l+'</div>';
       
       // Fetch all invoices for this lease (no from date filter to include old invoices)
       const url = `/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`
-      console.log('Fetching invoices from:', url)
       
       const response = await fetch(url)
       if (!response.ok) {
         console.error('Error fetching invoices:', response.status, response.statusText)
         const errorData = await response.json().catch(() => ({}))
-        console.error('Error details:', errorData)
+        console.error('Request failed')
         setInvoices([])
         setLoadingInvoices(false)
         return
       }
       
       const invoicesData = await response.json()
-      console.log('Invoices response:', invoicesData)
       
       const existingInvoices = Array.isArray(invoicesData) ? invoicesData : []
       if (!Array.isArray(invoicesData)) {
-        console.error('Invoices API returned non-array:', typeof invoicesData, invoicesData)
+        console.error('Invoices API returned non-array')
       }
-      console.log('Existing invoices from API:', existingInvoices.length, existingInvoices)
-      
-      // Automatically generate missing invoices up to 3 months ahead
-      // This ensures invoices always exist without needing virtual invoices
-      try {
-        const generateResponse = await fetch('/api/invoices/generate-missing', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ leaseId: leaseRow.lease.id })
-        })
-        
-        if (generateResponse.ok) {
-          const generateData = await generateResponse.json()
-          console.log('Generated missing invoices:', generateData)
-          
-          // Check if past invoices require approval
-          if (generateData.requiresApproval && generateData.pastInvoices && generateData.pastInvoices.length > 0) {
-            setPastInvoicesToApprove(generateData.pastInvoices)
-            setShowPastInvoiceApprovalModal(true)
-            setApprovedPastInvoices(new Set())
-            // Continue loading invoices - we'll refresh after approval
-          }
-          
-          // If future invoices were created, refetch to get the updated list
-          if (generateData.futureCreated > 0 || generateData.created > 0) {
-            const refreshResponse = await fetch(url)
-            if (refreshResponse.ok) {
-              const refreshData = await refreshResponse.json()
-              const refreshedInvoices = Array.isArray(refreshData) ? refreshData : []
-              console.log('Refreshed invoices after generation:', refreshedInvoices.length)
-              // Use refreshed invoices
-              const invoices = refreshedInvoices.sort((a, b) => {
-                const dateA = new Date(a.due_date).getTime()
-                const dateB = new Date(b.due_date).getTime()
-                return dateB - dateA // Newest first
-              })
-              
-              // Continue with refreshed invoices - set invoices and fetch payments
-              const allInvoices = invoices
-              
-              // Fetch actual payment totals and paid dates for all invoices in parallel
-              const paymentTotalsMap = new Map<string, number>()
-              const paidDatesMap = new Map<string, string | null>()
-              
-              // Pre-populate maps with invoice amount_paid as fallback
-              allInvoices.forEach((invoice: Invoice) => {
-                paymentTotalsMap.set(invoice.id, parseFloat(invoice.amount_paid as any) || 0)
-                paidDatesMap.set(invoice.id, null)
-              })
-              
-              await Promise.all(
-                allInvoices.map(async (invoice: Invoice) => {
-                  try {
-                    const paymentsResponse = await fetch(`/api/payments?invoiceId=${invoice.id}`)
-                    if (paymentsResponse.ok) {
-                      const paymentsData = await paymentsResponse.json()
-                      if (Array.isArray(paymentsData) && paymentsData.length > 0) {
-                        const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
-                        const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
-                        paymentTotalsMap.set(invoice.id, actualPaid)
-                        
-                        // Get most recent payment date
-                        if (linkedPayments.length > 0) {
-                          const validPayments = linkedPayments.filter((p: any) => {
-                            if (!p.payment_date) return false
-                            const date = new Date(p.payment_date)
-                            return !isNaN(date.getTime())
-                          })
-                          if (validPayments.length > 0) {
-                            const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                              const dateA = new Date(a.payment_date).getTime()
-                              const dateB = new Date(b.payment_date).getTime()
-                              return dateB - dateA
-                            })
-                            paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
-                          }
-                        }
-                      }
-                    }
-                  } catch (error) {
-                    console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
-                  }
-                })
-              )
-              
-              setInvoicePaymentTotals(paymentTotalsMap)
-              setInvoicePaidDates(paidDatesMap)
-              setInvoices(allInvoices)
-              setLoadingInvoices(false)
-              // Don't return if approval is needed - we'll refresh after approval
-              if (!generateData.requiresApproval) {
-                return
-              }
-            }
-          }
-        } else {
-          console.warn('Failed to generate missing invoices:', await generateResponse.json().catch(() => ({})))
-        }
-      } catch (error) {
-        console.error('Error generating missing invoices:', error)
-        // Continue with existing invoices if generation fails
-      }
-      
+      // Read-only: never auto-POST generate-missing when opening invoice history.
+
       // Use existing invoices (no virtual invoices - all are real database records)
       const invoices = existingInvoices.sort((a, b) => {
         const dateA = new Date(a.due_date).getTime()
@@ -890,23 +384,18 @@ return'<div class="s">'+l+'</div>';
                     paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
                   }
                 }
-                
-                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): Linked payments = ${linkedPayments.length}, Actual paid = $${actualPaid.toLocaleString()}, Invoice amount_paid = $${invoice.amount_paid}`)
-              } else {
-                console.log(`Invoice ${invoice.id} (${invoice.invoice_no}): No payments found, using invoice amount_paid = $${invoice.amount_paid}`)
               }
             } else {
-              console.warn(`Invoice ${invoice.id} (${invoice.invoice_no}): Payment API error ${paymentsResponse.status}, using invoice amount_paid`)
+              console.warn('Payment API error while loading invoice payments; using invoice amount_paid')
             }
           } catch (error) {
-            console.error(`Error fetching payments for invoice ${invoice.id}:`, error)
+            console.error('Error fetching payments for invoice')
           }
         })
       )
       
       setInvoicePaidDates(paidDatesMap)
       
-      console.log('Payment totals map:', Array.from(paymentTotalsMap.entries()))
       
       // Check for invoices with payments that aren't in the current list (e.g., future invoices with payments)
       // Fetch all payments for this lease to find any invoices we might have missed
@@ -928,7 +417,6 @@ return'<div class="s">'+l+'</div>';
             const missingInvoiceIds = Array.from(invoiceIdsFromPayments).filter(id => !currentInvoiceIds.has(id))
             
             if (missingInvoiceIds.length > 0) {
-              console.log('Found invoices with payments not in current list:', missingInvoiceIds)
               // Fetch these missing invoices
               const missingInvoicesPromises = missingInvoiceIds.map(async (invoiceId: string) => {
                 try {
@@ -950,7 +438,6 @@ return'<div class="s">'+l+'</div>';
               const missingInvoices = (await Promise.all(missingInvoicesPromises)).filter((inv): inv is Invoice => inv !== null)
               
               if (missingInvoices.length > 0) {
-                console.log('Adding missing invoices with payments:', missingInvoices.length)
                 // Add missing invoices to the list
                 const allInvoicesWithMissing = [...invoices, ...missingInvoices].sort((a, b) => {
                   const dateA = new Date(a.due_date).getTime()
@@ -1017,7 +504,6 @@ return'<div class="s">'+l+'</div>';
         // Continue with normal flow if this fails
       }
       
-      console.log('Final invoices to display:', invoices.length, invoices)
       setInvoicePaymentTotals(paymentTotalsMap)
       setInvoicePaidDates(paidDatesMap)
       setInvoices(invoices)
@@ -1039,13 +525,6 @@ return'<div class="s">'+l+'</div>';
   }
 
   const handleEditPayments = async (invoice: Invoice) => {
-    console.log('handleEditPayments called with invoice:', {
-      id: invoice.id,
-      invoice_no: invoice.invoice_no,
-      due_date: invoice.due_date,
-      lease_id: invoice.lease_id,
-      amount_paid: invoice.amount_paid
-    })
     
     setEditingInvoice(invoice)
     setShowEditPaymentsModal(true)
@@ -1055,7 +534,6 @@ return'<div class="s">'+l+'</div>';
     try {
       // Fetch all payments for this invoice
       const url = `/api/payments?invoiceId=${invoice.id}`
-      console.log('Fetching payments from:', url)
       
       const response = await fetch(url)
       
@@ -1067,28 +545,8 @@ return'<div class="s">'+l+'</div>';
       
       const data = await response.json()
       
-      console.log('Payments API response:', {
-        invoiceId: invoice.id,
-        invoiceNo: invoice.invoice_no,
-        dueDate: invoice.due_date,
-        periodStart: invoice.period_start,
-        periodEnd: invoice.period_end,
-        leaseId: invoice.lease_id,
-        responseType: typeof data,
-        isArray: Array.isArray(data),
-        paymentsCount: Array.isArray(data) ? data.length : 0,
-        rawData: data,
-        paymentDetails: Array.isArray(data) ? data.map(p => ({
-          id: p.id,
-          amount: p.amount,
-          date: p.payment_date,
-          invoice_id: p.invoice_id,
-          lease_id: p.lease_id
-        })) : []
-      })
       
       const paymentsArray = Array.isArray(data) ? data : []
-      console.log('Setting invoicePayments to:', paymentsArray.length, 'payments')
       
       if (paymentsArray.length === 0) {
         console.warn('No payments found for invoice:', invoice.id, 'This might indicate a query issue.')
@@ -1140,7 +598,6 @@ return'<div class="s">'+l+'</div>';
         notes: paymentNotes || ''
       }
 
-      console.log('Sending payment update:', { id: editingPayment.id, updateData })
 
       const response = await fetch(`/api/payments?id=${editingPayment.id}`, {
         method: 'PUT',
@@ -1172,7 +629,6 @@ return'<div class="s">'+l+'</div>';
       }
 
       const result = await response.json()
-      console.log('Payment updated:', result)
 
       // Update invoice balance
       if (editingPayment.invoice_id) {
@@ -1208,14 +664,6 @@ return'<div class="s">'+l+'</div>';
       const newTotal = rentAmount + newLateFee
       const newBalance = newTotal - newAmountPaid
 
-      console.log('Updating invoice:', {
-        invoiceId: selectedInvoice.id,
-        rentAmount,
-        newLateFee,
-        newTotal,
-        newAmountPaid,
-        newBalance
-      })
 
       const response = await fetch(`/api/invoices?id=${selectedInvoice.id}`, {
         method: 'PUT',
@@ -1236,7 +684,6 @@ return'<div class="s">'+l+'</div>';
         throw new Error('Failed to update invoice')
       }
 
-      console.log('Invoice updated successfully')
 
       setShowEditInvoiceModal(false)
       if (selectedLease) {
@@ -1257,33 +704,45 @@ return'<div class="s">'+l+'</div>';
       
       const currentLateFee = parseFloat(invoice.amount_late as any || 0)
       
-      // Determine late fee amount based on lease cadence
-      let lateFeeAmount = 0
+      // Authoritative defaults: weekly $12 / biweekly $25 / monthly $45;
+      // positive lease.late_fee_amount overrides.
+      let lateFeeAmount = 45
       if (selectedLease) {
-        const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
-        if (cadence.includes('monthly')) {
-          lateFeeAmount = 45
-        } else if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) {
-          lateFeeAmount = 25
-        } else if (cadence.includes('weekly')) {
-          lateFeeAmount = 15
+        const override = Number(
+          (selectedLease.lease as { late_fee_amount?: number }).late_fee_amount,
+        )
+        if (Number.isFinite(override) && override > 0) {
+          lateFeeAmount = override
         } else {
-          lateFeeAmount = 45 // Default to monthly rate
+          const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
+          if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) {
+            lateFeeAmount = 25
+          } else if (cadence.includes('weekly')) {
+            lateFeeAmount = 12
+          } else {
+            lateFeeAmount = 45
+          }
         }
-      } else {
-        lateFeeAmount = 45 // Default to monthly rate if no lease info
       }
       
       const newLateFee = currentLateFee > 0 ? 0 : lateFeeAmount
+      // When removing a fee manually, mark waived so auto-reconcile does not recreate it.
+      const payload: Record<string, unknown> = {
+        amount_late: newLateFee,
+      }
+      if (currentLateFee > 0 && newLateFee === 0) {
+        payload.late_fee_waived = true
+      }
+      if (newLateFee > 0) {
+        payload.late_fee_waived = false
+      }
       
       const response = await fetch(`/api/invoices?id=${invoice.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          amount_late: newLateFee
-        })
+        body: JSON.stringify(payload)
       })
 
       if (response.ok) {
@@ -1403,14 +862,6 @@ return'<div class="s">'+l+'</div>';
       const newTotal = rentAmount
       const newBalance = rentAmount - paidAmount
 
-      console.log('Waiving late fee:', { 
-        invoiceId: invoice.id, 
-        oldLateFee: invoice.amount_late,
-        rentAmount,
-        paidAmount,
-        newTotal,
-        newBalance
-      })
 
       // Update invoice to remove late fee
       const response = await fetch(`/api/invoices?id=${invoice.id}`, {
@@ -1432,7 +883,6 @@ return'<div class="s">'+l+'</div>';
       }
 
       const result = await response.json()
-      console.log('Late fee waived successfully:', result)
 
       // Refresh invoices
       if (selectedLease) {
@@ -1479,15 +929,6 @@ return'<div class="s">'+l+'</div>';
       const balanceDue = amountTotal - totalPaid
       const newStatus = balanceDue <= 0 ? 'PAID' : (totalPaid > 0 ? 'PARTIAL' : 'OPEN')
 
-      console.log('Updating invoice balance:', { 
-        invoiceId, 
-        amountTotal,
-        totalPaid, 
-        balanceDue,
-        newStatus,
-        linkedPaymentsCount: linkedPayments.length,
-        allPaymentsCount: Array.isArray(payments) ? payments.length : 0
-      })
       
       // Update invoice balance using query parameter
       const updateResponse = await fetch(`/api/invoices?id=${invoiceId}`, {
@@ -1508,7 +949,6 @@ return'<div class="s">'+l+'</div>';
       }
 
       const result = await updateResponse.json()
-      console.log('Invoice balance updated:', result)
     } catch (error) {
       console.error('Error updating invoice balance:', error)
       throw error
@@ -1527,11 +967,9 @@ return'<div class="s">'+l+'</div>';
         throw new Error('Failed to delete payment')
       }
 
-      console.log('Payment deleted successfully')
 
       // Update invoice balance if invoice ID is provided
       if (invoiceId) {
-        console.log('Updating invoice balance after delete...')
         await updateInvoiceBalance(invoiceId)
       }
 
@@ -1569,7 +1007,6 @@ return'<div class="s">'+l+'</div>';
 
       // If this is an expected invoice (doesn't exist in DB yet), create it first
       if (invoiceId && invoiceId.startsWith('expected-')) {
-        console.log('Creating invoice for expected invoice:', invoiceId)
         
         // Extract due_date from expected invoice ID (format: expected-YYYY-MM-DD)
         const dueDate = invoiceId.replace('expected-', '')
@@ -1606,19 +1043,8 @@ return'<div class="s">'+l+'</div>';
         
         const createdInvoice = await createInvoiceResponse.json()
         invoiceId = createdInvoice.id || createdInvoice.invoice?.id
-        console.log('Invoice created successfully:', invoiceId)
       }
 
-      console.log('Creating payment record:', {
-        invoiceId,
-        leaseId,
-        propertyId,
-        tenantId,
-        paymentAmount: paymentAmountNum,
-        paymentDate,
-        paymentType,
-        notes: paymentNotes
-      })
 
       // Create payment record via /api/payments POST
       // This will create a RENT_payments record and automatically allocate it via FIFO RPC
@@ -1644,7 +1070,6 @@ return'<div class="s">'+l+'</div>';
       }
 
       const result = await response.json()
-      console.log('Payment created successfully:', result)
 
       // Clear form fields
       setPaymentAmount('')
@@ -1885,7 +1310,6 @@ return'<div class="s">'+l+'</div>';
       
       // Don't include amount field - it might have constraints, use amount_owed instead
       
-      console.log('Sending misc income data:', JSON.stringify(expenseData, null, 2))
       
       const response = await fetch('/api/expenses', {
         method: 'POST',
@@ -2046,12 +1470,9 @@ return'<div class="s">'+l+'</div>';
               </div>
               <button
                 onClick={() => {
-                  console.log('Generate Forms button clicked - start')
                   try {
-                    console.log('Setting showGenerateModal to true')
                     setFormDate(new Date().toISOString().split('T')[0])
                     setShowGenerateModal(true)
-                    console.log('showGenerateModal set successfully')
                   } catch (error) {
                     console.error('Error in Generate Forms button handler:', error)
                   }
@@ -2240,7 +1661,29 @@ return'<div class="s">'+l+'</div>';
                         </span>
                       </td>
                       <td className="px-4 py-4 text-center">
-                        <div className="flex justify-center space-x-2">
+                        <div className="flex flex-col items-center gap-2">
+                          <TenantCommunicationActions
+                            phone={row.tenant?.phone}
+                            onText={() =>
+                              setCommTarget({
+                                tenantId: row.tenant?.id || row.lease.tenant_id,
+                                tenantName:
+                                  row.tenant?.full_name ||
+                                  `${row.tenant?.first_name || ''} ${row.tenant?.last_name || ''}`.trim() ||
+                                  'Tenant',
+                                phone: row.tenant?.phone,
+                                propertyId: row.property?.id || row.lease.property_id,
+                                propertyLabel:
+                                  row.property?.address || row.property?.name || null,
+                                leaseId: row.lease.id,
+                                leaseStatus: row.lease.status || null,
+                                templateContext: {
+                                  amount_due: `$${Number(row.totalOwed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                },
+                              })
+                            }
+                          />
+                          <div className="flex justify-center space-x-2">
                           <button
                             onClick={() => handleViewInvoices(row)}
                             className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
@@ -2261,6 +1704,7 @@ return'<div class="s">'+l+'</div>';
                               {generatingNotice === row.lease.id ? 'Generating...' : 'Generate Notice'}
                             </button>
                           )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -2285,6 +1729,16 @@ return'<div class="s">'+l+'</div>';
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => {
+                    void reviewMissingInvoices()
+                  }}
+                  className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium"
+                  title="Preview missing invoices without saving"
+                  type="button"
+                >
+                  Review Missing Invoices
+                </button>
+                <button
+                  onClick={() => {
                     if (!selectedLease) return
                     // Set default due date to today
                     setNewInvoiceDueDate(new Date().toISOString().split('T')[0])
@@ -2303,14 +1757,8 @@ return'<div class="s">'+l+'</div>';
                     // Show all invoices when Next Invoice button is clicked
                     setShowAllInvoices(true)
                     try {
-                      console.log('+ Next Invoice clicked. Current invoices:', invoices.length)
                       // Find the most recent invoice by due_date (invoices are sorted newest first)
                       const mostRecentInvoice = invoices.length > 0 ? invoices[0] : null
-                      console.log('Most recent invoice:', mostRecentInvoice ? {
-                        id: mostRecentInvoice.id,
-                        due_date: mostRecentInvoice.due_date,
-                        period_end: mostRecentInvoice.period_end
-                      } : 'none')
                       
                       if (!mostRecentInvoice) {
                         // If no invoices, calculate from lease start
@@ -2328,14 +1776,11 @@ return'<div class="s">'+l+'</div>';
                         const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
                         
                         // Check if invoice exists
-                        console.log('Checking for existing invoice with due_date:', nextDueDate, '(no existing invoices case)')
                         const checkResponse = await fetch(`/api/invoices?leaseId=${selectedLease.lease.id}&from=${nextDueDate}&to=${nextDueDate}`)
                         const existingInvoices = await checkResponse.json()
-                        console.log('Existing invoices check result:', existingInvoices)
                         
                         if (Array.isArray(existingInvoices) && existingInvoices.length > 0) {
                           // Invoice exists, refresh with extended date range to include this invoice
-                          console.log('Invoice already exists, refreshing list. Invoice ID:', existingInvoices[0].id, 'Due date:', nextDueDate)
                           // Extend the future date to include the next invoice
                           const extendedFutureDate = new Date(nextDueDate)
                           extendedFutureDate.setMonth(extendedFutureDate.getMonth() + 2) // Add 2 months to be safe
@@ -2343,7 +1788,6 @@ return'<div class="s">'+l+'</div>';
                           
                           const leaseStart = selectedLease.lease.lease_start_date
                           const extendedUrl = `/api/invoices?leaseId=${selectedLease.lease.id}&from=${leaseStart}&to=${extendedFutureDateStr}`
-                          console.log('Fetching invoices with extended range:', extendedUrl)
                           
                           const extendedResponse = await fetch(extendedUrl)
                           const extendedInvoicesData = await extendedResponse.json()
@@ -2415,7 +1859,6 @@ return'<div class="s">'+l+'</div>';
                           setHighlightedInvoiceId(existingInvoices[0].id)
                         } else {
                           // Create the invoice
-                          console.log('Invoice does not exist, creating new invoice for:', nextDueDate)
                           const invoiceData = {
                             lease_id: selectedLease.lease.id,
                             property_id: selectedLease.property.id,
@@ -2440,9 +1883,7 @@ return'<div class="s">'+l+'</div>';
                           
                           if (createResponse.ok) {
                             const createdInvoice = await createResponse.json()
-                            console.log('Created invoice response (no existing invoices):', createdInvoice)
                             const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
-                            console.log('New invoice ID:', newInvoiceId, 'Next due date:', nextDueDate)
                             if (newInvoiceId) {
                               // Refresh with extended date range to include the newly created invoice
                               const extendedFutureDate = new Date(nextDueDate)
@@ -2451,7 +1892,6 @@ return'<div class="s">'+l+'</div>';
                               
                               const leaseStart = selectedLease.lease.lease_start_date
                               const extendedUrl = `/api/invoices?leaseId=${selectedLease.lease.id}&from=${leaseStart}&to=${extendedFutureDateStr}`
-                              console.log('Fetching invoices with extended range after creation:', extendedUrl)
                               
                               const extendedResponse = await fetch(extendedUrl)
                               const extendedInvoicesData = await extendedResponse.json()
@@ -2524,14 +1964,11 @@ return'<div class="s">'+l+'</div>';
                         const nextPeriodEndStr = `${nextPeriodEnd.getFullYear()}-${String(nextPeriodEnd.getMonth() + 1).padStart(2, '0')}-${String(daysInNextMonth).padStart(2, '0')}`
                         
                         // Check if invoice exists
-                        console.log('Checking for existing invoice with due_date:', nextDueDate, 'Period:', nextPeriodStartStr, 'to', nextPeriodEndStr)
                         const checkResponse = await fetch(`/api/invoices?leaseId=${selectedLease.lease.id}&from=${nextDueDate}&to=${nextDueDate}`)
                         const existingInvoices = await checkResponse.json()
-                        console.log('Existing invoices check result:', existingInvoices)
                         
                         if (Array.isArray(existingInvoices) && existingInvoices.length > 0) {
                           // Invoice exists, refresh with extended date range to include this invoice
-                          console.log('Invoice already exists, refreshing list. Invoice ID:', existingInvoices[0].id, 'Due date:', nextDueDate)
                           // Extend the future date to include the next invoice
                           const extendedFutureDate = new Date(nextDueDate)
                           extendedFutureDate.setMonth(extendedFutureDate.getMonth() + 2) // Add 2 months to be safe
@@ -2539,7 +1976,6 @@ return'<div class="s">'+l+'</div>';
                           
                           const leaseStart = selectedLease.lease.lease_start_date
                           const extendedUrl = `/api/invoices?leaseId=${selectedLease.lease.id}&from=${leaseStart}&to=${extendedFutureDateStr}`
-                          console.log('Fetching invoices with extended range:', extendedUrl)
                           
                           const extendedResponse = await fetch(extendedUrl)
                           const extendedInvoicesData = await extendedResponse.json()
@@ -2611,7 +2047,6 @@ return'<div class="s">'+l+'</div>';
                           setHighlightedInvoiceId(existingInvoices[0].id)
                         } else {
                           // Create the invoice
-                          console.log('Invoice does not exist, creating new invoice for:', nextDueDate)
                           const invoiceData = {
                             lease_id: selectedLease.lease.id,
                             property_id: selectedLease.property.id,
@@ -2636,9 +2071,7 @@ return'<div class="s">'+l+'</div>';
                           
                           if (createResponse.ok) {
                             const createdInvoice = await createResponse.json()
-                            console.log('Created invoice response (with existing invoices):', createdInvoice)
                             const newInvoiceId = createdInvoice.id || createdInvoice.invoice?.id
-                            console.log('New invoice ID:', newInvoiceId, 'Next due date:', nextDueDate)
                             if (newInvoiceId) {
                               // Refresh with extended date range to include the newly created invoice
                               const extendedFutureDate = new Date(nextDueDate)
@@ -2647,7 +2080,6 @@ return'<div class="s">'+l+'</div>';
                               
                               const leaseStart = selectedLease.lease.lease_start_date
                               const extendedUrl = `/api/invoices?leaseId=${selectedLease.lease.id}&from=${leaseStart}&to=${extendedFutureDateStr}`
-                              console.log('Fetching invoices with extended range after creation:', extendedUrl)
                               
                               const extendedResponse = await fetch(extendedUrl)
                               const extendedInvoicesData = await extendedResponse.json()
@@ -2918,7 +2350,7 @@ return'<div class="s">'+l+'</div>';
                                         const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
                                         if (cadence.includes('monthly')) return 'Apply $45 late fee'
                                         if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) return 'Apply $25 late fee'
-                                        if (cadence.includes('weekly')) return 'Apply $15 late fee'
+                                        if (cadence.includes('weekly')) return 'Apply $12 late fee'
                                       }
                                       return 'Apply late fee'
                                     })()}
@@ -3841,6 +3273,66 @@ return'<div class="s">'+l+'</div>';
         </div>
       )}
 
+      {/* Missing Invoice Preview Modal (read-only; never saves) */}
+      {showMissingPreviewModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Review Missing Invoices</h2>
+                <p className="text-sm text-amber-700 font-medium">PREVIEW — NOT SAVED</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMissingPreviewModal(false)}
+                className="text-gray-500 hover:text-gray-800"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              {loadingMissingPreview && (
+                <p className="text-gray-600">Loading preview…</p>
+              )}
+              {missingPreviewError && (
+                <p className="text-red-600">{missingPreviewError}</p>
+              )}
+              {!loadingMissingPreview && !missingPreviewError && missingPreviewRows.length === 0 && (
+                <p className="text-gray-600">No missing invoices detected for this schedule.</p>
+              )}
+              {!loadingMissingPreview && missingPreviewRows.length > 0 && (
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Label</th>
+                      <th className="px-3 py-2 text-left">Due</th>
+                      <th className="px-3 py-2 text-left">Period</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2 text-left">Cadence</th>
+                      <th className="px-3 py-2 text-left">Class</th>
+                      <th className="px-3 py-2 text-left">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {missingPreviewRows.map((row) => (
+                      <tr key={`${row.dueDate}-${row.periodStart}`}>
+                        <td className="px-3 py-2 font-semibold text-amber-700">{row.label}</td>
+                        <td className="px-3 py-2">{row.dueDate}</td>
+                        <td className="px-3 py-2">{row.periodStart} → {row.periodEnd}</td>
+                        <td className="px-3 py-2 text-right">${Number(row.amount || 0).toLocaleString()}</td>
+                        <td className="px-3 py-2">{row.cadence}</td>
+                        <td className="px-3 py-2 uppercase">{row.periodClass}</td>
+                        <td className="px-3 py-2 text-gray-600">{row.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Invoice Modal */}
       {showAddInvoiceModal && selectedLease && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4295,6 +3787,12 @@ return'<div class="s">'+l+'</div>';
           </div>
         </div>
       )}
+
+      <TextTenantModal
+        open={Boolean(commTarget)}
+        target={commTarget}
+        onClose={() => setCommTarget(null)}
+      />
 
     </div>
     </>

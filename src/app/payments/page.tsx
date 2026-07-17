@@ -151,244 +151,15 @@ export default function PaymentsPage() {
     }
   }, [highlightedInvoiceId])
 
-  // Generate expected invoices for periods that don't have invoices yet
-  const generateExpectedInvoices = (lease: Lease, fromDate: string, toDate: string, existingInvoices: Invoice[]): Invoice[] => {
-    const expected: Invoice[] = []
-    const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
-    const rentDueDay = lease.rent_due_day || 1
-    const rentAmount = lease.rent || 0
-    
-    // Pre-build lookup structures for O(1) checks instead of O(n) loops
-    // Set of normalized due dates for quick lookup
-    const existingDueDates = new Set<string>()
-    // Array of period ranges for overlap checking (only for real invoices)
-    const existingPeriodRanges: Array<{ start: Date; end: Date }> = []
-    
-    // Build lookup structures once
-    for (const inv of existingInvoices) {
-      // Skip expected invoices (virtual invoices)
-      if (inv.id?.startsWith('expected-')) {
-        continue
-      }
-      
-      // Normalize and add due_date to set
-      const invDueDate = (inv.due_date?.split('T')[0] || inv.due_date) || ''
-      if (invDueDate) {
-        existingDueDates.add(invDueDate)
-      }
-      
-      // Add period range for overlap checking
-      const invPeriodStart = (inv.period_start?.split('T')[0] || inv.period_start) || ''
-      const invPeriodEnd = (inv.period_end?.split('T')[0] || inv.period_end) || ''
-      if (invPeriodStart && invPeriodEnd) {
-        existingPeriodRanges.push({
-          start: new Date(invPeriodStart),
-          end: new Date(invPeriodEnd)
-        })
-      }
-    }
-    
-    // Optimized function to check if a period overlaps with any existing invoice
-    const hasInvoiceForPeriod = (periodStart: string, periodEnd: string, dueDate: string, cadenceType: string): boolean => {
-      const dueDateNormalized = dueDate.split('T')[0]
-      
-      // Quick check: exact due_date match (most common case, and sufficient for weekly/biweekly)
-      if (existingDueDates.has(dueDateNormalized)) {
-        return true
-      }
-      
-      // For weekly and biweekly, due_date match is sufficient - no need for period overlap check
-      // Period overlap check is only needed for monthly invoices where due_date might differ slightly
-      if (cadenceType === 'weekly' || cadenceType === 'biweekly') {
-        return false // If due_date doesn't match, no invoice exists
-      }
-      
-      // For monthly: Check period overlap only if due_date doesn't match
-      const periodStartDate = new Date(periodStart)
-      const periodEndDate = new Date(periodEnd)
-      
-      // Check if any existing period overlaps: start1 <= end2 && start2 <= end1
-      for (const range of existingPeriodRanges) {
-        if (periodStartDate <= range.end && range.start <= periodEndDate) {
-          return true
-        }
-      }
-      
-      return false
-    }
-    
-    if (cadence === 'weekly') {
-      // Generate weekly invoices: every 7 days from lease start
-      // Limit to last 6 months to prevent performance issues with very old leases
-      const start = new Date(fromDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(toDate)
-      end.setHours(0, 0, 0, 0)
-      
-      // Limit start date to 6 months before today to prevent excessive iterations
-      const sixMonthsAgo = new Date(end)
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-      const effectiveStart = start > sixMonthsAgo ? start : sixMonthsAgo
-      
-      const current = new Date(effectiveStart)
-      
-      while (current <= end) {
-        const dueDate = current.toISOString().split('T')[0]
-        
-        // Only create expected invoice if:
-        // 1. The due date is on or after lease start
-        // 2. The due date is on or before today
-        // 3. There's no existing invoice for this period
-        if (dueDate >= fromDate && dueDate <= toDate) {
-          // Calculate period: 7 days (period_start to period_start + 6 days)
-          const periodStart = dueDate
-          const periodEndDate = new Date(current)
-          periodEndDate.setDate(periodEndDate.getDate() + 6)
-          const periodEnd = periodEndDate.toISOString().split('T')[0]
-          
-          // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'weekly')) {
-            current.setDate(current.getDate() + 7) // Move to next week
-            continue // Skip - real invoice exists for this period
-          }
-          
-          expected.push({
-            id: `expected-${dueDate}`,
-            invoice_no: `EXPECTED-${dueDate}`,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            lease_id: lease.id,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN',
-            paid_in_full_at: null
-          } as Invoice)
-        }
-        
-        // Move to next week (7 days later)
-        current.setDate(current.getDate() + 7)
-        
-        // Stop if we've exceeded today's date
-        if (current > end) {
-          break
-        }
-      }
-    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-      // Generate biweekly invoices: every 14 days from lease start
-      // Limit to last 6 months to prevent performance issues with very old leases
-      const start = new Date(fromDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(toDate)
-      end.setHours(0, 0, 0, 0)
-      
-      // Limit start date to 6 months before today to prevent excessive iterations
-      const sixMonthsAgo = new Date(end)
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-      const effectiveStart = start > sixMonthsAgo ? start : sixMonthsAgo
-      
-      const current = new Date(effectiveStart)
-      
-      while (current <= end) {
-        const dueDate = current.toISOString().split('T')[0]
-        
-        if (dueDate >= fromDate && dueDate <= toDate) {
-          // Calculate period: 14 days (period_start to period_start + 13 days)
-          const periodStart = dueDate
-          const periodEndDate = new Date(current)
-          periodEndDate.setDate(periodEndDate.getDate() + 13)
-          const periodEnd = periodEndDate.toISOString().split('T')[0]
-          
-          // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'weekly')) {
-            current.setDate(current.getDate() + 7) // Move to next week
-            continue // Skip - real invoice exists for this period
-          }
-          
-          expected.push({
-            id: `expected-${dueDate}`,
-            invoice_no: `EXPECTED-${dueDate}`,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            lease_id: lease.id,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN',
-            paid_in_full_at: null
-          } as Invoice)
-        }
-        
-        // Move to next biweekly period (14 days later)
-        current.setDate(current.getDate() + 14)
-        
-        // Stop if we've exceeded today's date
-        if (current > end) {
-          break
-        }
-      }
-    } else if (cadence === 'monthly') {
-      // Generate monthly invoices: each month from lease start to today
-      const start = new Date(fromDate)
-      const end = new Date(toDate)
-      const current = new Date(start.getFullYear(), start.getMonth(), 1)
-      
-      while (current <= end) {
-        // Calculate due date for this month (rent_due_day of the month)
-        const year = current.getFullYear()
-        const month = current.getMonth()
-        const daysInMonth = new Date(year, month + 1, 0).getDate()
-        const dueDay = Math.min(rentDueDay, daysInMonth)
-        const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
-        
-        // Only create expected invoice if:
-        // 1. The due date is on or after lease start
-        // 2. The due date is on or before today
-        // 3. There's no existing invoice for this period
-        if (dueDate >= fromDate && dueDate <= toDate) {
-          // Calculate period start and end (first and last day of the month)
-          const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
-          const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
-          
-          // Check if a real invoice already exists for this period
-          if (hasInvoiceForPeriod(periodStart, periodEnd, dueDate, 'monthly')) {
-            // Move to next month
-            current.setMonth(current.getMonth() + 1)
-            continue // Skip - real invoice exists for this period
-          }
-          
-          expected.push({
-            id: `expected-${dueDate}`,
-            invoice_no: `EXPECTED-${dueDate}`,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            lease_id: lease.id,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN',
-            paid_in_full_at: null
-          } as Invoice)
-        }
-        
-        // Move to next month
-        current.setMonth(current.getMonth() + 1)
-      }
-    }
-    
-    return expected
+  // Client-side virtual expected invoices removed — missing invoices are
+  // preview-only via /api/invoices/missing-preview until explicitly approved.
+  const generateExpectedInvoices = (
+    _lease: Lease,
+    _fromDate: string,
+    _toDate: string,
+    _existingInvoices: Invoice[],
+  ): Invoice[] => {
+    return []
   }
 
   const handlePrintNotice = () => {
@@ -444,158 +215,64 @@ return'<div class="s">'+l+'</div>';
     try {
       setLoading(true)
 
-      const businessDateRes = await fetch('/api/business-date', {
-        credentials: 'include',
-        cache: 'no-store',
-      })
-      const businessDateJson = businessDateRes.ok
-        ? await businessDateRes.json()
-        : null
-      const today =
-        (businessDateJson?.businessDate as string | undefined) ||
-        new Date().toISOString().split('T')[0]
-      
-      // Fetch all active leases with related data
-      const response = await fetch('/api/leases')
-      
+      const response = await fetch(
+        '/api/portfolio/collections-summary?pageSize=200&sort=totalOwed_desc',
+        { credentials: 'include', cache: 'no-store' },
+      )
+
       if (!response.ok) {
         console.error('API Error:', response.status, response.statusText)
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({}))
         console.error('Error details:', errorData)
         setLeases([])
         return
       }
-      
+
       const data = await response.json()
-      
-      if (!Array.isArray(data)) {
-        console.error('No leases data received, got:', typeof data, data)
-        setLeases([])
-        return
-      }
+      const rows = Array.isArray(data?.rows) ? data.rows : []
 
-      // Get invoices for all leases (business date already resolved above)
-      
-      const leasesWithData: LeaseRow[] = await Promise.all(
-        data
-          .filter((lease: any) => lease.status === 'occupied' || lease.status === 'eviction')
-          .map(async (leaseData: any) => {
-            // Fetch ALL invoices for this lease (no date filter to show history)
-            const invoicesResponse = await fetch(
-              `/api/invoices?leaseId=${leaseData.id}&to=${today}`
-            )
-            const invoicesData = await invoicesResponse.json()
-            const invoices = Array.isArray(invoicesData) ? invoicesData : []
-            
-            // Filter invoices within lease start date range (matching late tenants logic)
-            const leaseStartDate = leaseData.lease_start_date
-            const validInvoices = invoices.filter((invoice: Invoice) => 
-              !leaseStartDate || invoice.due_date >= leaseStartDate
-            )
-
-            // Read-only: never auto-POST generate-missing during Payments load.
-            
-            // Fetch payments for this lease to recalculate balance_due (matching late tenants API logic)
-            const paymentsResponse = await fetch(`/api/payments?leaseId=${leaseData.id}`)
-            const paymentsData = paymentsResponse.ok ? await paymentsResponse.json() : []
-            const payments = Array.isArray(paymentsData) ? paymentsData : []
-            
-            // Calculate last paid date from payments linked to invoices (EXACT same as invoice modal)
-            // The invoice modal: fetches invoices, then for each invoice gets payments where p.invoice_id === invoice.id
-            // We need to do the same: use invoices we fetched, filter payments to only those linked to those invoices
-            let lastPaidDate: string | null = null
-            if (payments.length > 0 && validInvoices.length > 0) {
-              // Get set of invoice IDs (same invoices used in invoice modal)
-              const invoiceIds = new Set(validInvoices.map((inv: Invoice) => inv.id))
-              
-              // Filter to only payments linked to these invoices (EXACT same as invoice modal: p.invoice_id === invoice.id)
-              const linkedPayments = payments.filter((p: any) => 
-                p.invoice_id && 
-                typeof p.invoice_id === 'string' && 
-                !p.invoice_id.startsWith('expected-') &&
-                invoiceIds.has(p.invoice_id)
-              )
-              
-              if (linkedPayments.length > 0) {
-                // Filter out future-dated and invalid dates; sort by date descending
-                const validPayments = linkedPayments.filter((p: any) => {
-                  if (!p.payment_date) return false
-                  const pd = String(p.payment_date).split('T')[0]
-                  if (pd > today) return false
-                  const date = new Date(p.payment_date)
-                  return !isNaN(date.getTime())
-                })
-                
-                if (validPayments.length > 0) {
-                  // Sort payments by date descending (most recent first)
-                  const sortedPayments = [...validPayments].sort((a: any, b: any) => {
-                    const dateA = new Date(a.payment_date).getTime()
-                    const dateB = new Date(b.payment_date).getTime()
-                    return dateB - dateA // Sort descending (most recent first)
-                  })
-                  
-                  // Get the most recent payment date (first in sorted array)
-                  lastPaidDate = sortedPayments[0]?.payment_date || null
-                }
-              }
-            }
-            
-            // Group payments by invoice_id — exclude future-dated completed payments
-            const paymentsByInvoice = new Map<string, any[]>()
-            payments.forEach((payment: any) => {
-              const paymentDate = String(payment.payment_date || '').split('T')[0]
-              if (paymentDate && paymentDate > today) return
-              if (payment.invoice_id) {
-                if (!paymentsByInvoice.has(payment.invoice_id)) {
-                  paymentsByInvoice.set(payment.invoice_id, [])
-                }
-                paymentsByInvoice.get(payment.invoice_id)!.push(payment)
-              }
-            })
-            
-            // Recalculate balance_due using actual payment totals (EXACT same as late tenants API)
-            const invoicesWithRecalculatedBalance = validInvoices.map((invoice: Invoice) => {
-              // Get actual payments linked to this invoice
-              const linkedPayments = paymentsByInvoice.get(invoice.id) || []
-              const actualPaid = linkedPayments.reduce((sum: number, payment: any) => 
-                sum + parseFloat(payment.amount || 0), 0
-              )
-              
-              // Recalculate balance_due using actual paid amount (matching late tenants API logic)
-              const amountTotal = parseFloat(invoice.amount_total as any || 0)
-              const recalculatedBalanceDue = amountTotal - actualPaid
-              
-              return {
-                ...invoice,
-                balance_due: recalculatedBalanceDue // Use recalculated balance
-              }
-            })
-            
-            // Filter unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
-            // Only count invoices with status='OPEN' and balance_due > 0 (matching late tenants API logic)
-            const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: Invoice) => 
-              inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
-            )
-            
-            // Calculate total owed from unpaid invoices using recalculated balance_due (EXACT same as late tenants API)
-            const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
-              sum + parseFloat(inv.balance_due as any || 0), 0
-            )
-            
-            const totalUnpaidCount = unpaidInvoices.length
-
-            return {
-              lease: leaseData,
-              property: leaseData.RENT_properties || {},
-              tenant: leaseData.RENT_tenants || {},
-              unpaidInvoicesCount: totalUnpaidCount,
-              totalOwed,
-              lastPaidDate
-            }
-          })
-      )
+      // Map ledger collections rows into existing Payments LeaseRow shape.
+      // totalOwed / lastPaidDate come from portfolio-ledger (Payments baseline).
+      const leasesWithData: LeaseRow[] = rows.map((row: any) => ({
+        lease: row.lease || {
+          id: row.leaseId,
+          status: row.leaseStatus,
+          rent: row.currentRent,
+          rent_cadence: row.cadence,
+          property_id: row.propertyId,
+          tenant_id: row.tenantId,
+          lease_start_date: row.leaseStartDate,
+        },
+        property: row.property || {
+          id: row.propertyId,
+          name: row.propertyName,
+          address: row.propertyAddress || row.propertyName,
+        },
+        tenant: row.tenant || {
+          id: row.tenantId,
+          full_name: row.tenantName,
+        },
+        unpaidInvoicesCount: row.unpaidInvoicesCount || 0,
+        totalOwed: Number(row.totalOwed) || 0,
+        lastPaidDate: row.lastPaidDate || null,
+      }))
 
       setLeases(leasesWithData)
+
+      if (typeof window !== 'undefined') {
+        const focusLease = new URLSearchParams(window.location.search).get(
+          'focusLease',
+        )
+        if (focusLease) {
+          const match = leasesWithData.find((r) => r.lease.id === focusLease)
+          if (match) {
+            // Defer so state is committed before opening the standard invoice/payment UI
+            setTimeout(() => {
+              void handleViewInvoices(match)
+            }, 0)
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching leases:', error)
     } finally {
@@ -1027,33 +704,45 @@ return'<div class="s">'+l+'</div>';
       
       const currentLateFee = parseFloat(invoice.amount_late as any || 0)
       
-      // Determine late fee amount based on lease cadence
-      let lateFeeAmount = 0
+      // Authoritative defaults: weekly $12 / biweekly $25 / monthly $45;
+      // positive lease.late_fee_amount overrides.
+      let lateFeeAmount = 45
       if (selectedLease) {
-        const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
-        if (cadence.includes('monthly')) {
-          lateFeeAmount = 45
-        } else if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) {
-          lateFeeAmount = 25
-        } else if (cadence.includes('weekly')) {
-          lateFeeAmount = 15
+        const override = Number(
+          (selectedLease.lease as { late_fee_amount?: number }).late_fee_amount,
+        )
+        if (Number.isFinite(override) && override > 0) {
+          lateFeeAmount = override
         } else {
-          lateFeeAmount = 45 // Default to monthly rate
+          const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
+          if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) {
+            lateFeeAmount = 25
+          } else if (cadence.includes('weekly')) {
+            lateFeeAmount = 12
+          } else {
+            lateFeeAmount = 45
+          }
         }
-      } else {
-        lateFeeAmount = 45 // Default to monthly rate if no lease info
       }
       
       const newLateFee = currentLateFee > 0 ? 0 : lateFeeAmount
+      // When removing a fee manually, mark waived so auto-reconcile does not recreate it.
+      const payload: Record<string, unknown> = {
+        amount_late: newLateFee,
+      }
+      if (currentLateFee > 0 && newLateFee === 0) {
+        payload.late_fee_waived = true
+      }
+      if (newLateFee > 0) {
+        payload.late_fee_waived = false
+      }
       
       const response = await fetch(`/api/invoices?id=${invoice.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          amount_late: newLateFee
-        })
+        body: JSON.stringify(payload)
       })
 
       if (response.ok) {
@@ -2661,7 +2350,7 @@ return'<div class="s">'+l+'</div>';
                                         const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
                                         if (cadence.includes('monthly')) return 'Apply $45 late fee'
                                         if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) return 'Apply $25 late fee'
-                                        if (cadence.includes('weekly')) return 'Apply $15 late fee'
+                                        if (cadence.includes('weekly')) return 'Apply $12 late fee'
                                       }
                                       return 'Apply late fee'
                                     })()}

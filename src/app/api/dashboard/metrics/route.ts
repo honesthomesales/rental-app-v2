@@ -164,60 +164,39 @@ export async function GET(request: Request) {
     // Occupied properties count = physically occupied (occupied OR eviction)
     const occupiedProperties = physicallyOccupiedPropertyIds.size
 
-    // Late payments and total owed — billing-active leases (occupied + eviction)
+    // Late payments and total owed — portfolio ledger (Payments baseline)
     let latePayments = 0
     let totalOwed = 0
+    let ledgerVersion: string | undefined
 
     if (billingActiveLeases.length > 0) {
-      const leaseIds = billingActiveLeases.map(lease => lease.id)
-      const leaseStartDates = new Map(billingActiveLeases.map(lease => [lease.id, lease.lease_start_date]))
+      const {
+        buildCollectionsSummary,
+      } = await import('@/lib/portfolio-ledger/service')
+      const {
+        loadBillingLeases,
+        loadInvoicesForLeases,
+        loadPaymentsForLeases,
+      } = await import('@/lib/portfolio-ledger/repository')
 
-      const [invoicesResult, paymentsResult] = await Promise.all([
-        supabaseServer
-          .from('RENT_invoices')
-          .select('id, lease_id, due_date, amount_total, status')
-          .in('lease_id', leaseIds)
-          .eq('status', 'OPEN')
-          .lte('due_date', today),
-        supabaseServer
-          .from('RENT_payments')
-          .select('invoice_id, amount, payment_date')
-          .in('lease_id', leaseIds)
-          .not('invoice_id', 'is', null),
+      const leases = await loadBillingLeases()
+      const leaseIds = leases.map((l) => l.id)
+      const [invoicesByLease, paymentsByLease] = await Promise.all([
+        loadInvoicesForLeases(leaseIds),
+        loadPaymentsForLeases(leaseIds),
       ])
-
-      if (!invoicesResult.error && invoicesResult.data && invoicesResult.data.length > 0) {
-        const paymentsByInvoice = new Map<string, number>()
-        if (paymentsResult.data) {
-          const { eligible } = partitionPaymentsByAsOf(
-            paymentsResult.data as Array<{ invoice_id: string; amount: number; payment_date: string }>,
-            today,
-          )
-          eligible.forEach(p => {
-            if (p.invoice_id) {
-              paymentsByInvoice.set(
-                p.invoice_id,
-                (paymentsByInvoice.get(p.invoice_id) || 0) + (parseFloat(String(p.amount)) || 0),
-              )
-            }
-          })
-        }
-
-        const validInvoices = invoicesResult.data
-          .filter(inv => {
-            const leaseStartDate = leaseStartDates.get(inv.lease_id)
-            return leaseStartDate && inv.due_date >= leaseStartDate
-          })
-          .map(inv => {
-            const actualPaid = paymentsByInvoice.get(inv.id) || 0
-            const amountTotal = parseFloat(String(inv.amount_total ?? 0)) || 0
-            return { ...inv, recalculated_balance: amountTotal - actualPaid }
-          })
-          .filter(inv => inv.recalculated_balance > 0)
-
-        latePayments = validInvoices.length
-        totalOwed = validInvoices.reduce((sum, inv) => sum + inv.recalculated_balance, 0)
-      }
+      const summary = buildCollectionsSummary({
+        leases,
+        invoicesByLease,
+        paymentsByLease,
+        asOfDate: today,
+      })
+      totalOwed = summary.totalOwed
+      latePayments = summary.rows.reduce(
+        (s, r) => s + (r.unpaidInvoicesCount || 0),
+        0,
+      )
+      ledgerVersion = summary.ledgerVersion
     }
 
     // Property type breakdown
@@ -301,6 +280,7 @@ export async function GET(request: Request) {
       potentialIncomeRows: [...emptyRowsWithTenant, ...evictionRows],
       latePayments,
       totalOwed,
+      ledgerVersion,
       propertyTypeBreakdown,
       totalDebt,
       currentProfit,

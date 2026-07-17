@@ -14,6 +14,7 @@ type PropertyWithLease = Property & {
   isOccupied?: boolean
   leaseStatus?: string | null
   leaseId?: string | null
+  displayRent?: number | null
 }
 
 export default function PropertiesPage() {
@@ -104,10 +105,6 @@ export default function PropertiesPage() {
 
     return filtered
   }, [properties, searchTerm, sortField, sortDirection, showRetired])
-  
-  useEffect(() => {
-    fetchProperties()
-  }, [showRetired])
 
   const fetchProperties = async () => {
     try {

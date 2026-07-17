@@ -1,21 +1,24 @@
 import { NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase-server'
-import { calculateUnpaidInvoices, type Invoice, type Payment } from '@/lib/invoice-calculations'
 import {
   buildLateTenantRowTotals,
   buildLateTenantsSummary,
 } from '@/lib/late-tenants-summary'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate, resolveBusinessDate } from '@/lib/business-date'
-import { isPaymentEligibleAsOf } from '@/lib/payment-eligibility'
+import { buildAccountLedger } from '@/lib/portfolio-ledger/service'
+import {
+  loadBillingLeases,
+  loadInvoicesForLeases,
+  loadPaymentsForLeases,
+} from '@/lib/portfolio-ledger/repository'
 
 export const revalidate = 0
 
-const API_VERSION = 'v5.5-business-date-payment-eligibility'
+const API_VERSION = 'v6.0-portfolio-ledger'
 
 /**
  * Late Tenants API — read-only.
- * Row totals are per-account. Portfolio totals live only in `summary`.
+ * Totals derive from portfolio-ledger (same baseline as Payments).
  * Future-dated completed payments are excluded from balances.
  */
 export async function GET(request: Request) {
@@ -40,139 +43,81 @@ export async function GET(request: Request) {
       }
     }
 
-    const { data: leases, error: leasesError } = await supabaseServer
-      .from('RENT_leases')
-      .select(`
-        *,
-        RENT_properties(*),
-        RENT_tenants(*)
-      `)
-      .in('status', ['occupied', 'eviction'])
+    const leases = await loadBillingLeases()
+    const leaseIds = leases.map((l) => l.id)
+    const [invoicesByLease, paymentsByLease] = await Promise.all([
+      loadInvoicesForLeases(leaseIds),
+      loadPaymentsForLeases(leaseIds),
+    ])
 
-    if (leasesError) {
-      throw new Error(`Error fetching leases: ${leasesError.message}`)
-    }
-
-    const activePropertyLeases = leases || []
     const lateTenantsRows: Array<Record<string, unknown>> = []
 
-    for (const lease of activePropertyLeases) {
-      const leaseId = lease.id
-      const leaseStartDate = lease.lease_start_date
+    for (const lease of leases) {
+      const account = buildAccountLedger({
+        lease,
+        invoices: invoicesByLease.get(lease.id) || [],
+        payments: paymentsByLease.get(lease.id) || [],
+        asOfDate: today,
+      })
 
-      try {
-        const { data: invoicesData, error: invoicesError } = await supabaseServer
-          .from('RENT_invoices')
-          .select('*')
-          .eq('lease_id', leaseId)
-          .lte('due_date', today)
-          .order('due_date', { ascending: false })
-
-        if (invoicesError) {
-          console.error('Error fetching invoices for late-tenants lease')
-          continue
-        }
-
-        const invoices = Array.isArray(invoicesData) ? invoicesData : []
-        const validInvoices = invoices.filter(
-          (invoice: Invoice) =>
-            !leaseStartDate || invoice.due_date >= leaseStartDate,
-        )
-
-        const { data: paymentsData, error: paymentsError } = await supabaseServer
-          .from('RENT_payments')
-          .select('*')
-          .eq('lease_id', leaseId)
-          .order('payment_date', { ascending: false })
-
-        if (paymentsError) {
-          console.error('Error fetching payments for late-tenants lease')
-        }
-
-        const payments = Array.isArray(paymentsData) ? paymentsData : []
-
-        const { unpaidInvoices, totalOwed, unpaidCount } = calculateUnpaidInvoices(
-          validInvoices as Invoice[],
-          payments as Payment[],
-          leaseStartDate || undefined,
-          today,
-        )
-
-        if (unpaidCount === 0 || totalOwed === 0) {
-          continue
-        }
-
-        const rowTotals = buildLateTenantRowTotals(totalOwed)
-
-        const eligiblePayments = payments.filter((p: Payment) =>
-          isPaymentEligibleAsOf(p, today),
-        )
-        let mostRecentPayment:
-          | { date: string; amount: number; method: string }
-          | null = null
-        if (eligiblePayments.length > 0) {
-          const sorted = [...eligiblePayments].sort((a, b) => {
-            const da = String(a.payment_date || '').split('T')[0]
-            const db = String(b.payment_date || '').split('T')[0]
-            return db.localeCompare(da)
-          })
-          const top = sorted[0]
-          const topDate = String(top.payment_date || '').split('T')[0]
-          if (topDate) {
-            mostRecentPayment = {
-              date: topDate,
-              amount: parseFloat(String(top.amount ?? 0)) || 0,
-              method: String(
-                (top as { payment_method?: string }).payment_method ||
-                  (top as { payment_type?: string }).payment_type ||
-                  '',
-              ),
-            }
-          }
-        }
-
-        let daysLate = 0
-        if (unpaidInvoices.length > 0) {
-          const oldestUnpaid = unpaidInvoices.reduce((oldest, inv) => {
-            const invDate = new Date(inv.due_date)
-            const oldestDate = new Date(oldest.due_date)
-            return invDate < oldestDate ? inv : oldest
-          })
-
-          const dueDate = new Date(oldestUnpaid.due_date)
-          const todayDate = new Date(today + 'T12:00:00')
-          const diffTime = todayDate.getTime() - dueDate.getTime()
-          daysLate = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)))
-        }
-
-        lateTenantsRows.push({
-          leaseId: lease.id,
-          property: lease.RENT_properties || {},
-          tenant: lease.RENT_tenants || {},
-          lease: {
-            id: lease.id,
-            rent: lease.rent,
-            rent_cadence: lease.rent_cadence,
-            lease_start_date: lease.lease_start_date,
-            lease_end_date: lease.lease_end_date,
-          },
-          ...rowTotals,
-          unpaidCount,
-          unpaidInvoiceCount: unpaidCount,
-          unpaidInvoiceIds: unpaidInvoices.map((inv) => inv.id),
-          daysLate,
-          mostRecentPayment,
-          lateInvoices: unpaidInvoices.map((inv) => ({
-            id: inv.id,
-            due_date: inv.due_date,
-            amount_total: inv.amount_total,
-            balance_due: inv.balance_due,
-            status: inv.status,
-          })),
-        })
-      } catch {
-        console.error('Error processing lease for late-tenants')
+      if (account.unpaidInvoiceCount === 0 || account.totalBalanceDue <= 0) {
+        continue
       }
+
+      const unpaidInvoices = account.invoices.filter(
+        (inv) =>
+          !inv.isFuture &&
+          inv.calculatedBalance > 0 &&
+          // Payments / calculateUnpaidInvoices baseline: OPEN only
+          String(
+            (invoicesByLease.get(lease.id) || []).find((i) => i.id === inv.invoiceId)
+              ?.status || '',
+          ).toUpperCase() === 'OPEN',
+      )
+
+      if (unpaidInvoices.length === 0 || account.totalBalanceDue <= 0) {
+        continue
+      }
+
+      const rowTotals = buildLateTenantRowTotals(account.totalBalanceDue)
+      const daysLate = account.daysLate ?? 0
+
+      const lastPay = account.payments
+        .filter((p) => p.eligible && p.amount > 0)
+        .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))[0]
+
+      lateTenantsRows.push({
+        leaseId: lease.id,
+        property: lease.property || {},
+        tenant: lease.tenant || {},
+        lease: {
+          id: lease.id,
+          rent: lease.rent,
+          rent_cadence: lease.rent_cadence,
+          lease_start_date: lease.lease_start_date,
+          lease_end_date: lease.lease_end_date,
+        },
+        ...rowTotals,
+        unpaidCount: account.unpaidInvoiceCount,
+        unpaidInvoiceCount: account.unpaidInvoiceCount,
+        unpaidInvoiceIds: unpaidInvoices.map((inv) => inv.invoiceId),
+        daysLate,
+        mostRecentPayment: lastPay
+          ? {
+              date: lastPay.paymentDate,
+              amount: lastPay.amount,
+              method: lastPay.paymentMethod || '',
+            }
+          : null,
+        lateInvoices: unpaidInvoices.map((inv) => ({
+          id: inv.invoiceId,
+          due_date: inv.dueDate,
+          amount_total: inv.calculatedTotal,
+          balance_due: inv.calculatedBalance,
+          status: 'OPEN',
+        })),
+        ledgerVersion: account.ledgerVersion,
+      })
     }
 
     lateTenantsRows.sort(
@@ -183,10 +128,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       version: API_VERSION,
+      ledgerVersion: lateTenantsRows[0]
+        ? (lateTenantsRows[0] as { ledgerVersion?: string }).ledgerVersion
+        : undefined,
       rows: lateTenantsRows,
       total: lateTenantsRows.length,
       totalAllOwed: summary.totalAllOwed,
       summary,
+      writePerformed: false,
     })
   } catch (error) {
     console.error('Error in late-tenants API')

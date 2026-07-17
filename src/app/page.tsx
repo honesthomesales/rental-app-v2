@@ -179,26 +179,6 @@ export default function Dashboard() {
           const today = new Date().toISOString().split('T')[0]
           const todayDate = new Date(today)
           
-          // Debug: Find all leases for 4750 S Pine
-          const pine4750Leases = leasesData.filter((lease: any) => {
-            const property = lease.RENT_properties
-            return property && (
-              property.address?.toLowerCase().includes('4750') && 
-              property.address?.toLowerCase().includes('pine')
-            )
-          })
-          
-          if (pine4750Leases.length > 0) {
-            console.log('🔍 All leases for 4750 S Pine:', pine4750Leases.map((l: any) => ({
-              id: l.id,
-              status: l.status,
-              property_id: l.property_id,
-              lease_start_date: l.lease_start_date,
-              lease_end_date: l.lease_end_date,
-              property_address: l.RENT_properties?.address
-            })))
-          }
-          
           leasesData.forEach((lease: any) => {
             // Physically occupied: status = 'occupied', 'eviction', or 'sold'
             const isOccupied =
@@ -223,20 +203,6 @@ export default function Dashboard() {
             if (!isOverviewResidentialType(property.property_type)) return false
             const isOccupied = occupiedPropertyIds.has(property.id)
             const hasRentValue = property.rent_value && property.rent_value > 0
-            
-            // Debug logging for 4750 S pine
-            if (property.address && property.address.toLowerCase().includes('4750') && property.address.toLowerCase().includes('pine')) {
-              console.log('🔍 4750 S Pine property check:', {
-                propertyId: property.id,
-                propertyName: property.name,
-                address: property.address,
-                isOccupied,
-                hasRentValue,
-                rentValue: property.rent_value,
-                willShow: !isOccupied && hasRentValue
-              })
-            }
-            
             return !isOccupied && hasRentValue
           })
           
@@ -278,7 +244,6 @@ export default function Dashboard() {
         } else if (data && propertiesData) {
           // If leases fetch failed, still set properties but no potential income calculation
           setPotentialIncomeProperties([])
-          setLeases([])
         }
       }
     } catch (error) {

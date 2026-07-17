@@ -212,86 +212,126 @@ export async function PUT(request: Request) {
       });
     }
 
-    // Persist lease row first (terms / status)
-    const { data: updatedLease, error: updateError } = await supabaseServer
-      .from("RENT_leases")
-      .update(updateData)
-      .eq("id", id)
-      .select(
-        `
-        *,
-        RENT_properties(*),
-        RENT_tenants(*)
-      `,
-      )
-      .single();
+    let rentApplyResult: Record<string, unknown> | null = null;
 
-    if (updateError) {
-      console.error("Error updating lease:", updateError);
-      throw new Error(`Supabase error: ${updateError.message}`);
-    }
-
-    let rentApplyResult: unknown = null;
-
-    // Prospective rent updates on OPEN/PARTIAL invoices due on or after effective date
+    // Prospective rent change must be one DB transaction (lease.rent + eligible invoices).
+    // Do not update lease.rent via REST first — a partial invoice-patch failure would
+    // leave lease at new rent while invoices stay at old rent (Willis Bell defect).
     if (rentChanged) {
-      const { data: invoices } = await supabaseServer
-        .from("RENT_invoices")
-        .select(
-          "id, due_date, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due",
-        )
-        .eq("lease_id", id);
+      delete updateData.rent;
 
-      const preview = await buildLeaseRentPreview({
-        leaseId: id,
-        invoices: invoices || [],
-        oldRent: Number(currentLease.rent),
-        newRent,
-        effectiveDate,
-        businessDate,
-      });
+      const { data: rpcResult, error: rpcError } = await supabaseServer.rpc(
+        "rent_apply_prospective_change",
+        {
+          p_lease_id: id,
+          p_new_rent: newRent,
+          p_effective_date: effectiveDate,
+          p_business_date: businessDate,
+        },
+      );
 
-      for (const patch of preview.patches) {
-        const { error: patchError } = await supabaseServer
-          .from("RENT_invoices")
-          .update({
-            amount_rent: patch.new_amount_rent,
-            amount_total: patch.new_amount_total,
-            amount_paid: patch.amount_paid,
-            balance_due: patch.new_balance_due,
-            status: patch.new_status,
-            paid_in_full_at:
-              patch.new_status === "PAID"
-                ? new Date().toISOString()
-                : null,
-          })
-          .eq("id", patch.id)
-          .in("status", ["OPEN", "PARTIAL"]);
-
-        if (patchError) {
-          console.error("Error patching invoice rent:", patch.id, patchError);
-        }
+      if (rpcError) {
+        console.error("rent_apply_prospective_change failed:", rpcError);
+        return NextResponse.json(
+          {
+            error:
+              "Prospective rent change failed; lease and invoices were not updated",
+            details: rpcError.message,
+          },
+          { status: 500 },
+        );
       }
 
+      const applied =
+        typeof rpcResult === "object" && rpcResult !== null
+          ? (rpcResult as Record<string, unknown>)
+          : {};
+
       rentApplyResult = {
+        ...applied,
         effectiveDate,
-        affectedInvoiceCount: preview.affectedInvoiceCount,
-        totalBalanceChange: preview.totalBalanceChange,
-        skippedPast: preview.skippedPast,
+        affectedInvoiceCount: Number(applied.invoicesUpdated ?? 0),
+        totalBalanceChange: Number(applied.totalBalanceChange ?? 0),
+        skippedPast: Number(applied.invoicesSkippedHistorical ?? 0),
+        skippedPaid: Number(applied.invoicesSkippedPaid ?? 0),
+        skippedVoid: Number(applied.invoicesSkippedVoid ?? 0),
       };
+    }
+
+    // Persist remaining non-rent lease fields (status, cadence, dates, etc.)
+    const hasOtherLeaseUpdates = Object.keys(updateData).length > 0;
+    let updatedLease: Record<string, unknown> | null = null;
+
+    if (hasOtherLeaseUpdates) {
+      const { data, error: updateError } = await supabaseServer
+        .from("RENT_leases")
+        .update(updateData)
+        .eq("id", id)
+        .select(
+          `
+          *,
+          RENT_properties(*),
+          RENT_tenants(*)
+        `,
+        )
+        .single();
+
+      if (updateError) {
+        console.error("Error updating lease:", updateError);
+        // Rent may already be applied via RPC; surface clearly for operator review.
+        return NextResponse.json(
+          {
+            error: "Lease fields update failed after rent change",
+            details: updateError.message,
+            rentApplyResult,
+          },
+          { status: 500 },
+        );
+      }
+      updatedLease = data;
+    } else {
+      const { data, error: refetchError } = await supabaseServer
+        .from("RENT_leases")
+        .select(
+          `
+          *,
+          RENT_properties(*),
+          RENT_tenants(*)
+        `,
+        )
+        .eq("id", id)
+        .single();
+
+      if (refetchError || !data) {
+        throw new Error(
+          `Supabase error: ${refetchError?.message || "Lease refetch failed"}`,
+        );
+      }
+      updatedLease = data;
     }
 
     // Cadence / due-day / start changes: never delete invoices with payments.
     // Only create missing future invoices at new terms when billing is active.
+    const leaseForSchedule = updatedLease as {
+      id: string;
+      property_id: string;
+      tenant_id: string;
+      rent: number;
+      rent_cadence?: string;
+      rent_due_day?: number;
+      lease_end_date?: string | null;
+      status?: string;
+    };
+
     if (
       (cadenceChanged || dueDayChanged || startChanged || rentChanged) &&
-      isActiveBillingLease(updatedLease.status)
+      isActiveBillingLease(leaseForSchedule.status)
     ) {
       const scheduleStart =
         (updateData.lease_start_date as string) ||
         currentLease.lease_start_date ||
         businessDate;
-      await generateMissingFutureInvoicesOnly(updatedLease, scheduleStart, {
+      await generateMissingFutureInvoicesOnly(leaseForSchedule, scheduleStart, {
         rentEffectiveDate: rentChanged ? effectiveDate : null,
         priorRent: rentChanged ? Number(currentLease.rent) : null,
       });

@@ -157,6 +157,13 @@ export interface DashboardMetrics {
   totalDebt?: number
   currentProfit?: number
   potentialProfit?: number
+  potentialProfitNoHouseDebt?: number
+  businessDate?: string
+  futureDatedCompletedPayments?: {
+    classification: string
+    count: number
+    total: number
+  }
 }
 
 // Payments grid types

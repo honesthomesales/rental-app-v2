@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { getBusinessDate } from '@/lib/business-date'
+import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
 
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
@@ -15,6 +18,9 @@ function isOverviewResidentialType(propertyType: string | null | undefined): boo
 }
 
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+
   // Accept query parameters (like cache-busting timestamps) but ignore them
   // This prevents errors when query params are added to the URL
   try {
@@ -55,8 +61,7 @@ export async function GET(request: Request) {
 
     // Fetch occupied properties (properties with active leases)
     // Match Payments page logic: filter by status only, no date range check
-    const currentDate = new Date().toISOString().split('T')[0]
-    const today = currentDate
+    const today = getBusinessDate()
     
     // OPTIMIZED: Fetch leases with tenants once with all needed data
     // Match Payments page: filter by status only, no date range
@@ -147,7 +152,7 @@ export async function GET(request: Request) {
           .lte('due_date', today),
         supabaseServer
           .from('RENT_payments')
-          .select('invoice_id, amount')
+          .select('invoice_id, amount, payment_date')
           .in('lease_id', leaseIds)
           .not('invoice_id', 'is', null)
       ])
@@ -155,14 +160,18 @@ export async function GET(request: Request) {
       if (invoicesResult.error) {
         console.error('Error fetching unpaid invoices:', invoicesResult.error)
       } else if (invoicesResult.data && invoicesResult.data.length > 0) {
-        // Group payments by invoice_id to recalculate actual paid amounts
+        // Group eligible (non-future) payments by invoice_id
         const paymentsByInvoice = new Map<string, number>()
         if (paymentsResult.data) {
-          paymentsResult.data.forEach((p: any) => {
+          const { eligible } = partitionPaymentsByAsOf(
+            paymentsResult.data as Array<{ invoice_id: string; amount: number; payment_date: string }>,
+            today,
+          )
+          eligible.forEach((p) => {
             if (p.invoice_id) {
               paymentsByInvoice.set(
                 p.invoice_id,
-                (paymentsByInvoice.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0)
+                (paymentsByInvoice.get(p.invoice_id) || 0) + (parseFloat(String(p.amount)) || 0)
               )
             }
           })
@@ -176,7 +185,7 @@ export async function GET(request: Request) {
           })
           .map(inv => {
             const actualPaid = paymentsByInvoice.get(inv.id) || 0
-            const amountTotal = parseFloat(inv.amount_total as any || 0)
+            const amountTotal = parseFloat(String(inv.amount_total ?? 0)) || 0
             return { ...inv, recalculated_balance: amountTotal - actualPaid }
           })
           .filter(inv => inv.recalculated_balance > 0)
@@ -270,6 +279,22 @@ export async function GET(request: Request) {
       potentialProfit
     })
 
+    // Portfolio-wide future-dated completed payment exclusion (dynamic)
+    const { data: allCompletedPayments } = await supabaseServer
+      .from('RENT_payments')
+      .select('id, amount, payment_date, status')
+      .eq('status', 'completed')
+
+    const futurePartition = partitionPaymentsByAsOf(
+      (allCompletedPayments || []) as Array<{
+        id: string
+        amount: number
+        payment_date: string
+        status: string
+      }>,
+      today,
+    )
+
     const metrics = {
       totalProperties: validProperties?.length || 0,
       occupiedProperties,
@@ -282,7 +307,13 @@ export async function GET(request: Request) {
       totalDebt,
       currentProfit,
       potentialProfit,
-      potentialProfitNoHouseDebt
+      potentialProfitNoHouseDebt,
+      businessDate: today,
+      futureDatedCompletedPayments: {
+        classification: 'future_dated_completed_payment_excluded',
+        count: futurePartition.excludedCount,
+        total: futurePartition.excludedAmount,
+      },
     }
 
     return NextResponse.json(metrics)

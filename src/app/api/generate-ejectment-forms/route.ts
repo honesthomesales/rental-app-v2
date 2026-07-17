@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { getMagistrateDistrict, getNCSummaryEjectmentVenueNote } from '@/lib/magistrate-lookup'
 import { buildEjectmentCourtPdfFillData } from '@/lib/build-ejectment-pdf-fill-data'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { tenantId, county, formType, ejectmentReason, violationDescription, evictionReasons, leaseId, formDate: formDateParam } = await request.json()
 
     if (!leaseId) {
@@ -79,9 +83,14 @@ export async function POST(request: Request) {
       // Continue without payments - will use invoice.amount_paid as fallback
     }
 
-    // Group payments by invoice_id to calculate actual paid amounts (matching payments page logic)
+    const { eligible: eligiblePayments } = partitionPaymentsByAsOf(
+      allPayments || [],
+      formDateIso,
+    )
+
+    // Group eligible payments by invoice_id (exclude future-dated completed payments)
     const paymentsByInvoice = new Map<string, any[]>()
-    allPayments?.forEach(payment => {
+    eligiblePayments.forEach(payment => {
       if (payment.invoice_id) {
         if (!paymentsByInvoice.has(payment.invoice_id)) {
           paymentsByInvoice.set(payment.invoice_id, [])

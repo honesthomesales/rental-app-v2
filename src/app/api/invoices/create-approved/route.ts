@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { isRejectedPreviewDueDate } from '@/lib/lease-preview-safety'
 
 /**
  * API endpoint to create approved past-dated invoices
  * Called after user approves individual past-dated invoices
  */
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { invoices } = await request.json()
     
     if (!invoices || !Array.isArray(invoices) || invoices.length === 0) {
@@ -18,10 +22,34 @@ export async function POST(request: Request) {
 
     console.log('Creating approved past-dated invoices:', invoices.length)
 
+    const rejectedDueDates: string[] = []
+    const allowedInvoices = invoices.filter((inv: { lease_id?: string; due_date?: string }) => {
+      const leaseId = inv.lease_id
+      const dueDate = String(inv.due_date || '').split('T')[0]
+      if (leaseId && dueDate && isRejectedPreviewDueDate(String(leaseId), dueDate)) {
+        rejectedDueDates.push(dueDate)
+        return false
+      }
+      return true
+    })
+
+    if (allowedInvoices.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'No invoices to create',
+          rejectedDueDates,
+          message: rejectedDueDates.length
+            ? 'All proposed due dates are blocked for this lease'
+            : 'Invoices array is empty after filtering',
+        },
+        { status: 400 },
+      )
+    }
+
     // Insert approved invoices
     const { data: createdInvoices, error: insertError } = await supabaseServer
       .from('RENT_invoices')
-      .insert(invoices)
+      .insert(allowedInvoices)
       .select()
 
     if (insertError) {
@@ -48,7 +76,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: `Created ${createdInvoices?.length || 0} approved invoice(s)`,
-      created: createdInvoices?.length || 0
+      created: createdInvoices?.length || 0,
+      rejectedDueDates,
     })
   } catch (error) {
     console.error('Error in create-approved invoices API:', error)

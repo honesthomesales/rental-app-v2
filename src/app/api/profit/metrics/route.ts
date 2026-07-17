@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { getBusinessDate } from '@/lib/business-date'
+import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
 
 // Cache profit metrics for 60 seconds - historical data doesn't change
 export const revalidate = 60
@@ -101,6 +104,12 @@ function sumPaymentsByProperty(
   return map
 }
 
+/** Cap income recognition at business date (or month end if earlier). */
+function incomeAsOfDate(endOfMonth: string): string {
+  const businessDate = getBusinessDate()
+  return endOfMonth < businessDate ? endOfMonth : businessDate
+}
+
 async function fetchRentCollectedForDueMonth(pastStartOfMonth: string, pastEndOfMonth: string) {
   const { data: invoices, error: invError } = await supabaseServer
     .from('RENT_invoices')
@@ -119,11 +128,17 @@ async function fetchRentCollectedForDueMonth(pastStartOfMonth: string, pastEndOf
   const invoicesWithProperty = enrichInvoicesWithProperty(invoices, leaseToPropertyMap)
   const invoiceIds = invoicesWithProperty.map((i) => i.id).filter(Boolean) as string[]
   const payments = await fetchPaymentsForInvoiceIds(invoiceIds)
-  return payments.reduce((sum, p) => sum + (parseFloat(String(p.amount)) || 0), 0)
+  const { eligible } = partitionPaymentsByAsOf(
+    payments,
+    incomeAsOfDate(pastEndOfMonth),
+  )
+  return eligible.reduce((sum, p) => sum + (parseFloat(String(p.amount)) || 0), 0)
 }
 
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     let month = searchParams.get('month') || new Date().toISOString().slice(0, 7) // YYYY-MM format
     
@@ -256,7 +271,11 @@ export async function GET(request: Request) {
         .filter(Boolean) as string[]
 
       const monthRentPayments = await fetchPaymentsForInvoiceIds(invoiceIds)
-      rentCollected = monthRentPayments.reduce(
+      const { eligible: eligibleMonthPayments } = partitionPaymentsByAsOf(
+        monthRentPayments,
+        incomeAsOfDate(endOfMonth),
+      )
+      rentCollected = eligibleMonthPayments.reduce(
         (sum, payment) => sum + (parseFloat(String(payment.amount)) || 0),
         0
       )
@@ -266,7 +285,9 @@ export async function GET(request: Request) {
         rentCollected,
         'from',
         monthRentPayments.length,
-        'payments on',
+        'payments (',
+        eligibleMonthPayments.length,
+        'eligible) on',
         invoiceIds.length,
         'invoices'
       )
@@ -303,7 +324,7 @@ export async function GET(request: Request) {
         }
 
         const paymentsByPropertyMap = sumPaymentsByProperty(
-          monthRentPayments,
+          eligibleMonthPayments,
           leaseToPropertyMap,
           invoiceToPropertyMap
         )

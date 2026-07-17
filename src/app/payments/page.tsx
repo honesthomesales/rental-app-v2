@@ -436,6 +436,17 @@ return'<div class="s">'+l+'</div>';
   const fetchLeases = async () => {
     try {
       setLoading(true)
+
+      const businessDateRes = await fetch('/api/business-date', {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const businessDateJson = businessDateRes.ok
+        ? await businessDateRes.json()
+        : null
+      const today =
+        (businessDateJson?.businessDate as string | undefined) ||
+        new Date().toISOString().split('T')[0]
       
       // Fetch all active leases with related data
       const response = await fetch('/api/leases')
@@ -456,8 +467,7 @@ return'<div class="s">'+l+'</div>';
         return
       }
 
-      // Get invoices for all leases
-      const today = new Date().toISOString().split('T')[0]
+      // Get invoices for all leases (business date already resolved above)
       
       const leasesWithData: LeaseRow[] = await Promise.all(
         data
@@ -500,9 +510,11 @@ return'<div class="s">'+l+'</div>';
               )
               
               if (linkedPayments.length > 0) {
-                // Filter out payments with invalid dates and sort by date descending (most recent first)
+                // Filter out future-dated and invalid dates; sort by date descending
                 const validPayments = linkedPayments.filter((p: any) => {
                   if (!p.payment_date) return false
+                  const pd = String(p.payment_date).split('T')[0]
+                  if (pd > today) return false
                   const date = new Date(p.payment_date)
                   return !isNaN(date.getTime())
                 })
@@ -521,9 +533,11 @@ return'<div class="s">'+l+'</div>';
               }
             }
             
-            // Group payments by invoice_id to calculate actual paid amounts (matching late tenants API logic)
+            // Group payments by invoice_id — exclude future-dated completed payments
             const paymentsByInvoice = new Map<string, any[]>()
             payments.forEach((payment: any) => {
+              const paymentDate = String(payment.payment_date || '').split('T')[0]
+              if (paymentDate && paymentDate > today) return
               if (payment.invoice_id) {
                 if (!paymentsByInvoice.has(payment.invoice_id)) {
                   paymentsByInvoice.set(payment.invoice_id, [])

@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { resolveBusinessDate } from '@/lib/business-date'
+import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
 
 export const revalidate = 60
 
@@ -46,11 +49,14 @@ async function fetchAllPages<T>(
 }
 
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const asOfParam = searchParams.get('asOf')
     const monthsParam = searchParams.get('months')
     const monthCount = monthsParam === '12' ? 12 : 6
+    const businessDate = resolveBusinessDate(asOfParam)
     const reference = asOfParam ? new Date(asOfParam + 'T12:00:00') : new Date()
 
     const monthKeys = getMonthKeys(reference, monthCount)
@@ -58,6 +64,7 @@ export async function GET(request: Request) {
     const lastMonth = monthKeys[monthKeys.length - 1]
     const [ly, lm] = lastMonth.split('-').map(Number)
     const rangeEnd = endOfMonthIso(ly, lm - 1)
+    const paymentRangeEnd = rangeEnd < businessDate ? rangeEnd : businessDate
 
     const { data: properties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
@@ -117,7 +124,7 @@ export async function GET(request: Request) {
           .select('amount, payment_date')
           .not('invoice_id', 'is', null)
           .gte('payment_date', rangeStart)
-          .lte('payment_date', rangeEnd)
+          .lte('payment_date', paymentRangeEnd)
           .order('payment_date', { ascending: true })
           .range(from, to)
       ),
@@ -152,8 +159,13 @@ export async function GET(request: Request) {
       map.set(key, (map.get(key) || 0) + amount)
     }
 
-    payments.forEach((p) => {
-      addToMonth(rentByMonth, p.payment_date, parseFloat(String(p.amount)) || 0)
+    const { eligible: eligiblePayments } = partitionPaymentsByAsOf(
+      payments,
+      businessDate,
+    )
+
+    eligiblePayments.forEach((p) => {
+      addToMonth(rentByMonth, p.payment_date!, parseFloat(String(p.amount)) || 0)
     })
 
     miscExpenses.forEach((e) => {

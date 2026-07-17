@@ -3,7 +3,12 @@
  * 
  * This ensures both pages always calculate unpaid invoices identically.
  * DO NOT MODIFY THIS FILE without updating both consumers.
+ *
+ * Future-dated payments (payment_date > businessDate) are excluded from
+ * amount-paid / balance math. They are never deleted or modified.
  */
+
+import { partitionPaymentsByAsOf } from "@/lib/payment-eligibility";
 
 export interface Invoice {
   id: string
@@ -13,6 +18,7 @@ export interface Invoice {
   balance_due: number | string
   amount_total: number | string
   amount_paid?: number | string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
 
@@ -22,6 +28,7 @@ export interface Payment {
   amount: number | string
   payment_date: string
   lease_id: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
 
@@ -74,9 +81,14 @@ export function calculateUnpaidInvoices(
     return true
   })
 
-  // Step 2: Group payments by invoice_id (Payments page lines 541-549)
+  // Step 2: Exclude future-dated payments, then group by invoice_id
+  const businessDate = actualToday
+  const eligiblePayments = businessDate
+    ? partitionPaymentsByAsOf(payments, businessDate).eligible
+    : payments
+
   const paymentsByInvoice = new Map<string, Payment[]>()
-  payments.forEach((payment: Payment) => {
+  eligiblePayments.forEach((payment: Payment) => {
     if (payment.invoice_id) {
       if (!paymentsByInvoice.has(payment.invoice_id)) {
         paymentsByInvoice.set(payment.invoice_id, [])
@@ -91,11 +103,11 @@ export function calculateUnpaidInvoices(
     const linkedPayments = paymentsByInvoice.get(invoice.id) || []
     // Calculate actual paid amount (Payments page lines 555-557)
     const actualPaid = linkedPayments.reduce((sum: number, payment: Payment) => 
-      sum + parseFloat(payment.amount as any || 0), 0
+      sum + (parseFloat(String(payment.amount ?? 0)) || 0), 0
     )
     
     // Recalculate balance_due (Payments page lines 560-561)
-    const amountTotal = parseFloat(invoice.amount_total as any || 0)
+    const amountTotal = parseFloat(String(invoice.amount_total ?? 0)) || 0
     const recalculatedBalanceDue = amountTotal - actualPaid
     
     return {
@@ -112,12 +124,12 @@ export function calculateUnpaidInvoices(
     const isFuture = actualToday && invDueDate > actualToday
     
     // Only count invoices with status='OPEN' and balance_due > 0 and due_date <= today
-    return !isFuture && inv.status === 'OPEN' && parseFloat(inv.balance_due as any || 0) > 0
+    return !isFuture && inv.status === 'OPEN' && (parseFloat(String(inv.balance_due ?? 0)) || 0) > 0
   })
 
   // Step 5: Calculate total owed (Payments page lines 576-578)
   const totalOwed = unpaidInvoices.reduce((sum: number, inv: Invoice) => 
-    sum + parseFloat(inv.balance_due as any || 0), 0
+    sum + (parseFloat(String(inv.balance_due ?? 0)) || 0), 0
   )
 
   return {

@@ -5,30 +5,37 @@ import {
   buildLateTenantRowTotals,
   buildLateTenantsSummary,
 } from '@/lib/late-tenants-summary'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { getBusinessDate, resolveBusinessDate } from '@/lib/business-date'
 
 export const revalidate = 0
 
-const API_VERSION = 'v5.4-row-total-and-summary-fix'
+const API_VERSION = 'v5.5-business-date-payment-eligibility'
 
 /**
  * Late Tenants API — read-only.
  * Row totals are per-account. Portfolio totals live only in `summary`.
+ * Future-dated completed payments are excluded from balances.
  */
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+
   try {
     const { searchParams } = new URL(request.url)
     const todayParam = searchParams.get('today')
-    const serverToday = new Date().toISOString().split('T')[0]
+    const serverToday = getBusinessDate()
 
     let today = serverToday
     if (todayParam) {
-      const clientDate = new Date(todayParam)
+      const resolved = resolveBusinessDate(todayParam)
+      const clientDate = new Date(resolved)
       const serverDate = new Date(serverToday)
       const diffDays = Math.abs(
         (clientDate.getTime() - serverDate.getTime()) / (1000 * 60 * 60 * 24),
       )
       if (diffDays <= 1) {
-        today = todayParam
+        today = resolved
       }
     }
 

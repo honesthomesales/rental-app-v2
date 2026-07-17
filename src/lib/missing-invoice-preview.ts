@@ -5,6 +5,12 @@
  */
 
 import { normalizeCadence, type Cadence } from "@/lib/rent/cadence";
+import {
+  applyPreviewSafetyToScheduleInput,
+  getPreviewPaidThrough,
+  isRejectedPreviewDueDate,
+} from "@/lib/lease-preview-safety";
+import { resolveBusinessDate } from "@/lib/business-date";
 
 export type MissingInvoicePeriodClass = "past" | "current" | "future";
 
@@ -29,6 +35,8 @@ export type MissingInvoicePreviewInput = {
   existingDueDates: string[];
   /** ISO date YYYY-MM-DD; defaults to today UTC */
   asOfDate?: string;
+  /** When set, preview-safety overrides (cadence / paid-through / rejected dues) apply */
+  leaseId?: string;
 };
 
 function toDateOnly(iso: string): string {
@@ -59,12 +67,31 @@ function resolveEndDate(
 export function buildMissingInvoicePreview(
   input: MissingInvoicePreviewInput,
 ): MissingInvoicePreviewRow[] {
-  const cadence = normalizeCadence(input.rentCadence || "monthly") || "monthly";
+  const safety = input.leaseId
+    ? applyPreviewSafetyToScheduleInput({
+        leaseId: input.leaseId,
+        rentCadence: input.rentCadence,
+        rentAmount: input.rentAmount,
+      })
+    : {
+        rentCadence: input.rentCadence || "monthly",
+        rentAmount: input.rentAmount,
+        overrideApplied: false,
+        warning: null,
+      };
+
+  const cadence =
+    normalizeCadence(safety.rentCadence || "monthly") || "monthly";
   const rentDueDay = input.rentDueDay || 1;
-  const rentAmount = Number(input.rentAmount || 0);
+  const rentAmount = Number(safety.rentAmount || 0);
   const leaseStartDate = toDateOnly(input.leaseStartDate);
-  const asOf = toDateOnly(input.asOfDate || new Date().toISOString().slice(0, 10));
+  const asOf = toDateOnly(
+    input.asOfDate || resolveBusinessDate(null),
+  );
   const endDate = resolveEndDate(input.leaseEndDate, asOf);
+  const paidThrough = input.leaseId
+    ? getPreviewPaidThrough(input.leaseId)
+    : null;
 
   const existingDueDates = new Set(
     input.existingDueDates.map((d) => toDateOnly(d)),
@@ -78,6 +105,12 @@ export function buildMissingInvoicePreview(
     periodEnd: string,
   ) => {
     if (dueDate < leaseStartDate || dueDate > endDate) return;
+    if (input.leaseId && isRejectedPreviewDueDate(input.leaseId, dueDate)) {
+      return;
+    }
+    if (paidThrough && dueDate <= paidThrough.paidThroughDate) {
+      return;
+    }
     const matchingInvoiceExists = existingDueDates.has(dueDate);
     if (matchingInvoiceExists) return;
 

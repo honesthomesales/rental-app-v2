@@ -667,6 +667,28 @@ export default function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Dashboard 1.4</h1>
           <p className="text-gray-600 mt-2">Rental properties overview</p>
+          {metrics?.futureDatedCompletedPayments &&
+          metrics.futureDatedCompletedPayments.count > 0 ? (
+            <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 max-w-xl">
+              <strong>
+                {metrics.futureDatedCompletedPayments.count}
+              </strong>{" "}
+              future-dated completed payment
+              {metrics.futureDatedCompletedPayments.count === 1 ? "" : "s"} ($
+              {Number(metrics.futureDatedCompletedPayments.total).toLocaleString(
+                "en-US",
+                { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+              )}
+              ) excluded from balances through business date{" "}
+              <strong>{metrics.businessDate}</strong>.{" "}
+              <a
+                href="/data-health/future-payments"
+                className="text-blue-800 underline"
+              >
+                Review
+              </a>
+            </div>
+          ) : null}
         </div>
         <button
           onClick={() => fetchDashboardData(true)}

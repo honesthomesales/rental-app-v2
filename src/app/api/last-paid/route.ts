@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { getBusinessDate } from '@/lib/business-date'
+import { isPaymentEligibleAsOf } from '@/lib/payment-eligibility'
 
 export const revalidate = 60
 
-export async function GET() {
-  try {
+export async function GET(request: Request) {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     // Fetch all non-retired properties
     const { data: properties, error: propsError } = await supabaseServer
       .from('RENT_properties')
@@ -87,7 +92,7 @@ export async function GET() {
     }
 
     // Calculate total owed per lease (matching payments page logic exactly)
-    const today = new Date().toISOString().split('T')[0]
+    const businessDate = getBusinessDate()
     const totalOwedByLease = new Map<string, number>()
     const allInvoicesByLease = new Map<string, any[]>()
     
@@ -97,7 +102,7 @@ export async function GET() {
         // Fetch payments for this specific lease (matching payments page: /api/payments?leaseId=...)
         const { data: leasePayments, error: leasePaymentsError } = await supabaseServer
           .from('RENT_payments')
-          .select('invoice_id, amount')
+          .select('invoice_id, amount, payment_date')
           .eq('lease_id', lease.id)
           .not('invoice_id', 'is', null)
 
@@ -109,7 +114,7 @@ export async function GET() {
         const paymentsByInvoice = new Map<string, any[]>()
         if (leasePayments) {
           leasePayments.forEach(p => {
-            if (p.invoice_id) {
+            if (p.invoice_id && isPaymentEligibleAsOf(p, businessDate)) {
               if (!paymentsByInvoice.has(p.invoice_id)) {
                 paymentsByInvoice.set(p.invoice_id, [])
               }
@@ -135,7 +140,7 @@ export async function GET() {
             status
           `)
           .eq('lease_id', lease.id)
-          .lt('due_date', today)
+          .lt('due_date', businessDate)
           .order('due_date', { ascending: false })
 
         if (leaseInvError) {
@@ -172,9 +177,9 @@ export async function GET() {
         })
 
         // Filter unpaid invoices using recalculated balance_due (EXACT same as payments page)
-        // Only count invoices with status='OPEN' and balance_due > 0 and due_date < today
+        // Only count invoices with status='OPEN' and balance_due > 0 and due_date < businessDate
         // Double-check due_date to ensure we don't count future invoices
-        const todayDate = new Date(today)
+        const todayDate = new Date(businessDate + 'T00:00:00')
         todayDate.setHours(0, 0, 0, 0)
         const unpaidInvoices = invoicesWithRecalculatedBalance.filter((inv: any) => {
           const invDueDate = new Date(inv.due_date)
@@ -231,13 +236,13 @@ export async function GET() {
     // Fetch all payments to recalculate balance for these invoices
     const { data: allPayments, error: allPaymentsError } = await supabaseServer
       .from('RENT_payments')
-      .select('invoice_id, amount')
+      .select('invoice_id, amount, payment_date')
       .not('invoice_id', 'is', null)
 
     const allPaymentsByInvoice = new Map<string, number>()
     if (!allPaymentsError && allPayments) {
       allPayments.forEach(p => {
-        if (p.invoice_id) {
+        if (p.invoice_id && isPaymentEligibleAsOf(p, businessDate)) {
           allPaymentsByInvoice.set(
             p.invoice_id,
             (allPaymentsByInvoice.get(p.invoice_id) || 0) + parseFloat(p.amount as any || 0)
@@ -283,8 +288,8 @@ export async function GET() {
       
       // 1. Get all unpaid past invoices (due_date < today, balance > 0)
       const unpaidPastInvoices = leaseInvoices.filter((inv: any) => {
-        const dueDate = new Date(inv.due_date)
-        const todayDate = new Date(today)
+        const dueDate = new Date(inv.due_date + 'T00:00:00')
+        const todayDate = new Date(businessDate + 'T00:00:00')
         todayDate.setHours(0, 0, 0, 0)
         return inv.status === 'OPEN' && 
                parseFloat(inv.balance_due as any || 0) > 0 &&

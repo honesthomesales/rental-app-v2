@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { getBusinessDate } from '@/lib/business-date'
+import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { invoiceId, leaseId } = await request.json()
 
     if (!invoiceId || !leaseId) {
@@ -60,36 +65,72 @@ export async function POST(request: Request) {
     const rentDueDateFormatted = dateFormatter.format(new Date(invoice.due_date + 'T12:00:00'))
     const sevenDaysFromNowFormatted = dateFormatter.format(sevenDaysFromNow)
 
-    // Get only PAST DUE unpaid invoices for this lease to calculate total amount due
-    const today = new Date().toISOString().split('T')[0]
-    const { data: allUnpaidInvoices, error: invoicesError } = await supabaseServer
+    const businessDate = getBusinessDate()
+
+    // Get past-due OPEN invoices and recalculate balance from eligible payments
+    const { data: openInvoices, error: invoicesError } = await supabaseServer
       .from('RENT_invoices')
-      .select('amount_rent, amount_late, amount_other, balance_due, due_date')
+      .select('id, amount_rent, amount_late, amount_other, amount_total, balance_due, due_date, status')
       .eq('lease_id', leaseId)
       .eq('status', 'OPEN')
-      .gt('balance_due', 0)
-      .lt('due_date', today) // Only include invoices that are past due
+      .lt('due_date', businessDate)
 
     if (invoicesError) {
       console.error('Error fetching unpaid invoices:', invoicesError)
       return NextResponse.json({ error: 'Failed to fetch invoice data' }, { status: 500 })
     }
 
+    const { data: leasePayments, error: paymentsError } = await supabaseServer
+      .from('RENT_payments')
+      .select('invoice_id, amount, payment_date')
+      .eq('lease_id', leaseId)
+      .not('invoice_id', 'is', null)
+
+    if (paymentsError) {
+      console.error('Error fetching payments for notice:', paymentsError)
+    }
+
+    const { eligible: eligiblePayments } = partitionPaymentsByAsOf(
+      leasePayments || [],
+      businessDate,
+    )
+
+    const paidByInvoice = new Map<string, number>()
+    eligiblePayments.forEach((p) => {
+      if (p.invoice_id) {
+        paidByInvoice.set(
+          p.invoice_id,
+          (paidByInvoice.get(p.invoice_id) || 0) + parseFloat(String(p.amount || 0)),
+        )
+      }
+    })
+
+    const allUnpaidInvoices =
+      openInvoices
+        ?.map((inv) => {
+          const actualPaid = paidByInvoice.get(inv.id) || 0
+          const amountTotal = parseFloat(String(inv.amount_total || 0))
+          const recalculatedBalance = amountTotal - actualPaid
+          return { ...inv, balance_due: recalculatedBalance }
+        })
+        .filter((inv) => parseFloat(String(inv.balance_due || 0)) > 0) || []
+
     // Calculate total amounts across all unpaid invoices
-    // Calculate breakdown from actual unpaid amounts per invoice
-    const totalDue = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.balance_due || 0), 0) || 0
+    const totalDue = allUnpaidInvoices.reduce(
+      (sum, inv) => sum + parseFloat(String(inv.balance_due || 0)),
+      0,
+    )
     
     // For each invoice, calculate the unpaid portion of each category proportionally
     let rentAmount = 0
     let lateFeeAmount = 0
     let otherAmount = 0
     
-    allUnpaidInvoices?.forEach((inv: any) => {
+    allUnpaidInvoices.forEach((inv: any) => {
       const invoiceTotal = parseFloat(inv.amount_rent || 0) + parseFloat(inv.amount_late || 0) + parseFloat(inv.amount_other || 0)
       const balanceDue = parseFloat(inv.balance_due || 0)
       
       if (invoiceTotal > 0 && balanceDue > 0) {
-        // Calculate unpaid portion of each category proportionally
         const rentPortion = parseFloat(inv.amount_rent || 0) / invoiceTotal
         const latePortion = parseFloat(inv.amount_late || 0) / invoiceTotal
         const otherPortion = parseFloat(inv.amount_other || 0) / invoiceTotal
@@ -98,7 +139,6 @@ export async function POST(request: Request) {
         lateFeeAmount += balanceDue * latePortion
         otherAmount += balanceDue * otherPortion
       } else if (balanceDue > 0) {
-        // If no breakdown, assign all to rent
         rentAmount += balanceDue
       }
     })
@@ -112,7 +152,6 @@ export async function POST(request: Request) {
     const sum = rentAmount + lateFeeAmount + otherAmount
     const diff = totalDue - sum
     if (Math.abs(diff) > 0.01) {
-      // Add the difference to rent amount
       rentAmount += diff
       rentAmount = Math.round(rentAmount * 100) / 100
     }

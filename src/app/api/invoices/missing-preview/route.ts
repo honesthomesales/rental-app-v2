@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
 import { buildMissingInvoicePreview } from "@/lib/missing-invoice-preview";
+import { isAuthError, requireApiAuth } from "@/lib/auth/api-auth";
+import { getBusinessDate } from "@/lib/business-date";
+import {
+  applyPreviewSafetyToScheduleInput,
+  getPreviewCadenceOverride,
+} from "@/lib/lease-preview-safety";
 
 /**
  * Read-only missing-invoice schedule preview.
  * Never inserts or updates invoices.
  */
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request);
+  if (isAuthError(auth)) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const leaseId = searchParams.get("leaseId");
@@ -36,7 +45,14 @@ export async function GET(request: Request) {
       );
     }
 
-    const asOf = new Date().toISOString().split("T")[0];
+    const asOf = getBusinessDate();
+    const safety = applyPreviewSafetyToScheduleInput({
+      leaseId,
+      rentCadence: lease.rent_cadence,
+      rentAmount: lease.rent,
+    });
+    const cadenceOverride = getPreviewCadenceOverride(leaseId);
+
     let endDate = lease.lease_end_date as string | null;
     if (!endDate) {
       const threeMonthsAhead = new Date(asOf + "T00:00:00");
@@ -59,11 +75,12 @@ export async function GET(request: Request) {
     }
 
     const rows = buildMissingInvoicePreview({
+      leaseId,
       leaseStartDate: lease.lease_start_date,
       leaseEndDate: lease.lease_end_date,
-      rentCadence: lease.rent_cadence,
+      rentCadence: safety.rentCadence,
       rentDueDay: lease.rent_due_day,
-      rentAmount: lease.rent,
+      rentAmount: safety.rentAmount,
       existingDueDates: (existingInvoices || []).map(
         (inv: { due_date: string }) => inv.due_date,
       ),
@@ -73,18 +90,23 @@ export async function GET(request: Request) {
     return NextResponse.json({
       leaseId,
       asOfDate: asOf,
+      businessDate: asOf,
       previewOnly: true,
       writePerformed: false,
+      previewSafety: {
+        cadenceOverrideApplied: safety.overrideApplied,
+        warning: safety.warning,
+        storedCadence: lease.rent_cadence,
+        effectiveCadence: safety.rentCadence,
+        dataHealthFlag: cadenceOverride?.reason || null,
+      },
       count: rows.length,
       rows,
     });
   } catch (error) {
-    console.error("Error in missing-invoice preview API");
+    console.error("Error in missing-preview API:", error);
     return NextResponse.json(
-      {
-        error: "Failed to build missing-invoice preview",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: "Failed to build missing invoice preview" },
       { status: 500 },
     );
   }

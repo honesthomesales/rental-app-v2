@@ -51,6 +51,10 @@ Service-role (`supabaseServer`) is used only after `requireApiAuth` succeeds (ex
 | `/api/leases` | DELETE | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/leases/rent-change-preview` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/lease-income/* |
 | `/api/leases/manual-review` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/lease-income/* |
+| `/api/communications` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/communications/* |
+| `/api/communications/send` | POST | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/communications/* |
+| `/api/communications/twilio/inbound` | POST | webhook | Twilio signature | `validateTwilioSignature` (no app-user auth) | yes (service after signature) | __tests__/communications/* |
+| `/api/communications/twilio/status` | POST | webhook | Twilio signature | `validateTwilioSignature` (no app-user auth) | yes (service after signature) | __tests__/communications/* |
 | `/api/payments` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/payments` | POST | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/payments` | PUT | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |

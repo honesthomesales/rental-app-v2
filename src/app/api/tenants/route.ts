@@ -48,7 +48,7 @@ try {
         const startDate = new Date(lease.lease_start_date)
         const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
         const isWithinLeasePeriod = currentDate >= startDate && (!endDate || currentDate <= endDate)
-        const isActive = lease.status === 'occupied'
+        const isActive = lease.status === 'occupied' || lease.status === 'eviction'
         
         // Build lease data for enrichment
         const leaseData = {

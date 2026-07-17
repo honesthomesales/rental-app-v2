@@ -292,7 +292,10 @@ try {
         'invoices'
       )
 
-      const activeLeases = allLeasesForRent.filter((l: any) => l.status === 'occupied')
+      // Billing-active leases: occupied + eviction both generate invoices
+      const activeLeases = allLeasesForRent.filter(
+        (l: any) => l.status === 'occupied' || l.status === 'eviction',
+      )
       activeLeases.forEach((lease: any) => {
         const rent = Number(lease.rent) || 0
         const cadence = lease.rent_cadence?.toLowerCase() || 'monthly'
@@ -343,7 +346,9 @@ try {
           let expectedRentForProperty = 0
           const miscIncomeForProperty = miscIncomeByPropertyMap.get(property.id) || 0
 
-          const propertyLeases = activeLeases.filter((l: any) => l.property_id === property.id)
+          const propertyLeases = activeLeases.filter(
+            (l: any) => l.property_id === property.id,
+          )
           propertyLeases.forEach((lease: any) => {
             const leaseStart = new Date(lease.lease_start_date)
             const leaseEnd = lease.lease_end_date

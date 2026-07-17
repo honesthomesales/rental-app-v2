@@ -84,7 +84,7 @@ try {
         RENT_tenants(id, full_name, first_name, last_name)
       `)
       .in('property_id', propertyIds)
-      .eq('status', 'occupied')
+      .in('status', ['occupied', 'eviction'])
 
     const leaseMap = new Map<string, any>()
     if (!leasesError && leases) {
@@ -272,10 +272,10 @@ try {
     properties.forEach(property => {
       const propertyPayments: any[] = []
       
-      // Find the active lease for this property
+      // Find the active lease for this property (occupied or eviction — both are billing-active)
       const activeLease = leases?.find(l =>
         l.property_id === property.id &&
-        l.status === 'occupied'
+        (l.status === 'occupied' || l.status === 'eviction')
       )
       
       if (!activeLease) {
@@ -491,10 +491,10 @@ try {
     // Build response grouped by property
     const result = properties.map(property => {
       const recentPayments = paymentsByProperty.get(property.id) || []
-      // Find the active lease for cadence info and total owed
+      // Find the active lease for cadence info and total owed (occupied or eviction)
       const activeLease = leases?.find(l =>
         l.property_id === property.id &&
-        l.status === 'occupied'
+        (l.status === 'occupied' || l.status === 'eviction')
       )
       // Get total owed from lease (matching payments page logic)
       const totalOwed = activeLease ? (totalOwedByLease.get(activeLease.id) || 0) : 0

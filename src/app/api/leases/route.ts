@@ -1,514 +1,534 @@
-import { NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase-server'
-import { normalizeCadence } from '@/lib/rent/cadence'
-import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { NextResponse } from "next/server";
+import { supabaseServer } from "@/lib/supabase-server";
+import { normalizeCadence } from "@/lib/rent/cadence";
+import { isAuthError, requireApiAuth } from "@/lib/auth/api-auth";
+import { getBusinessDate } from "@/lib/business-date";
+import {
+  isActiveBillingLease,
+  normalizeLeaseStatus,
+  resolveInvoiceScheduleEnd,
+} from "@/lib/lease-status";
+import {
+  buildRentChangePreview,
+  type RentApplyMode,
+  type InvoiceForRentChange,
+} from "@/lib/rent-change";
+import { partitionPaymentsByAsOf } from "@/lib/payment-eligibility";
 
 // Cache leases for 60 seconds - they don't change frequently
-export const revalidate = 60
+export const revalidate = 60;
 
 export async function GET(request: Request) {
-  const auth = await requireApiAuth(request)
-  if (isAuthError(auth)) return auth
-// Accept query parameters (like cache-busting timestamps) but ignore them
-  // This prevents errors when query params are added to the URL
+  const auth = await requireApiAuth(request);
+  if (isAuthError(auth)) return auth;
+  // Accept query parameters (like cache-busting timestamps) but ignore them
   try {
     const { data: leases, error } = await supabaseServer
-      .from('RENT_leases')
-      .select(`
+      .from("RENT_leases")
+      .select(
+        `
         *,
         RENT_properties(*),
         RENT_tenants(*)
-      `)
-      .order('created_at', { ascending: false })
+      `,
+      )
+      .order("created_at", { ascending: false });
 
     if (error) {
-      throw new Error(`Error fetching leases: ${error.message}`)
+      throw new Error(`Error fetching leases: ${error.message}`);
     }
 
-    // Auto-expire leases that are past their end date
-    const today = new Date().toISOString().split('T')[0]
-    const expiredLeaseIds: string[] = []
-    
-    if (leases && leases.length > 0) {
-      for (const lease of leases) {
-        // If lease has an end date and it's in the past, and status is 'occupied', mark as 'empty'
-        if (lease.lease_end_date && 
-            lease.lease_end_date < today && 
-            lease.status === 'occupied') {
-          expiredLeaseIds.push(lease.id)
-        }
-      }
-      
-      // Batch update expired leases to 'empty' status
-      if (expiredLeaseIds.length > 0) {
-        const { error: updateError } = await supabaseServer
-          .from('RENT_leases')
-          .update({ status: 'empty' })
-          .in('id', expiredLeaseIds)
-        
-        if (updateError) {
-          console.error('Error auto-expiring leases:', updateError)
-        } else {
-          console.log(`Auto-expired ${expiredLeaseIds.length} lease(s) to 'empty' status`)
-          // Update the leases array to reflect the status change
-          leases.forEach(lease => {
-            if (expiredLeaseIds.includes(lease.id)) {
-              lease.status = 'empty'
-            }
-          })
-        }
-      }
-    }
-
-    return NextResponse.json(leases || [])
+    // Read-only: never auto-expire or write on GET.
+    // Occupied/eviction leases past lease_end_date remain period-to-period.
+    return NextResponse.json(leases || []);
   } catch (error) {
-    console.error('Error in leases API:', error)
+    console.error("Error in leases API:", error);
     return NextResponse.json(
-      { error: 'Failed to fetch leases' },
-      { status: 500 }
-    )
+      { error: "Failed to fetch leases" },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiAuth(request, { write: true })
-  if (isAuthError(auth)) return auth
-try {
-    const leaseData = await request.json()
-    
-    // Set default status to 'occupied' if not provided
+  const auth = await requireApiAuth(request, { write: true });
+  if (isAuthError(auth)) return auth;
+  try {
+    const leaseData = await request.json();
+
     if (!leaseData.status) {
-      leaseData.status = 'occupied'
+      leaseData.status = "occupied";
     }
-    
-    // Auto-expire lease if end date is in the past
-    const today = new Date().toISOString().split('T')[0]
-    if (leaseData.lease_end_date && leaseData.lease_end_date < today) {
-      leaseData.status = 'empty'
-      console.log(`Auto-setting new lease to 'empty' status (end date ${leaseData.lease_end_date} is in the past)`)
-    }
-    
-    console.log('Creating lease:', leaseData)
-    
-    // First, insert the lease with a simple select to avoid join issues
+    leaseData.status = normalizeLeaseStatus(leaseData.status);
+
+    // Do not auto-expire on create. Status is authoritative.
+
     const { data: insertedLease, error: insertError } = await supabaseServer
-      .from('RENT_leases')
+      .from("RENT_leases")
       .insert(leaseData)
       .select()
-      .single()
+      .single();
 
     if (insertError) {
-      console.error('Error creating lease:', insertError)
+      console.error("Error creating lease:", insertError);
       return NextResponse.json(
-        { 
-          error: 'Failed to create lease', 
-          details: insertError.message, 
-          hint: insertError.hint, 
-          code: insertError.code 
+        {
+          error: "Failed to create lease",
+          details: insertError.message,
+          hint: insertError.hint,
+          code: insertError.code,
         },
-        { status: 500 }
-      )
+        { status: 500 },
+      );
     }
 
     if (!insertedLease) {
-      console.error('Lease insert returned no data')
       return NextResponse.json(
-        { error: 'Failed to create lease', details: 'Insert succeeded but no data returned' },
-        { status: 500 }
-      )
+        {
+          error: "Failed to create lease",
+          details: "Insert succeeded but no data returned",
+        },
+        { status: 500 },
+      );
     }
 
-    // Now fetch the full lease with related data
     const { data: fullLease, error: fetchError } = await supabaseServer
-      .from('RENT_leases')
-      .select(`
+      .from("RENT_leases")
+      .select(
+        `
         *,
         RENT_properties(*),
         RENT_tenants(*)
-      `)
-      .eq('id', insertedLease.id)
-      .single()
+      `,
+      )
+      .eq("id", insertedLease.id)
+      .single();
 
     if (fetchError) {
-      console.error('Error fetching lease with relations:', fetchError)
-      // Return the basic lease data even if fetch with relations fails
-      return NextResponse.json(insertedLease)
+      return NextResponse.json(insertedLease);
     }
 
-    console.log('Lease created successfully:', fullLease)
-    return NextResponse.json(fullLease || insertedLease)
+    return NextResponse.json(fullLease || insertedLease);
   } catch (error) {
-    console.error('Error in lease creation API:', error)
+    console.error("Error in lease creation API:", error);
     return NextResponse.json(
-      { error: 'Failed to create lease', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+      {
+        error: "Failed to create lease",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
   }
 }
 
 export async function PUT(request: Request) {
-  const auth = await requireApiAuth(request, { write: true })
-  if (isAuthError(auth)) return auth
-try {
-    const { id, ...updateData } = await request.json()
-    
+  const auth = await requireApiAuth(request, { write: true });
+  if (isAuthError(auth)) return auth;
+  try {
+    const body = await request.json();
+    const {
+      id,
+      rentApplyMode,
+      rentEffectiveDate,
+      previewOnly,
+      ...rawUpdate
+    } = body;
+
     if (!id) {
-      return NextResponse.json({ error: 'Lease ID is required' }, { status: 400 })
+      return NextResponse.json(
+        { error: "Lease ID is required" },
+        { status: 400 },
+      );
     }
 
-    // Fetch current lease to compare changes
     const { data: currentLease, error: fetchError } = await supabaseServer
-      .from('RENT_leases')
-      .select('lease_start_date, lease_end_date, rent, rent_cadence, rent_due_day, property_id, tenant_id, status')
-      .eq('id', id)
-      .single()
+      .from("RENT_leases")
+      .select(
+        "lease_start_date, lease_end_date, rent, rent_cadence, rent_due_day, property_id, tenant_id, status",
+      )
+      .eq("id", id)
+      .single();
 
     if (fetchError || !currentLease) {
-      return NextResponse.json({ error: 'Lease not found' }, { status: 404 })
+      return NextResponse.json({ error: "Lease not found" }, { status: 404 });
     }
 
-    // Check if lease terms that affect invoices have changed
-    const leaseTermsChanged = 
-      (updateData.lease_start_date && updateData.lease_start_date !== currentLease.lease_start_date) ||
-      (updateData.rent !== undefined && updateData.rent !== currentLease.rent) ||
-      (updateData.rent_cadence && updateData.rent_cadence !== currentLease.rent_cadence) ||
-      (updateData.rent_due_day !== undefined && updateData.rent_due_day !== currentLease.rent_due_day)
-
-    // Determine new lease_start_date (use updated value or current)
-    const newLeaseStartDate = updateData.lease_start_date || currentLease.lease_start_date
-
-    // Auto-expire lease if end date is in the past (do not override explicit terminal statuses like 'sold')
-    const today = new Date().toISOString().split('T')[0]
-    const leaseEndDate = updateData.lease_end_date !== undefined ? updateData.lease_end_date : currentLease.lease_end_date
-    if (leaseEndDate && leaseEndDate < today && updateData.status !== 'sold') {
-      const isCurrentlyOccupied = currentLease.status === 'occupied'
-      if (!updateData.status || updateData.status === 'occupied' || isCurrentlyOccupied) {
-        updateData.status = 'empty'
-        console.log(`Auto-expiring lease ${id} to 'empty' status (end date ${leaseEndDate} is in the past)`)
-      }
+    const updateData: Record<string, unknown> = { ...rawUpdate };
+    if (updateData.status != null) {
+      updateData.status = normalizeLeaseStatus(String(updateData.status));
     }
 
-    // Update lease
+    const businessDate = getBusinessDate();
+    const newRent =
+      updateData.rent !== undefined
+        ? Number(updateData.rent)
+        : Number(currentLease.rent);
+    const rentChanged =
+      updateData.rent !== undefined &&
+      Number(updateData.rent) !== Number(currentLease.rent);
+
+    const cadenceChanged =
+      updateData.rent_cadence != null &&
+      updateData.rent_cadence !== currentLease.rent_cadence;
+    const dueDayChanged =
+      updateData.rent_due_day !== undefined &&
+      updateData.rent_due_day !== currentLease.rent_due_day;
+    const startChanged =
+      updateData.lease_start_date != null &&
+      updateData.lease_start_date !== currentLease.lease_start_date;
+
+    const mode: RentApplyMode =
+      (rentApplyMode as RentApplyMode) || "all_unpaid_partial";
+
+    // Ending Empty/Sold: lease_end_date should be set by client (actual ending date).
+    // Never auto-force status from dates.
+
+    if (previewOnly) {
+      const { data: invoices } = await supabaseServer
+        .from("RENT_invoices")
+        .select(
+          "id, due_date, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due",
+        )
+        .eq("lease_id", id);
+
+      const preview = await buildLeaseRentPreview({
+        leaseId: id,
+        invoices: invoices || [],
+        newRent,
+        mode,
+        effectiveDate: rentEffectiveDate || null,
+        businessDate,
+      });
+
+      return NextResponse.json({
+        previewOnly: true,
+        writePerformed: false,
+        leaseId: id,
+        currentRent: currentLease.rent,
+        ...preview,
+      });
+    }
+
+    // Persist lease row first (terms / status)
     const { data: updatedLease, error: updateError } = await supabaseServer
-      .from('RENT_leases')
+      .from("RENT_leases")
       .update(updateData)
-      .eq('id', id)
-      .select(`
+      .eq("id", id)
+      .select(
+        `
         *,
         RENT_properties(*),
         RENT_tenants(*)
-      `)
-      .single()
+      `,
+      )
+      .single();
 
     if (updateError) {
-      console.error('Error updating lease:', updateError)
-      throw new Error(`Supabase error: ${updateError.message}`)
+      console.error("Error updating lease:", updateError);
+      throw new Error(`Supabase error: ${updateError.message}`);
     }
 
-    // If lease terms changed, delete invoices and regenerate
-    if (leaseTermsChanged) {
-      console.log('Lease terms changed, deleting invoices and regenerating...')
-      
-      // 1. Delete all PAID invoices with due_date < new lease_start_date
-      // Keep unpaid invoices before new lease (they still need to be paid)
-      // This removes historical paid invoices from old lease terms
-      const { error: deletePaidBeforeError } = await supabaseServer
-        .from('RENT_invoices')
-        .delete()
-        .eq('lease_id', id)
-        .lt('due_date', newLeaseStartDate)
-        .eq('status', 'PAID')  // Only delete paid invoices
+    let rentApplyResult: unknown = null;
 
-      if (deletePaidBeforeError) {
-        console.error('Error deleting paid invoices before new lease_start_date:', deletePaidBeforeError)
-      } else {
-        console.log('Deleted paid invoices before new lease_start_date')
+    // Non-destructive rent amount updates on existing OPEN/PARTIAL invoices
+    if (rentChanged && mode !== "lease_terms_only") {
+      const { data: invoices } = await supabaseServer
+        .from("RENT_invoices")
+        .select(
+          "id, due_date, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due",
+        )
+        .eq("lease_id", id);
+
+      const preview = await buildLeaseRentPreview({
+        leaseId: id,
+        invoices: invoices || [],
+        newRent,
+        mode,
+        effectiveDate: rentEffectiveDate || null,
+        businessDate,
+      });
+
+      for (const patch of preview.patches) {
+        const { error: patchError } = await supabaseServer
+          .from("RENT_invoices")
+          .update({
+            amount_rent: patch.new_amount_rent,
+            amount_total: patch.new_amount_total,
+            amount_paid: patch.amount_paid,
+            balance_due: patch.new_balance_due,
+            status: patch.new_status,
+            paid_in_full_at:
+              patch.new_status === "PAID"
+                ? new Date().toISOString()
+                : null,
+          })
+          .eq("id", patch.id)
+          .in("status", ["OPEN", "PARTIAL"]);
+
+        if (patchError) {
+          console.error("Error patching invoice rent:", patch.id, patchError);
+        }
       }
 
-      // 2. Delete ALL invoices (paid and unpaid) with due_date >= new lease_start_date
-      // These need to be regenerated with new lease terms
-      const { error: deleteFutureError } = await supabaseServer
-        .from('RENT_invoices')
-        .delete()
-        .eq('lease_id', id)
-        .gte('due_date', newLeaseStartDate)  // All invoices on/after new lease start
-
-      if (deleteFutureError) {
-        console.error('Error deleting future invoices:', deleteFutureError)
-        // Continue anyway - regeneration will handle duplicates
-      } else {
-        console.log('Deleted all invoices on/after new lease_start_date')
-      }
-
-      // Generate new invoices from new lease_start_date forward
-      await generateInvoicesForLease(updatedLease, newLeaseStartDate)
+      rentApplyResult = {
+        mode,
+        affectedInvoiceCount: preview.affectedInvoiceCount,
+        totalBalanceChange: preview.totalBalanceChange,
+      };
     }
 
-    console.log('Lease updated successfully:', updatedLease)
-    return NextResponse.json(updatedLease)
+    // Cadence / due-day / start changes: never delete invoices with payments.
+    // Only create missing future invoices at new terms when billing is active.
+    if (
+      (cadenceChanged || dueDayChanged || startChanged || rentChanged) &&
+      isActiveBillingLease(updatedLease.status)
+    ) {
+      const scheduleStart =
+        (updateData.lease_start_date as string) ||
+        currentLease.lease_start_date ||
+        businessDate;
+      await generateMissingFutureInvoicesOnly(updatedLease, scheduleStart);
+    }
+
+    return NextResponse.json({
+      ...updatedLease,
+      rentApplyResult,
+      writePerformed: true,
+    });
   } catch (error) {
-    console.error('Error in lease update API:', error)
+    console.error("Error in lease update API:", error);
     return NextResponse.json(
-      { error: 'Failed to update lease', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+      {
+        error: "Failed to update lease",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
   }
 }
 
-// Helper function to generate invoices for a lease
-async function generateInvoicesForLease(lease: any, startDate: string) {
-  const cadence = normalizeCadence(lease.rent_cadence || 'monthly')
-  const rentDueDay = lease.rent_due_day || 1
-  const rentAmount = lease.rent || 0
-  
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const todayStr = today.toISOString().split('T')[0]
-  
-  // Generate invoices for the full active period of the lease
-  // If lease has an end date, generate up to that date
-  // If no end date (month-to-month), generate up to 3 months ahead (continuously maintained)
-  let endDate: string
-  if (lease.lease_end_date) {
-    const leaseEnd = new Date(lease.lease_end_date)
-    leaseEnd.setHours(0, 0, 0, 0)
-    // Generate invoices up to lease_end_date (full active period)
-    endDate = lease.lease_end_date
-  } else {
-    // No end date (month-to-month) - generate up to 3 months ahead
-    // This will be continuously maintained as invoices are viewed
-    const threeMonthsAhead = new Date(today)
-    threeMonthsAhead.setMonth(today.getMonth() + 3)
-    endDate = threeMonthsAhead.toISOString().split('T')[0]
-  }
-  
-  const invoicesToCreate: any[] = []
-  const todayDate = new Date(today)
-  todayDate.setHours(0, 0, 0, 0)
+async function buildLeaseRentPreview(args: {
+  leaseId: string;
+  invoices: Array<{
+    id: string;
+    due_date: string;
+    status: string;
+    amount_rent: number;
+    amount_late: number;
+    amount_other: number;
+    amount_total: number;
+    amount_paid: number;
+    balance_due: number;
+  }>;
+  newRent: number;
+  mode: RentApplyMode;
+  effectiveDate: string | null;
+  businessDate: string;
+}) {
+  const { data: payments } = await supabaseServer
+    .from("RENT_payments")
+    .select("invoice_id, amount, payment_date, status")
+    .eq("lease_id", args.leaseId)
+    .eq("status", "completed")
+    .not("invoice_id", "is", null);
 
-  if (cadence === 'weekly') {
-    // Generate weekly invoices: every 7 days from lease start up to 3 months ahead
-    const start = new Date(startDate)
-    start.setHours(0, 0, 0, 0)
-    const endDateObj = new Date(endDate)
-    endDateObj.setHours(23, 59, 59, 999)
-    const current = new Date(start)
-    
-    while (current <= endDateObj) {
-      const dueDate = current.toISOString().split('T')[0]
-      
-      // Only create invoice if due date is on/after lease start and up to end date
-      // Skip past invoices - they require approval via generate-missing endpoint
-      if (dueDate >= startDate && dueDate <= endDate) {
-        const dueDateObj = new Date(dueDate)
-        dueDateObj.setHours(0, 0, 0, 0)
-        
-        // Skip past invoices - they will be handled via approval flow when viewing invoices
-        if (dueDateObj < todayDate) {
-          current.setDate(current.getDate() + 7)
-          continue
-        }
-        
-        // Calculate period: 7 days (period_start to period_start + 6 days)
-        const periodStart = dueDate
-        const periodEndDate = new Date(current)
-        periodEndDate.setDate(periodEndDate.getDate() + 6)
-        const periodEnd = periodEndDate.toISOString().split('T')[0]
-        
-        // Check if invoice already exists
-        const { data: existing } = await supabaseServer
-          .from('RENT_invoices')
-          .select('id')
-          .eq('lease_id', lease.id)
-          .eq('due_date', dueDate)
-          .maybeSingle()
+  const { eligible } = partitionPaymentsByAsOf(
+    (payments || []) as Array<{
+      invoice_id: string;
+      amount: number;
+      payment_date: string;
+      status: string;
+    }>,
+    args.businessDate,
+  );
 
-        if (!existing) {
-          invoicesToCreate.push({
-            lease_id: lease.id,
-            property_id: lease.property_id,
-            tenant_id: lease.tenant_id,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN'
-          })
-        }
-      }
-      
-      // Move to next week (7 days later)
-      current.setDate(current.getDate() + 7)
-    }
-  } else if (cadence === 'biweekly') {
-    // Generate biweekly invoices: every 14 days from lease start up to 3 months ahead
-    const start = new Date(startDate)
-    start.setHours(0, 0, 0, 0)
-    const endDateObj = new Date(endDate)
-    endDateObj.setHours(23, 59, 59, 999)
-    const current = new Date(start)
-    
-    while (current <= endDateObj) {
-      const dueDate = current.toISOString().split('T')[0]
-      
-      if (dueDate >= startDate && dueDate <= endDate) {
-        const dueDateObj = new Date(dueDate)
-        dueDateObj.setHours(0, 0, 0, 0)
-        
-        // Skip past invoices - they will be handled via approval flow when viewing invoices
-        if (dueDateObj < todayDate) {
-          current.setDate(current.getDate() + 14)
-          continue
-        }
-        
-        // Calculate period: 14 days (period_start to period_start + 13 days)
-        const periodStart = dueDate
-        const periodEndDate = new Date(current)
-        periodEndDate.setDate(periodEndDate.getDate() + 13)
-        const periodEnd = periodEndDate.toISOString().split('T')[0]
-        
-        // Check if invoice already exists
-        const { data: existing } = await supabaseServer
-          .from('RENT_invoices')
-          .select('id')
-          .eq('lease_id', lease.id)
-          .eq('due_date', dueDate)
-          .maybeSingle()
-
-        if (!existing) {
-          invoicesToCreate.push({
-            lease_id: lease.id,
-            property_id: lease.property_id,
-            tenant_id: lease.tenant_id,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN'
-          })
-        }
-      }
-      
-      // Move to next biweekly period (14 days later)
-      current.setDate(current.getDate() + 14)
-    }
-  } else if (cadence === 'monthly') {
-    // Generate monthly invoices: each month from lease start up to 3 months ahead
-    const start = new Date(startDate)
-    const current = new Date(start.getFullYear(), start.getMonth(), 1)
-    const endDateObj = new Date(endDate)
-
-    while (current <= endDateObj) {
-      const year = current.getFullYear()
-      const month = current.getMonth()
-      const daysInMonth = new Date(year, month + 1, 0).getDate()
-      const dueDay = Math.min(rentDueDay, daysInMonth)
-      const dueDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
-      
-      // Only create invoice if due date is on/after lease start and up to end date
-      // Skip past invoices - they require approval via generate-missing endpoint
-      if (dueDate >= startDate && dueDate <= endDate) {
-        const dueDateObj = new Date(dueDate)
-        dueDateObj.setHours(0, 0, 0, 0)
-        
-        // Skip past invoices - they will be handled via approval flow when viewing invoices
-        if (dueDateObj < todayDate) {
-          current.setMonth(current.getMonth() + 1)
-          continue
-        }
-        
-        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
-        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
-        
-        // Check if invoice already exists
-        const { data: existing } = await supabaseServer
-          .from('RENT_invoices')
-          .select('id')
-          .eq('lease_id', lease.id)
-          .eq('due_date', dueDate)
-          .maybeSingle()
-
-        if (!existing) {
-          invoicesToCreate.push({
-            lease_id: lease.id,
-            property_id: lease.property_id,
-            tenant_id: lease.tenant_id,
-            due_date: dueDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            amount_rent: rentAmount,
-            amount_late: 0,
-            amount_other: 0,
-            amount_total: rentAmount,
-            amount_paid: 0,
-            balance_due: rentAmount,
-            status: 'OPEN'
-          })
-        }
-      }
-
-      // Move to next month
-      current.setMonth(current.getMonth() + 1)
-    }
-  } else {
-    console.log(`Invoice generation doesn't support cadence: ${cadence}`)
-    return
+  const paidByInvoice = new Map<string, number>();
+  for (const p of eligible) {
+    if (!p.invoice_id) continue;
+    paidByInvoice.set(
+      p.invoice_id,
+      (paidByInvoice.get(p.invoice_id) || 0) +
+        (parseFloat(String(p.amount)) || 0),
+    );
   }
 
-  // Insert all new invoices
+  const invoiceRows: InvoiceForRentChange[] = args.invoices.map((inv) => ({
+    id: inv.id,
+    due_date: inv.due_date,
+    status: inv.status,
+    amount_rent: Number(inv.amount_rent) || 0,
+    amount_late: Number(inv.amount_late) || 0,
+    amount_other: Number(inv.amount_other) || 0,
+    amount_total: Number(inv.amount_total) || 0,
+    amount_paid: paidByInvoice.has(inv.id)
+      ? paidByInvoice.get(inv.id)!
+      : Number(inv.amount_paid) || 0,
+    balance_due: Number(inv.balance_due) || 0,
+  }));
+
+  return buildRentChangePreview({
+    invoices: invoiceRows,
+    newRent: args.newRent,
+    mode: args.mode,
+    effectiveDate: args.effectiveDate,
+    businessDate: args.businessDate,
+  });
+}
+
+/**
+ * Create missing future/current invoices only. Never deletes existing rows.
+ */
+async function generateMissingFutureInvoicesOnly(
+  lease: {
+    id: string;
+    property_id: string;
+    tenant_id: string;
+    rent: number;
+    rent_cadence?: string;
+    rent_due_day?: number;
+    lease_end_date?: string | null;
+    status?: string;
+  },
+  startDate: string,
+) {
+  const cadence = normalizeCadence(lease.rent_cadence || "monthly");
+  const rentDueDay = lease.rent_due_day || 1;
+  const rentAmount = lease.rent || 0;
+  const todayStr = getBusinessDate();
+  const todayDate = new Date(todayStr + "T00:00:00");
+
+  const endDate = resolveInvoiceScheduleEnd({
+    status: lease.status,
+    leaseEndDate: lease.lease_end_date,
+    asOfDate: todayStr,
+  });
+
+  const invoicesToCreate: Array<Record<string, unknown>> = [];
+
+  const pushIfMissing = async (
+    dueDate: string,
+    periodStart: string,
+    periodEnd: string,
+  ) => {
+    if (dueDate < startDate || dueDate > endDate) return;
+    const dueDateObj = new Date(dueDate + "T00:00:00");
+    if (dueDateObj < todayDate) return;
+
+    const { data: existing } = await supabaseServer
+      .from("RENT_invoices")
+      .select("id")
+      .eq("lease_id", lease.id)
+      .eq("due_date", dueDate)
+      .maybeSingle();
+
+    if (existing) return;
+
+    invoicesToCreate.push({
+      lease_id: lease.id,
+      property_id: lease.property_id,
+      tenant_id: lease.tenant_id,
+      due_date: dueDate,
+      period_start: periodStart,
+      period_end: periodEnd,
+      amount_rent: rentAmount,
+      amount_late: 0,
+      amount_other: 0,
+      amount_total: rentAmount,
+      amount_paid: 0,
+      balance_due: rentAmount,
+      status: "OPEN",
+    });
+  };
+
+  if (cadence === "weekly") {
+    const start = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T00:00:00");
+    const current = new Date(start);
+    while (current <= endDateObj) {
+      const dueDate = current.toISOString().split("T")[0];
+      const periodEndDate = new Date(current);
+      periodEndDate.setDate(periodEndDate.getDate() + 6);
+      await pushIfMissing(
+        dueDate,
+        dueDate,
+        periodEndDate.toISOString().split("T")[0],
+      );
+      current.setDate(current.getDate() + 7);
+    }
+  } else if (cadence === "biweekly") {
+    const start = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T00:00:00");
+    const current = new Date(start);
+    while (current <= endDateObj) {
+      const dueDate = current.toISOString().split("T")[0];
+      const periodEndDate = new Date(current);
+      periodEndDate.setDate(periodEndDate.getDate() + 13);
+      await pushIfMissing(
+        dueDate,
+        dueDate,
+        periodEndDate.toISOString().split("T")[0],
+      );
+      current.setDate(current.getDate() + 14);
+    }
+  } else if (cadence === "monthly") {
+    const start = new Date(startDate + "T00:00:00");
+    const current = new Date(start.getFullYear(), start.getMonth(), 1);
+    const endDateObj = new Date(endDate + "T00:00:00");
+    while (current <= endDateObj) {
+      const year = current.getFullYear();
+      const month = current.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const dueDay = Math.min(rentDueDay, daysInMonth);
+      const dueDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(dueDay).padStart(2, "0")}`;
+      const periodStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const periodEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+      await pushIfMissing(dueDate, periodStart, periodEnd);
+      current.setMonth(current.getMonth() + 1);
+    }
+  }
+
   if (invoicesToCreate.length > 0) {
     const { error: insertError } = await supabaseServer
-      .from('RENT_invoices')
-      .insert(invoicesToCreate)
-
+      .from("RENT_invoices")
+      .insert(invoicesToCreate);
     if (insertError) {
-      console.error('Error creating invoices:', insertError)
-    } else {
-      console.log(`Created ${invoicesToCreate.length} new invoices for lease ${lease.id} (${cadence} cadence)`)
+      console.error("Error creating missing future invoices:", insertError);
     }
   }
 }
 
 export async function DELETE(request: Request) {
-  const auth = await requireApiAuth(request, { write: true })
-  if (isAuthError(auth)) return auth
-try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-    
+  const auth = await requireApiAuth(request, { write: true });
+  if (isAuthError(auth)) return auth;
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
     if (!id) {
-      return NextResponse.json({ error: 'Lease ID is required' }, { status: 400 })
+      return NextResponse.json(
+        { error: "Lease ID is required" },
+        { status: 400 },
+      );
     }
 
-    console.log('Deleting lease:', id)
-    
     const { error } = await supabaseServer
-      .from('RENT_leases')
+      .from("RENT_leases")
       .delete()
-      .eq('id', id)
+      .eq("id", id);
 
     if (error) {
-      console.error('Error deleting lease:', error)
-      throw new Error(`Supabase error: ${error.message}`)
+      throw new Error(`Supabase error: ${error.message}`);
     }
 
-    console.log('Lease deleted successfully')
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error in lease delete API:', error)
+    console.error("Error in lease delete API:", error);
     return NextResponse.json(
-      { error: 'Failed to delete lease', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+      {
+        error: "Failed to delete lease",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
   }
 }

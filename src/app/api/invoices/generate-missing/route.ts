@@ -7,6 +7,10 @@ import {
   applyPreviewSafetyToScheduleInput,
   isRejectedPreviewDueDate,
 } from '@/lib/lease-preview-safety'
+import {
+  isActiveBillingLease,
+  resolveInvoiceScheduleEnd,
+} from '@/lib/lease-status'
 
 /**
  * Validates if an invoice's period matches the expected cadence
@@ -84,10 +88,10 @@ try {
       )
     }
 
-    // Only generate invoices for leases with tenants
-    if (lease.status !== 'occupied') {
+    // Occupied or eviction (physically occupied / billing-active)
+    if (!isActiveBillingLease(lease.status)) {
       return NextResponse.json(
-        { error: 'Can only generate invoices for occupied leases' },
+        { error: 'Can only generate invoices for occupied or eviction leases' },
         { status: 400 }
       )
     }
@@ -108,22 +112,12 @@ try {
     const todayDate = new Date(businessDate + 'T00:00:00')
     todayDate.setHours(0, 0, 0, 0)
     
-    // Generate invoices for the full active period of the lease
-    // If lease has an end date, generate up to that date
-    // If no end date (month-to-month), generate up to 3 months ahead (continuously maintained)
-    let endDate: string
-    if (lease.lease_end_date) {
-      const leaseEnd = new Date(lease.lease_end_date)
-      leaseEnd.setHours(0, 0, 0, 0)
-      // Generate invoices up to lease_end_date (full active period)
-      endDate = lease.lease_end_date
-    } else {
-      // No end date (month-to-month) - generate up to 3 months ahead
-      // This will be continuously maintained as invoices are viewed
-      const threeMonthsAhead = new Date(businessDate + 'T00:00:00')
-      threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 3)
-      endDate = threeMonthsAhead.toISOString().split('T')[0]
-    }
+    // Period-to-period: occupied/eviction continue past original lease_end_date
+    const endDate = resolveInvoiceScheduleEnd({
+      status: lease.status,
+      leaseEndDate: lease.lease_end_date,
+      asOfDate: todayStr,
+    })
 
     // Fetch existing invoices to find gaps and validate cadence
     const { data: existingInvoices, error: invoicesError } = await supabaseServer

@@ -49,6 +49,8 @@ Service-role (`supabaseServer`) is used only after `requireApiAuth` succeeds (ex
 | `/api/leases` | POST | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/leases` | PUT | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/leases` | DELETE | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
+| `/api/leases/rent-change-preview` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/lease-income/* |
+| `/api/leases/manual-review` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/lease-income/* |
 | `/api/payments` | GET | read | owner, staff, readonly | `requireApiAuth(request)` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/payments` | POST | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |
 | `/api/payments` | PUT | write | owner, staff | `requireApiAuth(request, { write: true })` | yes (after auth) | __tests__/launch/api-auth.test.ts + workflow coverage |

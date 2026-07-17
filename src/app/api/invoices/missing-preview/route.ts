@@ -7,6 +7,7 @@ import {
   applyPreviewSafetyToScheduleInput,
   getPreviewCadenceOverride,
 } from "@/lib/lease-preview-safety";
+import { resolveInvoiceScheduleEnd } from "@/lib/lease-status";
 
 /**
  * Read-only missing-invoice schedule preview.
@@ -53,12 +54,11 @@ export async function GET(request: Request) {
     });
     const cadenceOverride = getPreviewCadenceOverride(leaseId);
 
-    let endDate = lease.lease_end_date as string | null;
-    if (!endDate) {
-      const threeMonthsAhead = new Date(asOf + "T00:00:00");
-      threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 3);
-      endDate = threeMonthsAhead.toISOString().split("T")[0];
-    }
+    const endDate = resolveInvoiceScheduleEnd({
+      status: lease.status,
+      leaseEndDate: lease.lease_end_date,
+      asOfDate: asOf,
+    });
 
     const { data: existingInvoices, error: invoicesError } = await supabaseServer
       .from("RENT_invoices")
@@ -78,6 +78,7 @@ export async function GET(request: Request) {
       leaseId,
       leaseStartDate: lease.lease_start_date,
       leaseEndDate: lease.lease_end_date,
+      leaseStatus: lease.status,
       rentCadence: safety.rentCadence,
       rentDueDay: lease.rent_due_day,
       rentAmount: safety.rentAmount,

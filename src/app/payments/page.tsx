@@ -309,6 +309,8 @@ return'<div class="s">'+l+'</div>';
     setSelectedLease(leaseRow)
     setShowInvoiceModal(true)
     setLoadingInvoices(true)
+    // Never reuse stale modal rows — always refetch stored invoices from the server.
+    setInvoices([])
 
     try {
       // Fetch ALL invoices for this lease (no date filter to show history)
@@ -322,7 +324,7 @@ return'<div class="s">'+l+'</div>';
       // Fetch all invoices for this lease (no from date filter to include old invoices)
       const url = `/api/invoices?leaseId=${leaseRow.lease.id}&to=${futureDateStr}`
       
-      const response = await fetch(url)
+      const response = await fetch(url, { cache: 'no-store' })
       if (!response.ok) {
         console.error('Error fetching invoices:', response.status, response.statusText)
         const errorData = await response.json().catch(() => ({}))

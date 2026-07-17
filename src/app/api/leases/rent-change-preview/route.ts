@@ -365,53 +365,28 @@ export async function GET(request: Request) {
 
 
     return NextResponse.json({
-
       previewOnly: true,
-
       writePerformed: false,
-
       leaseId: resolvedLeaseId,
-
       currentRent: lease.rent,
-
-      newRent,
-
       effectiveDateOptions,
-
       property: prop
-
         ? { name: (prop as { name?: string }).name, address: (prop as { address?: string }).address }
-
         : null,
-
       tenant: tenant
-
         ? {
-
             name:
-
               (tenant as { full_name?: string }).full_name ||
-
               [
-
                 (tenant as { first_name?: string }).first_name,
-
                 (tenant as { last_name?: string }).last_name,
-
               ]
-
                 .filter(Boolean)
-
                 .join(" "),
-
           }
-
         : null,
-
       ...preview,
-
     });
-
   } catch (error) {
 
     console.error("rent-change-preview error:", error);

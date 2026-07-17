@@ -160,6 +160,10 @@ export async function PUT(request: Request) {
     const rentChanged =
       updateData.rent !== undefined &&
       Number(updateData.rent) !== Number(currentLease.rent);
+    const explicitEffectiveDate =
+      rentEffectiveDate != null && String(rentEffectiveDate).trim() !== ""
+        ? String(rentEffectiveDate).split("T")[0]
+        : null;
 
     const cadenceChanged =
       updateData.rent_cadence != null &&
@@ -171,17 +175,14 @@ export async function PUT(request: Request) {
       updateData.lease_start_date != null &&
       updateData.lease_start_date !== currentLease.lease_start_date;
 
-    const effectiveDate =
-      rentEffectiveDate != null && String(rentEffectiveDate).trim() !== ""
-        ? String(rentEffectiveDate).split("T")[0]
-        : businessDate;
-
-    if (rentChanged && !effectiveDate) {
+    if (rentChanged && !explicitEffectiveDate) {
       return NextResponse.json(
         { error: "rentEffectiveDate is required when rent changes" },
         { status: 400 },
       );
     }
+
+    const effectiveDate = explicitEffectiveDate || businessDate;
 
     // Ending Empty/Sold: lease_end_date should be set by client (actual ending date).
     // Never auto-force status from dates.
@@ -212,12 +213,46 @@ export async function PUT(request: Request) {
       });
     }
 
+    // Repair when rentEffectiveDate is submitted and eligible invoices still
+    // store a different amount_rent than the lease rent (Willis Bell case).
+    let eligibleInvoiceDrift = false;
+    if (
+      !rentChanged &&
+      explicitEffectiveDate &&
+      updateData.rent !== undefined &&
+      Number.isFinite(newRent)
+    ) {
+      const { data: driftInvoices } = await supabaseServer
+        .from("RENT_invoices")
+        .select("id, due_date, status, amount_rent")
+        .eq("lease_id", id);
+
+      eligibleInvoiceDrift = (driftInvoices || []).some((inv) => {
+        const status = String(inv.status || "").toUpperCase();
+        if (status !== "OPEN" && status !== "PARTIAL") return false;
+        const due = String(inv.due_date).split("T")[0];
+        if (due < explicitEffectiveDate) return false;
+        return Number(inv.amount_rent) !== newRent;
+      });
+    }
+
+    const shouldApplyProspectiveRent =
+      updateData.rent !== undefined &&
+      Number.isFinite(newRent) &&
+      (rentChanged || eligibleInvoiceDrift);
+
+    if (shouldApplyProspectiveRent && !explicitEffectiveDate) {
+      return NextResponse.json(
+        { error: "rentEffectiveDate is required to apply prospective rent updates" },
+        { status: 400 },
+      );
+    }
+
     let rentApplyResult: Record<string, unknown> | null = null;
 
-    // Prospective rent change must be one DB transaction (lease.rent + eligible invoices).
-    // Do not update lease.rent via REST first — a partial invoice-patch failure would
-    // leave lease at new rent while invoices stay at old rent (Willis Bell defect).
-    if (rentChanged) {
+    // One DB transaction via rent_apply_prospective_change (lease.rent + eligible invoices).
+    // Never update lease.rent via REST first.
+    if (shouldApplyProspectiveRent) {
       delete updateData.rent;
 
       const { data: rpcResult, error: rpcError } = await supabaseServer.rpc(
@@ -225,7 +260,7 @@ export async function PUT(request: Request) {
         {
           p_lease_id: id,
           p_new_rent: newRent,
-          p_effective_date: effectiveDate,
+          p_effective_date: explicitEffectiveDate as string,
           p_business_date: businessDate,
         },
       );
@@ -249,7 +284,7 @@ export async function PUT(request: Request) {
 
       rentApplyResult = {
         ...applied,
-        effectiveDate,
+        effectiveDate: explicitEffectiveDate,
         affectedInvoiceCount: Number(applied.invoicesUpdated ?? 0),
         totalBalanceChange: Number(applied.totalBalanceChange ?? 0),
         skippedPast: Number(applied.invoicesSkippedHistorical ?? 0),
@@ -324,7 +359,10 @@ export async function PUT(request: Request) {
     };
 
     if (
-      (cadenceChanged || dueDayChanged || startChanged || rentChanged) &&
+      (cadenceChanged ||
+        dueDayChanged ||
+        startChanged ||
+        shouldApplyProspectiveRent) &&
       isActiveBillingLease(leaseForSchedule.status)
     ) {
       const scheduleStart =
@@ -332,8 +370,17 @@ export async function PUT(request: Request) {
         currentLease.lease_start_date ||
         businessDate;
       await generateMissingFutureInvoicesOnly(leaseForSchedule, scheduleStart, {
-        rentEffectiveDate: rentChanged ? effectiveDate : null,
-        priorRent: rentChanged ? Number(currentLease.rent) : null,
+        rentEffectiveDate: shouldApplyProspectiveRent
+          ? explicitEffectiveDate
+          : null,
+        priorRent: shouldApplyProspectiveRent
+          ? Number(
+              rentChanged
+                ? currentLease.rent
+                : (updatedLease as { prior_rent?: number | null })?.prior_rent ??
+                    currentLease.rent,
+            )
+          : null,
       });
     }
 

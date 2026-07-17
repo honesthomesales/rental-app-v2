@@ -266,30 +266,56 @@ export default function LeasesPage() {
       leaseData.rentEffectiveDate = rentEffectiveDate || businessDate
     }
 
-    if (rentChanged && !showPreviewPanel) {
-      setIsLoadingPreview(true)
-      try {
-        const params = new URLSearchParams({
-          leaseId: editingLease!.id,
-          newRent: String(editRent),
-          effectiveDate: rentEffectiveDate || businessDate,
-        })
-        const res = await fetch(`/api/leases/rent-change-preview?${params}`)
-        if (!res.ok) throw new Error('Preview request failed')
-        const preview: RentChangePreview & { effectiveDateOptions?: string[] } = await res.json()
+    // Confirm path: reuse pending payload that already includes rentEffectiveDate.
+    if (showPreviewPanel && pendingLeaseData) {
+      await handleSaveLease({
+        ...pendingLeaseData,
+        ...leaseData,
+        rentEffectiveDate:
+          pendingLeaseData.rentEffectiveDate ||
+          leaseData.rentEffectiveDate ||
+          rentEffectiveDate ||
+          businessDate,
+      })
+      return
+    }
+
+    // Always preview when rent changed, OR when lease rent already matches form
+    // but stored invoices still need prospective rewrite (Willis Bell repair).
+    setIsLoadingPreview(true)
+    try {
+      const params = new URLSearchParams({
+        leaseId: editingLease!.id,
+        newRent: String(editRent),
+        effectiveDate: rentEffectiveDate || businessDate,
+      })
+      const res = await fetch(`/api/leases/rent-change-preview?${params}`, {
+        cache: 'no-store',
+      })
+      if (!res.ok) throw new Error('Preview request failed')
+      const preview: RentChangePreview & { effectiveDateOptions?: string[] } =
+        await res.json()
+      const hasAmountDrift = (preview.patches || []).some(
+        (p) => Number(p.previous_amount_rent) !== Number(p.new_amount_rent),
+      )
+      if (rentChanged || hasAmountDrift) {
         setRentPreview(preview)
         if (preview.effectiveDateOptions?.length) {
           setEffectiveDateOptions(preview.effectiveDateOptions)
         }
+        leaseData.rentEffectiveDate = rentEffectiveDate || businessDate
         setPendingLeaseData(leaseData)
         setShowPreviewPanel(true)
-      } catch (err) {
-        console.error('Error fetching rent change preview:', err)
-        alert('Failed to fetch rent change preview. Please try again.')
-      } finally {
-        setIsLoadingPreview(false)
+        return
       }
-      return
+    } catch (err) {
+      console.error('Error fetching rent change preview:', err)
+      if (rentChanged) {
+        alert('Failed to fetch rent change preview. Please try again.')
+        return
+      }
+    } finally {
+      setIsLoadingPreview(false)
     }
 
     await handleSaveLease(leaseData)
@@ -297,7 +323,13 @@ export default function LeasesPage() {
 
   const handleConfirmSave = async () => {
     if (!pendingLeaseData) return
-    await handleSaveLease(pendingLeaseData)
+    await handleSaveLease({
+      ...pendingLeaseData,
+      rentEffectiveDate:
+        pendingLeaseData.rentEffectiveDate ||
+        rentEffectiveDate ||
+        businessDate,
+    })
   }
 
   const handleDeleteLease = async (lease: LeaseWithDetails) => {
@@ -972,11 +1004,14 @@ export default function LeasesPage() {
                     </div>
                   </div>
 
-                  {rentChanged && (
+                  {(rentChanged || (rentPreview && (rentPreview.patches || []).some(
+                    (p) => Number(p.previous_amount_rent) !== Number(p.new_amount_rent),
+                  ))) && (
                     <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
                       <p className="text-sm font-medium text-amber-800">
-                        Rent changed from ${originalRent.toLocaleString()} → ${editRent.toLocaleString()}.
-                        The new rent applies prospectively from the effective date.
+                        {rentChanged
+                          ? `Rent changed from $${originalRent.toLocaleString()} → $${editRent.toLocaleString()}. The new rent applies prospectively from the effective date.`
+                          : `Lease rent is already $${editRent.toLocaleString()}, but some open invoices still store a different amount. Confirm the effective date to rewrite eligible future invoices.`}
                       </p>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Effective date</label>
@@ -1114,7 +1149,13 @@ export default function LeasesPage() {
                     disabled={isLoadingPreview}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isLoadingPreview ? 'Loading preview…' : rentChanged ? 'Preview & Save' : 'Save Changes'}
+                    {isLoadingPreview
+                      ? 'Loading preview…'
+                      : showPreviewPanel
+                        ? 'Confirm & Save'
+                        : rentChanged
+                          ? 'Preview & Save'
+                          : 'Save Changes'}
                   </button>
                 </div>
               </form>

@@ -298,8 +298,13 @@ try {
       
       // For each unpaid past invoice, create a payment entry (even if no payment exists)
       unpaidPastInvoices.forEach((invoice: any) => {
-        // Find payments linked to this invoice
-        const invoicePayments = payments?.filter(p => p.invoice_id === invoice.id) || []
+        // Find eligible payments linked to this invoice (exclude future-dated)
+        const invoicePayments =
+          payments?.filter(
+            (p) =>
+              p.invoice_id === invoice.id &&
+              isPaymentEligibleAsOf(p, businessDate),
+          ) || []
         
         if (invoicePayments.length > 0) {
           // If there are payments, create entries for them
@@ -360,9 +365,11 @@ try {
       
       // 2. Get last 4 paid payments (where invoice balance <= 0) for table view
       // But for grid view, we need ALL invoices, so we'll add all invoices below
+      // Future-dated completed payments never count as Last Paid.
       const paidPayments = payments
         ?.filter(p => {
           if (!p.property_id || p.property_id !== property.id) return false
+          if (!isPaymentEligibleAsOf(p, businessDate)) return false
           const invoice = p.invoice_id ? fullInvoiceMap.get(p.invoice_id) : null
           if (!invoice) return false
           return parseFloat(invoice.recalculated_balance as any || 0) <= 0
@@ -410,9 +417,13 @@ try {
       
       // For each invoice, find all payments linked to it (from ALL payments, not just recent ones)
       allOtherInvoices.forEach((invoice: any) => {
-        // Find all payments for this invoice from the full payments array
+        // Eligible payments only — future-dated completed never become Last Paid
         const invoicePayments =
-          payments?.filter((p) => p.invoice_id === invoice.id) || []
+          payments?.filter(
+            (p) =>
+              p.invoice_id === invoice.id &&
+              isPaymentEligibleAsOf(p, businessDate),
+          ) || []
         
         const lease = activeLease
         const tenantData = lease?.RENT_tenants

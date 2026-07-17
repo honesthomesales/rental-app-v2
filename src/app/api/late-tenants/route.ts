@@ -7,6 +7,7 @@ import {
 } from '@/lib/late-tenants-summary'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate, resolveBusinessDate } from '@/lib/business-date'
+import { isPaymentEligibleAsOf } from '@/lib/payment-eligibility'
 
 export const revalidate = 0
 
@@ -103,6 +104,33 @@ export async function GET(request: Request) {
 
         const rowTotals = buildLateTenantRowTotals(totalOwed)
 
+        const eligiblePayments = payments.filter((p: Payment) =>
+          isPaymentEligibleAsOf(p, today),
+        )
+        let mostRecentPayment:
+          | { date: string; amount: number; method: string }
+          | null = null
+        if (eligiblePayments.length > 0) {
+          const sorted = [...eligiblePayments].sort((a, b) => {
+            const da = String(a.payment_date || '').split('T')[0]
+            const db = String(b.payment_date || '').split('T')[0]
+            return db.localeCompare(da)
+          })
+          const top = sorted[0]
+          const topDate = String(top.payment_date || '').split('T')[0]
+          if (topDate) {
+            mostRecentPayment = {
+              date: topDate,
+              amount: parseFloat(String(top.amount ?? 0)) || 0,
+              method: String(
+                (top as { payment_method?: string }).payment_method ||
+                  (top as { payment_type?: string }).payment_type ||
+                  '',
+              ),
+            }
+          }
+        }
+
         let daysLate = 0
         if (unpaidInvoices.length > 0) {
           const oldestUnpaid = unpaidInvoices.reduce((oldest, inv) => {
@@ -133,6 +161,7 @@ export async function GET(request: Request) {
           unpaidInvoiceCount: unpaidCount,
           unpaidInvoiceIds: unpaidInvoices.map((inv) => inv.id),
           daysLate,
+          mostRecentPayment,
           lateInvoices: unpaidInvoices.map((inv) => ({
             id: inv.id,
             due_date: inv.due_date,

@@ -1,6 +1,9 @@
 /**
  * Business date + payment eligibility — launch invariants.
+ * Includes regression coverage for future-dated completed payments.
  */
+import fs from "fs";
+import path from "path";
 import {
   BUSINESS_TIMEZONE,
   daysUntilPaymentEligible,
@@ -9,6 +12,8 @@ import {
 } from "@/lib/business-date";
 import {
   FUTURE_DATED_COMPLETED_PAYMENT_EXCLUDED,
+  canAllocatePaymentAsOf,
+  getMostRecentEligiblePaymentDate,
   isPaymentEligibleAsOf,
   partitionPaymentsByAsOf,
 } from "@/lib/payment-eligibility";
@@ -20,6 +25,12 @@ import {
   TYLER_LEASE_ID,
   isRejectedPreviewDueDate,
 } from "@/lib/lease-preview-safety";
+
+const repoRoot = path.join(__dirname, "..", "..");
+
+function readSrc(rel: string): string {
+  return fs.readFileSync(path.join(repoRoot, rel), "utf8");
+}
 
 describe("business date America/New_York", () => {
   it("1. uses America/New_York timezone constant", () => {
@@ -159,6 +170,185 @@ describe("future-payment eligibility", () => {
   it("daysUntilPaymentEligible is dynamic", () => {
     expect(daysUntilPaymentEligible("2026-07-20", "2026-07-16")).toBe(4);
     expect(daysUntilPaymentEligible("2026-07-16", "2026-07-16")).toBe(0);
+  });
+});
+
+/**
+ * Regression: future-dated completed payments after Billy's invalid-batch cleanup.
+ * Business date fixture: 2026-07-17 (matches confirmed cleanup as-of).
+ */
+describe("future-dated completed payment regressions (8 invariants)", () => {
+  const businessDate = "2026-07-17";
+  const pastPayment = {
+    id: "past",
+    invoice_id: "inv-open",
+    amount: 700,
+    payment_date: "2026-06-01",
+    lease_id: "lease-1",
+    status: "completed",
+  };
+  const futurePayment = {
+    id: "future-invalid-batch",
+    invoice_id: "inv-open",
+    amount: 35610,
+    payment_date: "2026-08-15",
+    lease_id: "lease-1",
+    status: "completed",
+  };
+  const openInvoice = {
+    id: "inv-open",
+    lease_id: "lease-1",
+    due_date: "2026-06-01",
+    status: "OPEN",
+    amount_total: 1400,
+    balance_due: 1400,
+  };
+
+  it("1. does not reduce current tenant balances", () => {
+    const withFuture = calculateUnpaidInvoices(
+      [openInvoice],
+      [pastPayment, futurePayment],
+      "2025-01-01",
+      businessDate,
+    );
+    const withoutFuture = calculateUnpaidInvoices(
+      [openInvoice],
+      [pastPayment],
+      "2025-01-01",
+      businessDate,
+    );
+    expect(withFuture.totalOwed).toBe(withoutFuture.totalOwed);
+    expect(withFuture.totalOwed).toBe(700);
+  });
+
+  it("2. does not reduce Late Tenants amounts", () => {
+    const result = calculateUnpaidInvoices(
+      [openInvoice],
+      [pastPayment, futurePayment],
+      "2025-01-01",
+      businessDate,
+    );
+    expect(result.unpaidCount).toBe(1);
+    expect(result.totalOwed).toBe(700);
+    expect(result.unpaidInvoices[0].balance_due).toBe(700);
+  });
+
+  it("3. does not count as current Profit income", () => {
+    const part = partitionPaymentsByAsOf(
+      [pastPayment, futurePayment],
+      businessDate,
+    );
+    const profitEligibleTotal = part.eligible.reduce(
+      (s, p) => s + Number(p.amount),
+      0,
+    );
+    expect(profitEligibleTotal).toBe(700);
+    expect(part.excludedAmount).toBe(35610);
+    expect(part.excludedFuture[0].exclusionClass).toBe(
+      FUTURE_DATED_COMPLETED_PAYMENT_EXCLUDED,
+    );
+
+    const profitSrc = readSrc("src/app/api/profit/metrics/route.ts");
+    expect(profitSrc).toMatch(/partitionPaymentsByAsOf/);
+    const monthlySrc = readSrc("src/app/api/profit/monthly-summary/route.ts");
+    expect(monthlySrc).toMatch(/partitionPaymentsByAsOf/);
+  });
+
+  it("4. does not count as the Last Paid Date", () => {
+    expect(
+      getMostRecentEligiblePaymentDate(
+        [pastPayment, futurePayment],
+        businessDate,
+      ),
+    ).toBe("2026-06-01");
+    expect(
+      getMostRecentEligiblePaymentDate([futurePayment], businessDate),
+    ).toBeNull();
+
+    const lastPaidApi = readSrc("src/app/api/last-paid/route.ts");
+    expect(lastPaidApi).toMatch(/isPaymentEligibleAsOf/);
+    expect(lastPaidApi).toMatch(
+      /Future-dated completed payments never count as Last Paid/,
+    );
+
+    const lastPaidPage = readSrc("src/app/last-paid/page.tsx");
+    expect(lastPaidPage).toMatch(/getMostRecentEligiblePaymentDate/);
+    expect(lastPaidPage).toMatch(/getBusinessDate/);
+
+    const paymentsPage = readSrc("src/app/payments/page.tsx");
+    expect(paymentsPage).toMatch(/\/api\/business-date/);
+    expect(paymentsPage).toMatch(/if \(pd > today\) return false/);
+  });
+
+  it("5. does not count as the Most Recent Payment", () => {
+    const part = partitionPaymentsByAsOf(
+      [pastPayment, futurePayment],
+      businessDate,
+    );
+    const sortedEligible = [...part.eligible].sort((a, b) =>
+      String(b.payment_date).localeCompare(String(a.payment_date)),
+    );
+    expect(sortedEligible[0]?.id).toBe("past");
+    expect(sortedEligible.some((p) => p.id === futurePayment.id)).toBe(false);
+
+    const lateApi = readSrc("src/app/api/late-tenants/route.ts");
+    expect(lateApi).toMatch(/isPaymentEligibleAsOf/);
+    expect(lateApi).toMatch(/mostRecentPayment/);
+  });
+
+  it("6. is not allocated before its payment date", () => {
+    expect(canAllocatePaymentAsOf(futurePayment, businessDate)).toBe(false);
+    expect(canAllocatePaymentAsOf(pastPayment, businessDate)).toBe(true);
+
+    const paymentsApi = readSrc("src/app/api/payments/route.ts");
+    expect(paymentsApi).toMatch(/canAllocatePaymentAsOf/);
+    expect(paymentsApi).toMatch(/deferredAllocation/);
+    expect(paymentsApi).toMatch(/rent_apply_payment_fifo/);
+  });
+
+  it("7. becomes eligible only when payment_date <= business date", () => {
+    expect(isPaymentEligibleAsOf(futurePayment, "2026-08-14")).toBe(false);
+    expect(isPaymentEligibleAsOf(futurePayment, "2026-08-15")).toBe(true);
+    expect(isPaymentEligibleAsOf(futurePayment, "2026-08-16")).toBe(true);
+  });
+
+  it("8. is never auto-created merely because a future invoice exists", () => {
+    const generateMissing = readSrc(
+      "src/app/api/invoices/generate-missing/route.ts",
+    );
+    expect(generateMissing).toMatch(/\.insert\(invoicesToCreate\)/);
+    expect(generateMissing).not.toMatch(/RENT_payments/);
+    expect(generateMissing).not.toMatch(/rent_apply_payment_fifo/);
+
+    const paymentsPage = readSrc("src/app/payments/page.tsx");
+    expect(paymentsPage).toMatch(
+      /never auto-POST generate-missing during Payments load/,
+    );
+    expect(paymentsPage).not.toMatch(
+      /fetch\(\s*['"`]\/api\/invoices\/generate-missing['"`]/,
+    );
+
+    // Preview may invent future invoice rows — never payment rows
+    const preview = buildMissingInvoicePreview({
+      leaseStartDate: "2026-01-01",
+      leaseEndDate: "2026-12-31",
+      rentCadence: "monthly",
+      rentDueDay: 1,
+      rentAmount: 900,
+      existingDueDates: ["2026-07-01"],
+      asOfDate: businessDate,
+    });
+    expect(preview.some((r) => r.dueDate > businessDate)).toBe(true);
+    expect(preview.every((r) => r.label === "PREVIEW — NOT SAVED")).toBe(true);
+  });
+
+  it("dashboard future metrics use the same exclusion class as Future Payments Review", () => {
+    const dash = readSrc("src/app/api/dashboard/metrics/route.ts");
+    const review = readSrc("src/app/api/data-health/future-payments/route.ts");
+    expect(dash).toMatch(/partitionPaymentsByAsOf/);
+    expect(dash).toMatch(/future_dated_completed_payment_excluded/);
+    expect(review).toMatch(/partitionPaymentsByAsOf/);
+    expect(review).toMatch(/FUTURE_DATED_COMPLETED_PAYMENT_EXCLUDED/);
   });
 });
 

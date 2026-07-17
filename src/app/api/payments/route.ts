@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { getBusinessDate } from '@/lib/business-date'
+import { canAllocatePaymentAsOf } from '@/lib/payment-eligibility'
 
 export async function POST(request: Request) {
   const auth = await requireApiAuth(request, { write: true })
@@ -227,6 +229,20 @@ try {
     }
     
     console.log('Payment inserted successfully:', payment.id)
+
+    // Do not allocate future-dated completed payments before their payment_date.
+    // They remain recorded but ineligible for balances / Last Paid until business date.
+    const businessDate = getBusinessDate()
+    if (!canAllocatePaymentAsOf(payment, businessDate)) {
+      return NextResponse.json({
+        payment,
+        allocations: [],
+        deferredAllocation: true,
+        businessDate,
+        warning:
+          'Payment recorded but not allocated yet — payment_date is after the business date.',
+      })
+    }
     
     // Call Supabase RPC function to allocate payment using FIFO
     const { data: allocations, error: rpcError } = await supabaseServer

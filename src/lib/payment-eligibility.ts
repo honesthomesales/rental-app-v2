@@ -114,3 +114,31 @@ export function assertFuturePaymentInvariants(args: {
     }
   }
 }
+
+/**
+ * Most recent payment_date among business-date-eligible completed payments.
+ * Future-dated completed payments never become Last Paid / Most Recent.
+ */
+export function getMostRecentEligiblePaymentDate(
+  payments: PaymentDateFields[],
+  businessDate: string,
+): string | null {
+  const { eligible } = partitionPaymentsByAsOf(payments, businessDate);
+  let best: string | null = null;
+  for (const p of eligible) {
+    const d = toDateOnly(p.payment_date);
+    if (!d) continue;
+    const amt = money(p.amount);
+    if (amt <= 0) continue;
+    if (!best || d > best) best = d;
+  }
+  return best;
+}
+
+/** True when a completed payment may be allocated (payment_date <= business date). */
+export function canAllocatePaymentAsOf(
+  payment: PaymentDateFields,
+  businessDate: string,
+): boolean {
+  return isPaymentEligibleAsOf(payment, businessDate);
+}

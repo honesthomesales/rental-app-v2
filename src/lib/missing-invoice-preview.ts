@@ -12,6 +12,7 @@ import {
 } from "@/lib/lease-preview-safety";
 import { resolveBusinessDate } from "@/lib/business-date";
 import { resolveInvoiceScheduleEnd } from "@/lib/lease-status";
+import { rentAmountForDueDate } from "@/lib/rent-change";
 
 export type MissingInvoicePeriodClass = "past" | "current" | "future";
 
@@ -40,6 +41,9 @@ export type MissingInvoicePreviewInput = {
   asOfDate?: string;
   /** When set, preview-safety overrides (cadence / paid-through / rejected dues) apply */
   leaseId?: string;
+  /** Prospective rent change: dues before this date use priorRentAmount */
+  rentEffectiveDate?: string | null;
+  priorRentAmount?: number | null;
 };
 
 function toDateOnly(iso: string): string {
@@ -120,12 +124,19 @@ export function buildMissingInvoicePreview(
     if (matchingInvoiceExists) return;
 
     const periodClass = classifyPeriod(dueDate, asOf);
+    const amount = rentAmountForDueDate({
+      dueDate,
+      newRent: rentAmount,
+      priorRent: input.priorRentAmount,
+      rentEffectiveDate: input.rentEffectiveDate,
+    });
+
     gaps.push({
       label: "PREVIEW — NOT SAVED",
       dueDate,
       periodStart,
       periodEnd,
-      amount: rentAmount,
+      amount,
       cadence,
       reason: `No real invoice exists for expected ${cadence} due date ${dueDate}`,
       periodClass,

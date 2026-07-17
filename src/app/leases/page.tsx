@@ -12,7 +12,7 @@ import {
   isPhysicallyOccupied,
 } from '@/lib/lease-status'
 import { getBusinessDate } from '@/lib/business-date'
-import type { RentApplyMode, RentChangePreview } from '@/lib/rent-change'
+import type { RentChangePreview } from '@/lib/rent-change'
 
 interface LeaseWithDetails extends Lease {
   RENT_properties?: Property
@@ -41,8 +41,8 @@ export default function LeasesPage() {
   const [editRent, setEditRent] = useState<number>(0)
   const [originalStatus, setOriginalStatus] = useState<string>('occupied')
   const [editStatus, setEditStatus] = useState<string>('occupied')
-  const [rentApplyMode, setRentApplyMode] = useState<RentApplyMode>('all_unpaid_partial')
   const [rentEffectiveDate, setRentEffectiveDate] = useState<string>('')
+  const [effectiveDateOptions, setEffectiveDateOptions] = useState<string[]>([])
   const [rentPreview, setRentPreview] = useState<RentChangePreview | null>(null)
   const [showPreviewPanel, setShowPreviewPanel] = useState(false)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
@@ -227,8 +227,8 @@ export default function LeasesPage() {
     setEditRent(lease.rent)
     setOriginalStatus(status)
     setEditStatus(status)
-    setRentApplyMode('all_unpaid_partial')
     setRentEffectiveDate(businessDate)
+    setEffectiveDateOptions([businessDate])
     setRentPreview(null)
     setShowPreviewPanel(false)
     setPendingLeaseData(null)
@@ -257,10 +257,7 @@ export default function LeasesPage() {
     }
 
     if (rentChanged) {
-      leaseData.rentApplyMode = rentApplyMode
-      if (rentApplyMode === 'unpaid_on_or_after') {
-        leaseData.rentEffectiveDate = rentEffectiveDate
-      }
+      leaseData.rentEffectiveDate = rentEffectiveDate || businessDate
     }
 
     if (rentChanged && !showPreviewPanel) {
@@ -269,15 +266,15 @@ export default function LeasesPage() {
         const params = new URLSearchParams({
           leaseId: editingLease!.id,
           newRent: String(editRent),
-          mode: rentApplyMode,
+          effectiveDate: rentEffectiveDate || businessDate,
         })
-        if (rentApplyMode === 'unpaid_on_or_after' && rentEffectiveDate) {
-          params.set('effectiveDate', rentEffectiveDate)
-        }
         const res = await fetch(`/api/leases/rent-change-preview?${params}`)
         if (!res.ok) throw new Error('Preview request failed')
-        const preview: RentChangePreview = await res.json()
+        const preview: RentChangePreview & { effectiveDateOptions?: string[] } = await res.json()
         setRentPreview(preview)
+        if (preview.effectiveDateOptions?.length) {
+          setEffectiveDateOptions(preview.effectiveDateOptions)
+        }
         setPendingLeaseData(leaseData)
         setShowPreviewPanel(true)
       } catch (err) {
@@ -762,35 +759,46 @@ export default function LeasesPage() {
               <div className="space-y-4">
                 <div>
                   <h3 className="text-base font-medium text-gray-900 mb-1">Rent Change Preview</h3>
-                  <p className="text-sm text-gray-500">
-                    New rent: <strong>${editRent.toLocaleString()}</strong>
-                    {' · '}Mode: <strong>{rentPreview.mode.replace(/_/g, ' ')}</strong>
-                    {rentPreview.effectiveDate && ` · Effective: ${rentPreview.effectiveDate}`}
+                  <p className="text-sm text-gray-600 bg-blue-50 border border-blue-100 rounded-md p-3">
+                    Past invoices will not be changed. Existing open or partial invoices due on
+                    or after the effective date will be updated.
                   </p>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                    <span className="text-gray-600">Affected invoices</span>
+                    <span className="text-gray-600">Old rent</span>
+                    <span className="font-medium">${rentPreview.oldRent.toLocaleString()}</span>
+                    <span className="text-gray-600">New rent</span>
+                    <span className="font-medium">${rentPreview.newRent.toLocaleString()}</span>
+                    <span className="text-gray-600">Effective date</span>
+                    <span className="font-medium">{rentPreview.effectiveDate}</span>
+                    <span className="text-gray-600">Affected future invoices</span>
                     <span className="font-medium">{rentPreview.affectedInvoiceCount}</span>
+                    {rentPreview.earliestAffectedDate && (
+                      <>
+                        <span className="text-gray-600">Earliest affected due date</span>
+                        <span className="font-medium">{rentPreview.earliestAffectedDate}</span>
+                        <span className="text-gray-600">Latest affected due date</span>
+                        <span className="font-medium">{rentPreview.latestAffectedDate}</span>
+                      </>
+                    )}
                     <span className="text-gray-600">Current invoice total</span>
                     <span className="font-medium">${rentPreview.currentInvoiceTotal.toLocaleString()}</span>
                     <span className="text-gray-600">Proposed invoice total</span>
                     <span className="font-medium">${rentPreview.proposedInvoiceTotal.toLocaleString()}</span>
-                    <span className="text-gray-600">Balance change</span>
+                    <span className="text-gray-600">Resulting balance change</span>
                     <span className={`font-medium ${rentPreview.totalBalanceChange > 0 ? 'text-red-600' : rentPreview.totalBalanceChange < 0 ? 'text-green-600' : 'text-gray-800'}`}>
                       {rentPreview.totalBalanceChange >= 0 ? '+' : ''}${rentPreview.totalBalanceChange.toLocaleString()}
                     </span>
-                    {rentPreview.earliestAffectedDate && (
-                      <>
-                        <span className="text-gray-600">Date range</span>
-                        <span className="font-medium">
-                          {rentPreview.earliestAffectedDate} — {rentPreview.latestAffectedDate}
-                        </span>
-                      </>
-                    )}
+                    <span className="text-gray-600">Skipped past invoices</span>
+                    <span className="font-medium">{rentPreview.skippedPast}</span>
+                    <span className="text-gray-600">Skipped PAID invoices</span>
+                    <span className="font-medium">{rentPreview.skippedPaid}</span>
+                    <span className="text-gray-600">Skipped VOID invoices</span>
+                    <span className="font-medium">{rentPreview.skippedVoid}</span>
                   </div>
                   {rentPreview.affectedInvoiceCount === 0 && (
-                    <p className="text-sm text-gray-500 mt-2">No open invoices will be updated by this rent change.</p>
+                    <p className="text-sm text-gray-500 mt-2">No open or partial invoices on or after the effective date will be updated.</p>
                   )}
                 </div>
                 <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
@@ -810,7 +818,7 @@ export default function LeasesPage() {
                     onClick={handleConfirmSave}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    Confirm &amp; Save
+                    Apply Rent Change Going Forward
                   </button>
                 </div>
               </div>
@@ -936,47 +944,45 @@ export default function LeasesPage() {
                   {rentChanged && (
                     <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
                       <p className="text-sm font-medium text-amber-800">
-                        Rent changed from ${originalRent.toLocaleString()} → ${editRent.toLocaleString()}. Apply new rent to:
+                        Rent changed from ${originalRent.toLocaleString()} → ${editRent.toLocaleString()}.
+                        The new rent applies prospectively from the effective date.
                       </p>
-                      <div className="space-y-2">
-                        {([
-                          { value: 'all_unpaid_partial', label: 'All existing unpaid and partially paid invoices' },
-                          { value: 'unpaid_on_or_after', label: 'Unpaid invoices due on or after an effective date' },
-                          { value: 'future_only', label: 'Future invoices only' },
-                          { value: 'lease_terms_only', label: 'Lease terms only (no invoice updates)' },
-                        ] as { value: RentApplyMode; label: string }[]).map(opt => (
-                          <label key={opt.value} className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="rentApplyMode"
-                              value={opt.value}
-                              checked={rentApplyMode === opt.value}
-                              onChange={() => {
-                                setRentApplyMode(opt.value)
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Effective date</label>
+                        <input
+                          type="date"
+                          value={rentEffectiveDate || businessDate}
+                          min={businessDate}
+                          onChange={e => {
+                            setRentEffectiveDate(e.target.value)
+                            setRentPreview(null)
+                            setShowPreviewPanel(false)
+                            setPendingLeaseData(null)
+                          }}
+                          className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          required
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Defaults to today ({businessDate}). Only open or partial invoices due on or after this date are updated.
+                        </p>
+                      </div>
+                      {effectiveDateOptions.length > 1 && (
+                        <div className="flex flex-wrap gap-2">
+                          {effectiveDateOptions.map(d => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => {
+                                setRentEffectiveDate(d)
                                 setRentPreview(null)
                                 setShowPreviewPanel(false)
                                 setPendingLeaseData(null)
                               }}
-                              className="mt-0.5"
-                            />
-                            {opt.label}
-                          </label>
-                        ))}
-                      </div>
-                      {rentApplyMode === 'unpaid_on_or_after' && (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Effective date</label>
-                          <input
-                            type="date"
-                            value={rentEffectiveDate}
-                            onChange={e => {
-                              setRentEffectiveDate(e.target.value)
-                              setRentPreview(null)
-                              setShowPreviewPanel(false)
-                              setPendingLeaseData(null)
-                            }}
-                            className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                          />
+                              className={`text-xs px-2 py-1 rounded border ${rentEffectiveDate === d ? 'bg-amber-200 border-amber-400' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+                            >
+                              {d === businessDate ? 'Today' : `Next period: ${d}`}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>

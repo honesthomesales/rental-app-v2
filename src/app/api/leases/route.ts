@@ -10,7 +10,7 @@ import {
 } from "@/lib/lease-status";
 import {
   buildRentChangePreview,
-  type RentApplyMode,
+  rentAmountForDueDate,
   type InvoiceForRentChange,
 } from "@/lib/rent-change";
 import { partitionPaymentsByAsOf } from "@/lib/payment-eligibility";
@@ -126,13 +126,7 @@ export async function PUT(request: Request) {
   if (isAuthError(auth)) return auth;
   try {
     const body = await request.json();
-    const {
-      id,
-      rentApplyMode,
-      rentEffectiveDate,
-      previewOnly,
-      ...rawUpdate
-    } = body;
+    const { id, rentEffectiveDate, previewOnly, ...rawUpdate } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -177,8 +171,17 @@ export async function PUT(request: Request) {
       updateData.lease_start_date != null &&
       updateData.lease_start_date !== currentLease.lease_start_date;
 
-    const mode: RentApplyMode =
-      (rentApplyMode as RentApplyMode) || "all_unpaid_partial";
+    const effectiveDate =
+      rentEffectiveDate != null && String(rentEffectiveDate).trim() !== ""
+        ? String(rentEffectiveDate).split("T")[0]
+        : businessDate;
+
+    if (rentChanged && !effectiveDate) {
+      return NextResponse.json(
+        { error: "rentEffectiveDate is required when rent changes" },
+        { status: 400 },
+      );
+    }
 
     // Ending Empty/Sold: lease_end_date should be set by client (actual ending date).
     // Never auto-force status from dates.
@@ -194,9 +197,9 @@ export async function PUT(request: Request) {
       const preview = await buildLeaseRentPreview({
         leaseId: id,
         invoices: invoices || [],
+        oldRent: Number(currentLease.rent),
         newRent,
-        mode,
-        effectiveDate: rentEffectiveDate || null,
+        effectiveDate,
         businessDate,
       });
 
@@ -230,8 +233,8 @@ export async function PUT(request: Request) {
 
     let rentApplyResult: unknown = null;
 
-    // Non-destructive rent amount updates on existing OPEN/PARTIAL invoices
-    if (rentChanged && mode !== "lease_terms_only") {
+    // Prospective rent updates on OPEN/PARTIAL invoices due on or after effective date
+    if (rentChanged) {
       const { data: invoices } = await supabaseServer
         .from("RENT_invoices")
         .select(
@@ -242,9 +245,9 @@ export async function PUT(request: Request) {
       const preview = await buildLeaseRentPreview({
         leaseId: id,
         invoices: invoices || [],
+        oldRent: Number(currentLease.rent),
         newRent,
-        mode,
-        effectiveDate: rentEffectiveDate || null,
+        effectiveDate,
         businessDate,
       });
 
@@ -271,9 +274,10 @@ export async function PUT(request: Request) {
       }
 
       rentApplyResult = {
-        mode,
+        effectiveDate,
         affectedInvoiceCount: preview.affectedInvoiceCount,
         totalBalanceChange: preview.totalBalanceChange,
+        skippedPast: preview.skippedPast,
       };
     }
 
@@ -287,7 +291,10 @@ export async function PUT(request: Request) {
         (updateData.lease_start_date as string) ||
         currentLease.lease_start_date ||
         businessDate;
-      await generateMissingFutureInvoicesOnly(updatedLease, scheduleStart);
+      await generateMissingFutureInvoicesOnly(updatedLease, scheduleStart, {
+        rentEffectiveDate: rentChanged ? effectiveDate : null,
+        priorRent: rentChanged ? Number(currentLease.rent) : null,
+      });
     }
 
     return NextResponse.json({
@@ -320,9 +327,9 @@ async function buildLeaseRentPreview(args: {
     amount_paid: number;
     balance_due: number;
   }>;
+  oldRent: number;
   newRent: number;
-  mode: RentApplyMode;
-  effectiveDate: string | null;
+  effectiveDate: string;
   businessDate: string;
 }) {
   const { data: payments } = await supabaseServer
@@ -368,8 +375,8 @@ async function buildLeaseRentPreview(args: {
 
   return buildRentChangePreview({
     invoices: invoiceRows,
+    oldRent: args.oldRent,
     newRent: args.newRent,
-    mode: args.mode,
     effectiveDate: args.effectiveDate,
     businessDate: args.businessDate,
   });
@@ -390,10 +397,18 @@ async function generateMissingFutureInvoicesOnly(
     status?: string;
   },
   startDate: string,
+  rentOpts?: {
+    rentEffectiveDate?: string | null;
+    priorRent?: number | null;
+  },
 ) {
   const cadence = normalizeCadence(lease.rent_cadence || "monthly");
   const rentDueDay = lease.rent_due_day || 1;
   const rentAmount = lease.rent || 0;
+  const rentEffectiveDate = rentOpts?.rentEffectiveDate
+    ? String(rentOpts.rentEffectiveDate).split("T")[0]
+    : null;
+  const priorRent = rentOpts?.priorRent ?? null;
   const todayStr = getBusinessDate();
   const todayDate = new Date(todayStr + "T00:00:00");
 
@@ -423,6 +438,13 @@ async function generateMissingFutureInvoicesOnly(
 
     if (existing) return;
 
+    const amountRent = rentAmountForDueDate({
+      dueDate,
+      newRent: rentAmount,
+      priorRent,
+      rentEffectiveDate,
+    });
+
     invoicesToCreate.push({
       lease_id: lease.id,
       property_id: lease.property_id,
@@ -430,12 +452,12 @@ async function generateMissingFutureInvoicesOnly(
       due_date: dueDate,
       period_start: periodStart,
       period_end: periodEnd,
-      amount_rent: rentAmount,
+      amount_rent: amountRent,
       amount_late: 0,
       amount_other: 0,
-      amount_total: rentAmount,
+      amount_total: amountRent,
       amount_paid: 0,
-      balance_due: rentAmount,
+      balance_due: amountRent,
       status: "OPEN",
     });
   };

@@ -47,8 +47,13 @@ export function computeBaselineLeaseTotals(
   dataset: ShadowDataset,
 ): BaselineLeaseResult[] {
   const asOf = toDateOnly(dataset.asOfDate) || dataset.asOfDate;
+  // As-of: exclude payments dated after asOf from Payments-equivalent totals.
+  const eligiblePayments = dataset.payments.filter((p) => {
+    const d = toDateOnly(p.payment_date);
+    return !d || d <= asOf;
+  });
   const invoicesByLease = groupInvoices(dataset.invoices);
-  const paymentsByLease = groupPayments(dataset.payments);
+  const paymentsByLease = groupPayments(eligiblePayments);
 
   const occupied = dataset.leases.filter(
     (l) => String(l.status || "").toLowerCase() === "occupied",

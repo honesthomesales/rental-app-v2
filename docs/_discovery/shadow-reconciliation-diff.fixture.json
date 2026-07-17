@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T22:21:28.569Z",
+  "generatedAt": "2026-07-17T00:05:04.967Z",
   "mode": "fixture",
   "writeMethodsUsed": [],
   "liveWrites": 0,
@@ -24,6 +24,9 @@
       "recorded_late_fee": 0,
       "grace_period_change": 1,
       "ambiguous_account": 0,
+      "historical_excess_payment_not_carried": 0,
+      "forward_credit": 0,
+      "credit_closeout_review": 0,
       "other": 0
     },
     "totalUnlinkedPaymentAmount": 50,
@@ -49,6 +52,9 @@
       "recorded_late_fee": 0,
       "grace_period_change": 1,
       "ambiguous_account": 0,
+      "historical_excess_payment_not_carried": 0,
+      "forward_credit": 0,
+      "credit_closeout_review": 0,
       "other": 0
     },
     "totalUnlinkedPaymentAmount": 50,
@@ -77,6 +83,7 @@
           "missing_invoice"
         ],
         "dataProblems": [
+          "continuity_confirmation_required",
           "missing_expected_obligation"
         ]
       },
@@ -107,11 +114,12 @@
         "dataProblems": [
           "holdover_candidate",
           "payment_after_lease_end",
+          "continuity_confirmation_required",
           "missing_expected_obligation",
           "unlinked_payment"
         ]
       }
     ],
-    "note": "Candidate is DISABLED_FOR_UI. Payments page remains source of truth until Billy approves. totalLateOwed semantics unchanged on visible screens."
+    "note": "Candidate is DISABLED_FOR_UI. Payments page remains source of truth until Billy approves. totalLateOwed semantics unchanged on visible screens. Forward credit requires creditCarryForwardEffectiveDate; unset means historical excess is not carried."
   }
 }

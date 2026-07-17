@@ -33,6 +33,9 @@ function emptyCategoryCounts(): Record<DifferenceCategory, number> {
     recorded_late_fee: 0,
     grace_period_change: 0,
     ambiguous_account: 0,
+    historical_excess_payment_not_carried: 0,
+    forward_credit: 0,
+    credit_closeout_review: 0,
     other: 0,
   };
 }
@@ -60,6 +63,15 @@ function categorize(
   const diff = round2(candidate.totalOwed - baselineTotal);
 
   if (candidate.unappliedCredit > 0.0001) cats.add("overpayment_credit");
+  if (candidate.historicalExcessPayment > 0.0001) {
+    cats.add("historical_excess_payment_not_carried");
+    // Legacy category kept for prior report compatibility when excess existed as credit
+    cats.add("overpayment_credit");
+  }
+  if (candidate.forwardCredit > 0.0001) cats.add("forward_credit");
+  if (candidate.creditCloseoutReview > 0.0001) {
+    cats.add("credit_closeout_review");
+  }
   if (candidate.unlinkedPaymentsAmount > 0.0001) cats.add("unlinked_payment");
   if (candidate.missingExpectedObligations > 0) cats.add("missing_invoice");
   if (candidate.dataProblems.includes("partial_invoice_ignored_by_baseline")) {
@@ -68,7 +80,9 @@ function categorize(
   if (candidate.dataProblems.includes("payment_after_lease_end")) {
     cats.add("payment_after_lease_end");
   }
-  if (candidate.holdoverCandidate) {
+  if (candidate.confirmedHoldover) {
+    cats.add("holdover_candidate");
+  } else if (candidate.holdoverCandidate) {
     cats.add("holdover_candidate");
     cats.add("lease_not_extended");
   }
@@ -120,10 +134,13 @@ function categorize(
   return [...cats];
 }
 
-export function buildDifferenceReport(dataset: ShadowDataset): DifferenceReport {
+export function buildDifferenceReport(
+  dataset: ShadowDataset,
+  options?: import("./types").CandidateEngineOptions,
+): DifferenceReport {
   const baseline = computeBaselineLeaseTotals(dataset);
   const baselineByAccount = rollupBaselineByAccount(baseline);
-  const candidates = computeCandidateAccountSummaries(dataset);
+  const candidates = computeCandidateAccountSummaries(dataset, options);
   const candidateByKey = new Map(candidates.map((c) => [c.accountKey, c]));
 
   const allKeys = new Set<string>([
@@ -170,6 +187,9 @@ export function buildDifferenceReport(dataset: ShadowDataset): DifferenceReport 
           "duplicate_invoice",
           "payment_after_lease_end",
           "lease_not_extended",
+          "historical_excess_payment_not_carried",
+          "forward_credit",
+          "credit_closeout_review",
           "other",
         ].includes(c),
       );
@@ -192,9 +212,12 @@ export function buildDifferenceReport(dataset: ShadowDataset): DifferenceReport 
         candidateGraceStatus: cand?.graceStatus ?? "n/a",
         linkedPaymentsAmount: cand?.linkedPaymentsAmount ?? 0,
         unlinkedPaymentsAmount: cand?.unlinkedPaymentsAmount ?? 0,
-        carriedCredit: cand?.unappliedCredit ?? 0,
+        carriedCredit: round2(
+          (cand?.historicalExcessPayment ?? 0) + (cand?.forwardCredit ?? 0),
+        ),
         missingExpectedObligations: cand?.missingExpectedObligations ?? 0,
-        holdoverCandidate: cand?.holdoverCandidate ?? false,
+        holdoverCandidate:
+          (cand?.confirmedHoldover || cand?.holdoverCandidate) ?? false,
         categories,
         dataProblems: cand?.dataProblems ?? [],
       });
@@ -227,28 +250,36 @@ export function buildDifferenceReport(dataset: ShadowDataset): DifferenceReport 
       candidates.reduce((s, c) => s + c.unlinkedPaymentsAmount, 0),
     ),
     totalCandidateCredit: round2(
-      candidates.reduce((s, c) => s + c.unappliedCredit, 0),
+      candidates.reduce(
+        (s, c) => s + c.historicalExcessPayment + c.forwardCredit,
+        0,
+      ),
     ),
-    holdoverCandidateCount: candidates.filter((c) => c.holdoverCandidate).length,
+    holdoverCandidateCount: candidates.filter(
+      (c) => c.confirmedHoldover || c.holdoverCandidate,
+    ).length,
     ambiguousAccountCount: candidates.filter((c) =>
       c.dataProblems.includes("ambiguous_payment"),
     ).length,
     gracePeriodStatusChangeCount,
     differences,
     note:
-      "Candidate is DISABLED_FOR_UI. Payments page remains source of truth until Billy approves. totalLateOwed semantics unchanged on visible screens.",
+      "Candidate is DISABLED_FOR_UI. Payments page remains source of truth until Billy approves. totalLateOwed semantics unchanged on visible screens. Forward credit requires creditCarryForwardEffectiveDate; unset means historical excess is not carried.",
   };
 }
 
 /** Public runner used by scripts/tests — pure, no I/O. */
-export function runShadowReconciliation(dataset: ShadowDataset): {
+export function runShadowReconciliation(
+  dataset: ShadowDataset,
+  options?: import("./types").CandidateEngineOptions,
+): {
   report: DifferenceReport;
   baselineLeaseCount: number;
   candidateAccountCount: number;
 } {
   const baseline = computeBaselineLeaseTotals(dataset);
-  const candidates = computeCandidateAccountSummaries(dataset);
-  const report = buildDifferenceReport(dataset);
+  const candidates = computeCandidateAccountSummaries(dataset, options);
+  const report = buildDifferenceReport(dataset, options);
   return {
     report,
     baselineLeaseCount: baseline.length,

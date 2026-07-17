@@ -403,7 +403,10 @@ describe("6–8. Partial / overpayment / credit forward", () => {
     });
     const [c] = computeCandidateAccountSummaries(ds);
     expect(c.totalOwed).toBe(0);
-    expect(c.unappliedCredit).toBe(50);
+    expect(c.unappliedCredit).toBe(0);
+    expect(c.historicalExcessPayment).toBe(50);
+    expect(c.historicalCreditCarried).toBe(0);
+    expect(c.forwardCredit).toBe(0);
   });
 
   it("8. credit pays a later obligation", () => {

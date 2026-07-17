@@ -5,6 +5,72 @@
 
 export type GraceStatus = "current" | "grace_period" | "late";
 
+export type ContinuityDecisionType =
+  | "sold_closed"
+  | "moved_closed"
+  | "vacant_closed"
+  | "lease_never_effective"
+  | "expired_closed"
+  | "replaced_by_new_tenant"
+  | "current"
+  | "current_new_tenant"
+  | "current_holdover"
+  | "unresolved";
+
+export type AccountContinuityDecision = {
+  tenantId: string;
+  propertyId: string;
+  decisionType: ContinuityDecisionType;
+  /** Optional explicit cutoff (YYYY-MM-DD). Defaults to lease end when applicable. */
+  obligationCutoffDate?: string | null;
+  /** Optional occupancy/move-in start for new tenants (YYYY-MM-DD). */
+  occupancyStartDate?: string | null;
+  billyLabel?: string;
+  notes?: string;
+};
+
+export type CandidateEngineOptions = {
+  /** Billy continuity overlay (by tenant_id + property_id). */
+  decisions?: AccountContinuityDecision[];
+  /**
+   * Forward-only credit cutover. When unset, excess never becomes available
+   * credit (historical_excess_payment_not_carried). Do not hard-code today.
+   */
+  creditCarryForwardEffectiveDate?: string | null;
+};
+
+export type CreditPolicyStatus =
+  | "no_effective_date_historical_excess_not_carried"
+  | "forward_only_from_effective_date"
+  | "credit_closeout_review";
+
+export type HistoricalExcessReason =
+  | "confirmed_payment_above_recorded_obligations"
+  | "missing_historical_obligations_not_approved"
+  | "lease_gap_obligations_not_approved"
+  | "payment_after_verified_account_closure"
+  | "payment_before_reliable_occupancy_start"
+  | "miscellaneous_or_non_rent_income"
+  | "payment_linked_to_missing_invoice"
+  | "payment_linked_to_void_invoice"
+  | "payment_linked_to_inactive_or_expired_lease"
+  | "payment_allocation_mismatch"
+  | "refund_reversal_not_represented"
+  | "account_mapping_problem"
+  | "data_cleanup_required"
+  | "other";
+
+export type ExcessSupportClass =
+  | "supported_historical_excess"
+  | "depends_on_missing_obligation_review"
+  | "depends_on_lease_continuity_review"
+  | "payment_allocation_review_required"
+  | "non_rent_payment_review_required"
+  | "closure_timing_review_required"
+  | "data_cleanup_required";
+
+export type ExcessReasonBreakdown = Record<HistoricalExcessReason, number>;
+
 export type DifferenceCategory =
   | "overpayment_credit"
   | "unlinked_payment"
@@ -17,6 +83,9 @@ export type DifferenceCategory =
   | "recorded_late_fee"
   | "grace_period_change"
   | "ambiguous_account"
+  | "historical_excess_payment_not_carried"
+  | "forward_credit"
+  | "credit_closeout_review"
   | "other";
 
 export type DataProblemCode =
@@ -28,7 +97,11 @@ export type DataProblemCode =
   | "missing_expected_obligation"
   | "unlinked_payment"
   | "partial_invoice_ignored_by_baseline"
-  | "no_reliable_lease_evidence";
+  | "no_reliable_lease_evidence"
+  | "data_cleanup_required"
+  | "continuity_confirmation_required"
+  | "historical_excess_payment_not_carried"
+  | "credit_closeout_review";
 
 export type ShadowLease = {
   id: string;
@@ -124,7 +197,7 @@ export type PaymentAllocationShadow = {
 
 export type CandidateObligation = {
   key: string;
-  source: "real_invoice" | "expected_preview";
+  source: "real_invoice" | "expected_preview" | "holdover_preview";
   leaseId: string;
   dueDate: string;
   periodStart: string | null;
@@ -132,7 +205,10 @@ export type CandidateObligation = {
   rentAmount: number;
   recordedLateFee: number;
   amountTotal: number;
+  /** Remaining capacity for historical settlement (starts at amountTotal for real invoices). */
+  historicalCapacityRemaining: number;
   allocated: number;
+  /** Current collections balance (PAID = 0; does not erase historicalCapacity). */
   balance: number;
   invoiceId?: string;
   invoiceStatus?: string;
@@ -150,7 +226,35 @@ export type CandidateAccountSummary = {
   linkedPaymentsAmount: number;
   unlinkedPaymentsAmount: number;
   paymentAllocations: PaymentAllocationShadow[];
+  /** Deprecated available credit path — always 0 under forward-only policy when unused. */
   unappliedCredit: number;
+  historicalExcessPayment: number;
+  /** Always 0 — Billy rejected retroactive credits. */
+  historicalCreditCarried: 0;
+  forwardCredit: number;
+  creditCloseoutReview: number;
+  creditEffectiveDate: string | null;
+  creditPolicyStatus: CreditPolicyStatus;
+  decisionType: ContinuityDecisionType | "unset";
+  continuityClassification: "current" | "closed" | "unresolved" | "unset";
+  obligationCutoffDate: string | null;
+  obligationStartDate: string | null;
+  continuityRuleDescription: string;
+  holdoverObligations: number;
+  historicalBalanceReview: number;
+  historicalPaymentReview: number;
+  /** Reason-coded excess dollars (sums to historicalExcessPayment / historicalPaymentReview). */
+  excessByReason: ExcessReasonBreakdown;
+  rawCompletedPaymentTotal: number;
+  uniqueCompletedPaymentTotal: number;
+  realInvoiceObligationTotal: number;
+  approvedCandidateObligationTotal: number;
+  unapprovedMissingObligationTotal: number;
+  unapprovedHoldoverObligationTotal: number;
+  historicalExcessDiagnosticTotal: number;
+  duplicateCountedAmount: number;
+  unsupportedExcessAmount: number;
+  excessSupportClass: ExcessSupportClass;
   totalOwed: number;
   oldestUnpaidDate: string | null;
   graceStatus: GraceStatus;
@@ -158,6 +262,7 @@ export type CandidateAccountSummary = {
   lastPaymentDate: string | null;
   lastPaymentAmount: number | null;
   holdoverCandidate: boolean;
+  confirmedHoldover: boolean;
   missingExpectedObligations: number;
   dataProblems: DataProblemCode[];
   explanation: string;

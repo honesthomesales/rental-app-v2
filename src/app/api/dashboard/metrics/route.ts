@@ -3,6 +3,13 @@ import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate } from '@/lib/business-date'
 import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
+import {
+  isPhysicallyOccupied,
+  countsTowardCurrentIncome,
+  countsTowardEvictionPotential,
+  isEligibleEmptyPotentialProperty,
+} from '@/lib/lease-status'
+import { monthlyEquivalentRent } from '@/lib/monthly-equivalent'
 
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
@@ -21,11 +28,8 @@ export async function GET(request: Request) {
   const auth = await requireApiAuth(request)
   if (isAuthError(auth)) return auth
 
-  // Accept query parameters (like cache-busting timestamps) but ignore them
-  // This prevents errors when query params are added to the URL
   try {
     // Fetch all properties (excluding retired)
-    // Use .neq() to exclude retired - this will include null (not set) and active
     const { data: allProperties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
       .select('*')
@@ -35,114 +39,139 @@ export async function GET(request: Request) {
       throw new Error(`Error fetching properties: ${propertiesError.message}`)
     }
 
-    // Fetch all leases to identify properties with "sold" status
-    // We need to exclude properties that have leases with "sold" status
+    // Fetch ALL leases (for sold-exclusion, occupancy sets, and eviction potential)
     const { data: allLeases, error: allLeasesError } = await supabaseServer
       .from('RENT_leases')
-      .select('id, property_id, status')
+      .select('id, property_id, status, rent, rent_cadence, lease_start_date, lease_end_date, tenant_id')
 
     if (allLeasesError) {
       throw new Error(`Error fetching all leases: ${allLeasesError.message}`)
     }
 
-    // Create a set of property IDs that have "sold" status leases
-    const soldPropertyIds = new Set(
-      allLeases
-        ?.filter(lease => lease.status === 'sold')
-        .map(lease => lease.property_id)
-    )
+    // Fetch tenant names for eviction leases
+    const evictionLeaseIds = (allLeases || [])
+      .filter(l => l.status === 'eviction' && l.tenant_id)
+      .map(l => l.tenant_id)
 
-    // Filter out sold properties; only house / doublewide / singlewide (same rule as dashboard overviews)
+    const tenantNames = new Map<string, string>()
+    if (evictionLeaseIds.length > 0) {
+      const { data: tenants } = await supabaseServer
+        .from('RENT_tenants')
+        .select('id, full_name, first_name, last_name')
+        .in('id', evictionLeaseIds)
+
+      tenants?.forEach(t => {
+        const name = t.full_name || `${t.first_name || ''} ${t.last_name || ''}`.trim() || ''
+        tenantNames.set(t.id, name)
+      })
+    }
+
+    // Build property-level sets from leases
+    const soldPropertyIds = new Set<string>()
+    const physicallyOccupiedPropertyIds = new Set<string>()  // occupied OR eviction
+    const currentIncomePropertyIds = new Set<string>()       // occupied only
+
+    ;(allLeases || []).forEach(lease => {
+      if (!lease.property_id) return
+      if (lease.status === 'sold') soldPropertyIds.add(lease.property_id)
+      if (isPhysicallyOccupied(lease.status)) physicallyOccupiedPropertyIds.add(lease.property_id)
+      if (countsTowardCurrentIncome(lease.status)) currentIncomePropertyIds.add(lease.property_id)
+    })
+
+    // Valid residential properties (not sold, residential type)
     const validProperties =
       allProperties?.filter(
         property =>
           !soldPropertyIds.has(property.id) && isOverviewResidentialType(property.property_type)
       ) || []
 
-    // Fetch occupied properties (properties with active leases)
-    // Match Payments page logic: filter by status only, no date range check
     const today = getBusinessDate()
-    
-    // OPTIMIZED: Fetch leases with tenants once with all needed data
-    // Match Payments page: filter by status only, no date range
-    // Only get leases with "occupied" status (not "sold")
-    const { data: activeLeases, error: leasesError } = await supabaseServer
-      .from('RENT_leases')
-      .select('id, property_id, lease_start_date, lease_end_date, rent, rent_cadence')
-      .in('status', ['occupied'])
 
-    if (leasesError) {
-      throw new Error(`Error fetching leases: ${leasesError.message}`)
-    }
+    // Billing-active leases: occupied + eviction (for late payments / total owed)
+    const billingActiveLeases = (allLeases || []).filter(l => isPhysicallyOccupied(l.status))
 
-    const occupiedProperties = new Set(activeLeases?.map(lease => lease.property_id)).size
+    // Current monthly income — occupied leases only
+    let currentMonthlyIncome = 0
+    ;(allLeases || []).filter(l => countsTowardCurrentIncome(l.status)).forEach(lease => {
+      currentMonthlyIncome += monthlyEquivalentRent(lease.rent, lease.rent_cadence)
+    })
 
-    // Calculate monthly income from active leases (potential monthly income)
-    console.log('Calculating monthly income from active leases...')
+    // Eviction potential income — eviction leases only
+    let evictionPotentialIncome = 0
+    const evictionLeases = (allLeases || []).filter(l => countsTowardEvictionPotential(l.status))
+    evictionLeases.forEach(lease => {
+      evictionPotentialIncome += monthlyEquivalentRent(lease.rent, lease.rent_cadence)
+    })
 
-    let monthlyIncome = 0
+    // Empty potential income — eligible empty residential properties
+    let emptyPotentialIncome = 0
+    const emptyPotentialRows: Array<{
+      propertyId: string
+      propertyName: string
+      address: string
+      status: 'empty'
+      cadence: string
+      rent: number
+      monthlyPotential: number
+    }> = []
 
-    if (activeLeases && activeLeases.length > 0) {
-      console.log('Active leases found:', activeLeases.length)
-      
-      // Calculate monthly income based on rent cadence
-      activeLeases.forEach(lease => {
-        const rent = lease.rent || 0
-        const cadence = lease.rent_cadence || 'monthly'
-        
-        switch (cadence.toLowerCase()) {
-          case 'weekly':
-            // Weekly rent * 4 weeks per month
-            monthlyIncome += rent * 4
-            break
-          case 'bi-weekly':
-          case 'biweekly':
-            // Bi-weekly rent * 2 periods per month
-            monthlyIncome += rent * 2
-            break
-          case 'monthly':
-          default:
-            // Monthly rent as-is
-            monthlyIncome += rent
-            break
-        }
+    validProperties.forEach(property => {
+      const hasSoldLease = soldPropertyIds.has(property.id)
+      const hasPhysicallyOccupied = physicallyOccupiedPropertyIds.has(property.id)
+      const eligible = isEligibleEmptyPotentialProperty({
+        propertyType: property.property_type,
+        propertyStatus: property.status,
+        rentValue: property.rent_value,
+        hasPhysicallyOccupiedLease: hasPhysicallyOccupied,
+        hasSoldLease,
       })
-    }
+      if (!eligible) return
+      const rentVal = Number(property.rent_value || 0)
+      emptyPotentialIncome += rentVal
+      emptyPotentialRows.push({
+        propertyId: property.id,
+        propertyName: property.name || '',
+        address: property.address || '',
+        status: 'empty',
+        cadence: 'monthly',
+        rent: rentVal,
+        monthlyPotential: rentVal,
+      })
+    })
 
-    console.log('Calculated monthly income from active leases:', monthlyIncome)
+    // Eviction rows for potentialIncomeRows
+    const evictionRows = evictionLeases.map(lease => {
+      const property = allProperties?.find(p => p.id === lease.property_id)
+      const tenantName = lease.tenant_id ? (tenantNames.get(lease.tenant_id) || '') : ''
+      const monthly = monthlyEquivalentRent(lease.rent, lease.rent_cadence)
+      return {
+        propertyId: lease.property_id || '',
+        propertyName: property?.name || '',
+        address: property?.address || '',
+        tenantName,
+        status: 'eviction' as const,
+        cadence: lease.rent_cadence || 'monthly',
+        rent: Number(lease.rent || 0),
+        monthlyPotential: monthly,
+      }
+    })
 
-    // Calculate potential income from empty properties
-    let potentialIncome = 0
-    const occupiedPropertyIds = new Set(activeLeases?.map(lease => lease.property_id))
-    
-    // Find properties without active leases that have rent_value set
-    // Only consider valid properties (not sold)
-    const emptyProperties = validProperties?.filter(property => 
-      !occupiedPropertyIds.has(property.id) && 
-      property.rent_value && 
-      property.rent_value > 0
-    ) || []
+    const emptyRowsWithTenant = emptyPotentialRows.map(r => ({ ...r, tenantName: '' }))
 
-    console.log('Empty properties with rent_value:', emptyProperties.length)
-    
-    // Sum up the rent_value from empty properties
-    potentialIncome = emptyProperties.reduce((sum, property) => 
-      sum + (property.rent_value || 0), 0
-    )
+    // Total potential income
+    const totalPotentialIncome = currentMonthlyIncome + emptyPotentialIncome + evictionPotentialIncome
 
-    console.log('Potential income from empty properties:', potentialIncome)
-    console.log('Total potential income:', monthlyIncome + potentialIncome)
+    // Occupied properties count = physically occupied (occupied OR eviction)
+    const occupiedProperties = physicallyOccupiedPropertyIds.size
 
-    // Fetch late payments by recalculating balance from actual RENT_payments
-    // (matches Payments page logic instead of trusting stored balance_due)
+    // Late payments and total owed — billing-active leases (occupied + eviction)
     let latePayments = 0
     let totalOwed = 0
 
-    if (activeLeases && activeLeases.length > 0) {
-      const leaseIds = activeLeases.map(lease => lease.id)
-      const leaseStartDates = new Map(activeLeases.map(lease => [lease.id, lease.lease_start_date]))
-      
-      // Fetch OPEN invoices and all payments for these leases in parallel
+    if (billingActiveLeases.length > 0) {
+      const leaseIds = billingActiveLeases.map(lease => lease.id)
+      const leaseStartDates = new Map(billingActiveLeases.map(lease => [lease.id, lease.lease_start_date]))
+
       const [invoicesResult, paymentsResult] = await Promise.all([
         supabaseServer
           .from('RENT_invoices')
@@ -154,30 +183,26 @@ export async function GET(request: Request) {
           .from('RENT_payments')
           .select('invoice_id, amount, payment_date')
           .in('lease_id', leaseIds)
-          .not('invoice_id', 'is', null)
+          .not('invoice_id', 'is', null),
       ])
 
-      if (invoicesResult.error) {
-        console.error('Error fetching unpaid invoices:', invoicesResult.error)
-      } else if (invoicesResult.data && invoicesResult.data.length > 0) {
-        // Group eligible (non-future) payments by invoice_id
+      if (!invoicesResult.error && invoicesResult.data && invoicesResult.data.length > 0) {
         const paymentsByInvoice = new Map<string, number>()
         if (paymentsResult.data) {
           const { eligible } = partitionPaymentsByAsOf(
             paymentsResult.data as Array<{ invoice_id: string; amount: number; payment_date: string }>,
             today,
           )
-          eligible.forEach((p) => {
+          eligible.forEach(p => {
             if (p.invoice_id) {
               paymentsByInvoice.set(
                 p.invoice_id,
-                (paymentsByInvoice.get(p.invoice_id) || 0) + (parseFloat(String(p.amount)) || 0)
+                (paymentsByInvoice.get(p.invoice_id) || 0) + (parseFloat(String(p.amount)) || 0),
               )
             }
           })
         }
 
-        // Filter to valid invoices and recalculate balance_due from payments
         const validInvoices = invoicesResult.data
           .filter(inv => {
             const leaseStartDate = leaseStartDates.get(inv.lease_id)
@@ -192,20 +217,12 @@ export async function GET(request: Request) {
 
         latePayments = validInvoices.length
         totalOwed = validInvoices.reduce((sum, inv) => sum + inv.recalculated_balance, 0)
-
-        console.log(`Found ${latePayments} late invoices and $${totalOwed.toFixed(2)} total owed across ${activeLeases.length} active leases (recalculated from payments)`)
       }
     }
 
-    // Calculate property type breakdown from validProperties (excluding sold)
-    const propertyTypeBreakdown = {
-      house: 0,
-      doublewide: 0,
-      singlewide: 0,
-      loan: 0
-    }
-
-    validProperties?.forEach(property => {
+    // Property type breakdown
+    const propertyTypeBreakdown = { house: 0, doublewide: 0, singlewide: 0, loan: 0 }
+    validProperties.forEach(property => {
       const type = property.property_type
       if (type === 'house') propertyTypeBreakdown.house++
       else if (type === 'doublewide') propertyTypeBreakdown.doublewide++
@@ -213,73 +230,47 @@ export async function GET(request: Request) {
       else if (type === 'loan') propertyTypeBreakdown.loan++
     })
 
-    // Calculate total debt (same as profit page)
-    // Total debt = totalFixedExpenses + otherExpenses
-    // totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
-    // Note: Insurance and taxes are annual, so we use them as-is (they represent monthly equivalent)
-    const totalInsurance = validProperties
-      ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
-    
-    const totalTaxes = validProperties
-      ?.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0) || 0
-    
-    // Get total payments from expenses table (all expenses, not filtered by month)
-    // Need to fetch balance field to exclude expenses with balance > 0 for potential calculation
+    // Expenses for debt calculation
+    const totalInsurance = validProperties.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0)
+    const totalTaxes = validProperties.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0)
+
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
       .select('amount, interest_rate, balance')
-    
+
     if (expensesError) {
       console.error('Error fetching expenses for debt calculation:', expensesError)
     }
-    
-    // Calculate total payments (all expenses, excluding one-time)
-    const totalPayments = expenses
-      ?.filter(exp => exp.interest_rate !== -9.9999) // Exclude one-time expenses
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
-    
-    // Calculate potential payments (excluding expenses with balance > 0)
-    // If House Debt is paid, expenses with balance > 0 would be reduced to zero
-    const potentialPayments = expenses
-      ?.filter(exp => exp.interest_rate !== -9.9999) // Exclude one-time expenses
-      .filter(expense => (Number(expense.balance) || 0) <= 0) // Exclude expenses with balance > 0
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
-    
+
+    const totalPayments =
+      expenses
+        ?.filter(exp => exp.interest_rate !== -9.9999)
+        .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+
+    const potentialPayments =
+      expenses
+        ?.filter(exp => exp.interest_rate !== -9.9999)
+        .filter(expense => (Number(expense.balance) || 0) <= 0)
+        .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+
+    const otherExpenses =
+      expenses
+        ?.filter(exp => exp.interest_rate === -9.9999)
+        .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
+
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
-    
-    // Get one-time expenses (interest_rate = -9.9999) - these are otherExpenses
-    // For dashboard, we'll use all one-time expenses (not filtered by month like profit page)
-    // This gives us a total debt picture
-    const otherExpenses = expenses
-      ?.filter(exp => exp.interest_rate === -9.9999)
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0) || 0
-    
     const totalDebt = totalFixedExpenses + otherExpenses
     const potentialDebt = potentialFixedExpenses + otherExpenses
 
-    // Calculate profit
-    // Current profit = monthly income - total debt
-    // Potential profit = (monthly income + potential income) - total debt
-    // Potential with No House Debt = (monthly income + potential income) - potential debt
-    const currentProfit = monthlyIncome - totalDebt
-    const potentialProfit = (monthlyIncome + potentialIncome) - totalDebt
-    const potentialProfitNoHouseDebt = (monthlyIncome + potentialIncome) - potentialDebt
-    
-    console.log('Debt calculation:', {
-      totalInsurance,
-      totalTaxes,
-      totalPayments,
-      totalFixedExpenses,
-      otherExpenses,
-      totalDebt,
-      monthlyIncome,
-      potentialIncome,
-      currentProfit,
-      potentialProfit
-    })
+    // Profit calculations
+    // Current profit: uses currentMonthlyIncome only (eviction excluded)
+    const currentProfit = currentMonthlyIncome - totalDebt
+    // Potential profit: all three income parts
+    const potentialProfit = totalPotentialIncome - totalDebt
+    const potentialProfitNoHouseDebt = totalPotentialIncome - potentialDebt
 
-    // Portfolio-wide future-dated completed payment exclusion (dynamic)
+    // Portfolio-wide future-dated completed payment exclusion
     const { data: allCompletedPayments } = await supabaseServer
       .from('RENT_payments')
       .select('id, amount, payment_date, status')
@@ -296,11 +287,18 @@ export async function GET(request: Request) {
     )
 
     const metrics = {
-      totalProperties: validProperties?.length || 0,
+      totalProperties: validProperties.length,
       occupiedProperties,
-      monthlyIncome,
-      potentialIncome,
-      totalPotentialIncome: monthlyIncome + potentialIncome,
+      // Backward-compatible income field names
+      monthlyIncome: currentMonthlyIncome,
+      potentialIncome: emptyPotentialIncome + evictionPotentialIncome,
+      totalPotentialIncome,
+      // New breakdown fields
+      emptyPotentialIncome,
+      evictionPotentialIncome,
+      emptyPotentialCount: emptyPotentialRows.length,
+      evictionPotentialCount: evictionLeases.length,
+      potentialIncomeRows: [...emptyRowsWithTenant, ...evictionRows],
       latePayments,
       totalOwed,
       propertyTypeBreakdown,
@@ -321,7 +319,7 @@ export async function GET(request: Request) {
     console.error('Error in dashboard metrics API:', error)
     return NextResponse.json(
       { error: 'Failed to fetch dashboard metrics' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

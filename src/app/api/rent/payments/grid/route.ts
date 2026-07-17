@@ -65,7 +65,7 @@ try {
             RENT_properties(*),
             RENT_tenants(*)
           `)
-          .in('status', ['occupied'])
+          .in('status', ['occupied', 'eviction'])
           .lte('lease_start_date', endDate)
           .or(`lease_end_date.is.null,lease_end_date.gte.${startDate}`)
         

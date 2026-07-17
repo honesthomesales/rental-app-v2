@@ -46,7 +46,7 @@ export async function GET(request: Request) {
         RENT_properties(*),
         RENT_tenants(*)
       `)
-      .in('status', ['occupied'])
+      .in('status', ['occupied', 'eviction'])
 
     if (leasesError) {
       throw new Error(`Error fetching leases: ${leasesError.message}`)

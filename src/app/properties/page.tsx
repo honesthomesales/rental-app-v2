@@ -141,9 +141,10 @@ export default function PropertiesPage() {
                   new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
               )[0]
         
-        // Check if lease has tenants (occupied or sold) for isOccupied flag
+        // Check if lease has tenants (occupied or eviction = physically occupied) for isOccupied flag
         const isActiveLease = anyLease && (
-          anyLease.status === 'occupied' || 
+          anyLease.status === 'occupied' ||
+          anyLease.status === 'eviction' ||
           anyLease.status === 'sold'
         )
         
@@ -160,9 +161,11 @@ export default function PropertiesPage() {
           isOccupied: !!isActiveLease, // Only true if status is occupied/active/sold
           leaseStatus: anyLease?.status || null, // Show all lease statuses
           leaseId: anyLease?.id || null, // Store lease ID for updates
-          // Show lease rent ONLY if lease is actively occupied, otherwise show property rent_value
-          // This ensures property rent_value is displayed when lease is empty, sold, or doesn't exist
-          displayRent: (anyLease && anyLease.status === 'occupied') ? anyLease.rent : property.rent_value
+          // Show lease rent for physically occupied leases (occupied or eviction), else property rent_value
+          displayRent:
+            anyLease && (anyLease.status === 'occupied' || anyLease.status === 'eviction')
+              ? anyLease.rent
+              : property.rent_value,
         }
       })
       
@@ -579,6 +582,8 @@ export default function PropertiesPage() {
                           className={`px-2 py-1 text-xs font-medium rounded border-0 capitalize focus:ring-2 focus:ring-blue-500 ${
                             property.leaseStatus === 'occupied'
                               ? 'bg-green-100 text-green-800'
+                              : property.leaseStatus === 'eviction'
+                              ? 'bg-orange-100 text-orange-800'
                               : property.leaseStatus === 'sold'
                               ? 'bg-purple-100 text-purple-800'
                               : 'bg-gray-100 text-gray-800'
@@ -586,6 +591,7 @@ export default function PropertiesPage() {
                         >
                           <option value="empty">Empty</option>
                           <option value="occupied">Has Tenants</option>
+                          <option value="eviction">Eviction Process</option>
                           <option value="sold">Sold</option>
                         </select>
                       ) : (

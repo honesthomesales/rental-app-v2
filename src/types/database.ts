@@ -72,7 +72,7 @@ export interface Lease {
   move_in_fee?: number
   late_fee_amount?: number
   lease_pdf_url?: string
-  status?: 'empty' | 'occupied'
+  status?: 'empty' | 'occupied' | 'eviction' | 'sold'
   notes?: string
   rent_due_day?: number
   due_weekday?: number
@@ -140,12 +140,29 @@ export interface PaymentAllocation {
 }
 
 // Dashboard data types
+export interface PotentialIncomeRow {
+  propertyId: string
+  propertyName: string
+  address: string
+  tenantName: string
+  status: 'empty' | 'eviction'
+  cadence: string
+  rent: number
+  monthlyPotential: number
+}
+
 export interface DashboardMetrics {
   totalProperties: number
   occupiedProperties: number
   monthlyIncome: number
+  /** emptyPotentialIncome + evictionPotentialIncome (backward-compat add-on) */
   potentialIncome: number
   totalPotentialIncome: number
+  emptyPotentialIncome: number
+  evictionPotentialIncome: number
+  emptyPotentialCount: number
+  evictionPotentialCount: number
+  potentialIncomeRows: PotentialIncomeRow[]
   latePayments: number
   totalOwed: number
   propertyTypeBreakdown: {

@@ -42,3 +42,4 @@ next-env.d.ts
 
 # Local-only private review artifacts (never commit)
 local-private/
+.env*.local

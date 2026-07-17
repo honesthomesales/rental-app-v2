@@ -11,6 +11,8 @@ import {
   isRejectedPreviewDueDate,
 } from "@/lib/lease-preview-safety";
 import { resolveBusinessDate } from "@/lib/business-date";
+import { resolveInvoiceScheduleEnd } from "@/lib/lease-status";
+import { rentAmountForDueDate } from "@/lib/rent-change";
 
 export type MissingInvoicePeriodClass = "past" | "current" | "future";
 
@@ -29,6 +31,8 @@ export type MissingInvoicePreviewRow = {
 export type MissingInvoicePreviewInput = {
   leaseStartDate: string;
   leaseEndDate?: string | null;
+  /** When occupied/eviction with past end, schedule continues (period-to-period). */
+  leaseStatus?: string | null;
   rentCadence: string | null | undefined;
   rentDueDay?: number | null;
   rentAmount?: number | null;
@@ -37,6 +41,9 @@ export type MissingInvoicePreviewInput = {
   asOfDate?: string;
   /** When set, preview-safety overrides (cadence / paid-through / rejected dues) apply */
   leaseId?: string;
+  /** Prospective rent change: dues before this date use priorRentAmount */
+  rentEffectiveDate?: string | null;
+  priorRentAmount?: number | null;
 };
 
 function toDateOnly(iso: string): string {
@@ -52,11 +59,13 @@ function classifyPeriod(dueDate: string, asOf: string): MissingInvoicePeriodClas
 function resolveEndDate(
   leaseEndDate: string | null | undefined,
   asOf: string,
+  leaseStatus?: string | null,
 ): string {
-  if (leaseEndDate) return toDateOnly(leaseEndDate);
-  const d = new Date(asOf + "T00:00:00");
-  d.setMonth(d.getMonth() + 3);
-  return d.toISOString().split("T")[0];
+  return resolveInvoiceScheduleEnd({
+    status: leaseStatus ?? "occupied",
+    leaseEndDate,
+    asOfDate: asOf,
+  });
 }
 
 /**
@@ -88,7 +97,7 @@ export function buildMissingInvoicePreview(
   const asOf = toDateOnly(
     input.asOfDate || resolveBusinessDate(null),
   );
-  const endDate = resolveEndDate(input.leaseEndDate, asOf);
+  const endDate = resolveEndDate(input.leaseEndDate, asOf, input.leaseStatus);
   const paidThrough = input.leaseId
     ? getPreviewPaidThrough(input.leaseId)
     : null;
@@ -115,12 +124,19 @@ export function buildMissingInvoicePreview(
     if (matchingInvoiceExists) return;
 
     const periodClass = classifyPeriod(dueDate, asOf);
+    const amount = rentAmountForDueDate({
+      dueDate,
+      newRent: rentAmount,
+      priorRent: input.priorRentAmount,
+      rentEffectiveDate: input.rentEffectiveDate,
+    });
+
     gaps.push({
       label: "PREVIEW — NOT SAVED",
       dueDate,
       periodStart,
       periodEnd,
-      amount: rentAmount,
+      amount,
       cadence,
       reason: `No real invoice exists for expected ${cadence} due date ${dueDate}`,
       periodClass,

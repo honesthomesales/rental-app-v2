@@ -1,25 +1,13 @@
 -- =====================================================
--- Prospective rent change — atomic lease + invoice apply
+-- Fix: rent_apply_prospective_change must not write
+-- RENT_invoices.updated_at (column does not exist).
+-- That bug aborted the transaction after lease.rent was
+-- staged, preventing invoice amount updates — and any
+-- non-RPC lease rent write left invoices stuck at old rent.
+-- Also always rewrite eligible OPEN/PARTIAL invoices even
+-- when lease.rent already equals p_new_rent (re-apply /
+-- repair path for Willis Bell-style drift).
 -- =====================================================
--- Updates RENT_leases.rent and eligible OPEN/PARTIAL invoices
--- with due_date >= effective_date in ONE transaction.
--- Never touches PAID/VOID or historical (due_date < effective) invoices.
--- Never deletes invoices or payments.
--- Eligible paid amount = sum of completed RENT_payments linked by
--- invoice_id with payment_date <= business_date.
--- =====================================================
-
--- Optional persistence for schedule fill after a rent change
-ALTER TABLE "RENT_leases"
-  ADD COLUMN IF NOT EXISTS rent_effective_date date;
-
-ALTER TABLE "RENT_leases"
-  ADD COLUMN IF NOT EXISTS prior_rent numeric(10,2);
-
-COMMENT ON COLUMN "RENT_leases".rent_effective_date IS
-  'NY calendar date when current lease.rent became effective for invoice billing';
-COMMENT ON COLUMN "RENT_leases".prior_rent IS
-  'Lease rent amount before the most recent prospective rent change';
 
 CREATE OR REPLACE FUNCTION public.rent_apply_prospective_change(
   p_lease_id uuid,
@@ -79,7 +67,6 @@ BEGIN
     RAISE EXCEPTION 'lease % not found', p_lease_id;
   END IF;
 
-  -- Persist lease rent + effective metadata
   UPDATE "RENT_leases" l
   SET
     rent = v_new_rent,
@@ -127,7 +114,6 @@ BEGIN
     END IF;
 
     -- Preserve stored amount_paid and payment rows; only rewrite rent/total/balance/status.
-    -- Do not set updated_at: RENT_invoices has no updated_at column in production.
     v_paid := r.amount_paid_stored;
     v_late := r.amount_late;
     v_other := r.amount_other;
@@ -209,4 +195,4 @@ GRANT EXECUTE ON FUNCTION public.rent_apply_prospective_change(uuid, numeric, da
 GRANT EXECUTE ON FUNCTION public.rent_apply_prospective_change(uuid, numeric, date, date) TO service_role;
 
 COMMENT ON FUNCTION public.rent_apply_prospective_change(uuid, numeric, date, date) IS
-  'Atomically apply prospective lease rent change and rewrite eligible OPEN/PARTIAL invoices due on/after effective date. Uses invoice_id-linked completed payments through business date for amount_paid.';
+  'Atomically apply prospective lease rent change and rewrite eligible OPEN/PARTIAL invoices due on/after effective date. Does not touch RENT_invoices.updated_at (column absent).';

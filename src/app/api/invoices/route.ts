@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { normalizeCadence } from '@/lib/rent/cadence'
 
-// Cache invoices for 30 seconds - balance can change frequently
-export const revalidate = 30
+// Always serve live invoice amounts (prospective rent changes must appear immediately).
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET(request: Request) {
   try {
@@ -67,7 +68,11 @@ export async function GET(request: Request) {
     }
 
     console.log('Returning invoices:', invoices?.length || 0)
-    return NextResponse.json(invoices || [])
+    return NextResponse.json(invoices || [], {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
+    })
   } catch (error) {
     console.error('Error in invoices API:', error)
     return NextResponse.json(
@@ -75,7 +80,12 @@ export async function GET(request: Request) {
         error: 'Failed to fetch invoices', 
         details: error instanceof Error ? error.message : 'Unknown error' 
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      },
     )
   }
 }

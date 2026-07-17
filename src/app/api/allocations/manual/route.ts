@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 interface ManualAllocationRequest {
   paymentId: string
@@ -11,7 +12,9 @@ interface ManualAllocationRequest {
 }
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const requestData: ManualAllocationRequest = await request.json()
     
     console.log('Processing manual allocation:', requestData)

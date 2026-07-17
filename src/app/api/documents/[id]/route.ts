@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const id = params.id
 
     const { data: document, error } = await supabaseServer
@@ -54,7 +57,9 @@ export async function GET(
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const id = params.id
     const body = await request.json()
 
@@ -107,7 +112,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const id = params.id
 
     // Fetch document to get storage path

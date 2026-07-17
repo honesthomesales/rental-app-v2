@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const paymentData = await request.json()
     
     console.log('Processing payment with allocation:', paymentData)
@@ -267,7 +270,9 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     
     // Parse query parameters for filtering
@@ -668,7 +673,9 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const body = await request.json()
     const paymentId = body.id
     
@@ -710,7 +717,9 @@ export async function DELETE(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const paymentId = searchParams.get('id')
     const body = await request.json()

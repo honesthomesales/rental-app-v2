@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 // Cache properties for 60 seconds - they don't change frequently
 export const revalidate = 60
 
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const includeRetired = searchParams.get('includeRetired') === 'true'
     
@@ -107,7 +110,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const propertyData = await request.json()
     if (
       propertyData.property_type === '' ||
@@ -145,7 +150,9 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { id, ...updateData } = await request.json()
     
     if (!id) {
@@ -279,7 +286,9 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

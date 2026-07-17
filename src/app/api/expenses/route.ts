@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { Expense } from '@/types/database'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 // Cache expenses for 60 seconds - they don't change frequently
 export const revalidate = 60
 
-export async function GET() {
-  try {
+export async function GET(request: Request) {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { data: expenses, error } = await supabaseServer
       .from('RENT_expenses')
       .select(`
@@ -35,7 +38,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const body = await request.json()
     console.log('Received expense data:', JSON.stringify(body, null, 2))
     
@@ -93,7 +98,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const body = await request.json()
     const { id, ...updateData } = body
     
@@ -133,7 +140,9 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

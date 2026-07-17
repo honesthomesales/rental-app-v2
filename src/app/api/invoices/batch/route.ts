@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 // Cache batch invoices for 30 seconds
 export const revalidate = 30
@@ -18,7 +19,9 @@ export const revalidate = 30
  * - status: Filter by status (optional)
  */
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     
     // Parse query parameters

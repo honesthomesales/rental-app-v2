@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 /**
  * Test endpoint to verify late tenants calculation
  * Returns raw data for debugging
  */
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { ownerOnly: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const propertyAddress = searchParams.get('address') || '5667'
     const today = new Date().toISOString().split('T')[0]

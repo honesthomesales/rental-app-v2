@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { normalizeCadence } from '@/lib/rent/cadence'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 // Cache leases for 60 seconds - they don't change frequently
 export const revalidate = 60
 
 export async function GET(request: Request) {
-  // Accept query parameters (like cache-busting timestamps) but ignore them
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+// Accept query parameters (like cache-busting timestamps) but ignore them
   // This prevents errors when query params are added to the URL
   try {
     const { data: leases, error } = await supabaseServer
@@ -68,7 +71,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const leaseData = await request.json()
     
     // Set default status to 'occupied' if not provided
@@ -142,7 +147,9 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { id, ...updateData } = await request.json()
     
     if (!id) {
@@ -473,7 +480,9 @@ async function generateInvoicesForLease(lease: any, startDate: string) {
 }
 
 export async function DELETE(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

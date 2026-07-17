@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 // Cache deals for 60 seconds
 export const revalidate = 60
 
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
     
@@ -39,7 +42,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const dealData = await request.json()
     
     console.log('Creating deal:', dealData)
@@ -119,7 +124,9 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { id, ...updateData } = await request.json()
     
     if (!id) {
@@ -198,7 +205,9 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

@@ -4,9 +4,12 @@ import { generateFridayColumns, generatePeriodsForLease } from '@/lib/rent/perio
 import { bucketPaymentsForPeriod, createPaymentMaps, getPaymentsForLease, bucketMonthlyPayments } from '@/lib/rent/paymentBucket'
 import { toUTC, debug, ymdKey } from '@/lib/dateSafe'
 import { normalizeCadence } from '@/lib/rent/cadence'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 export async function GET(request: Request) {
-  try {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const weekOffset = parseInt(searchParams.get('weekOffset') || '0')
     

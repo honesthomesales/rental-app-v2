@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 // Cache tenants for 60 seconds - they don't change frequently
 export const revalidate = 60
 
-export async function GET() {
-  try {
+export async function GET(request: Request) {
+  const auth = await requireApiAuth(request)
+  if (isAuthError(auth)) return auth
+try {
     console.log('Fetching all tenants...')
     
     // Fetch ALL tenants directly from RENT_tenants table (not just those with leases)
@@ -109,7 +112,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const tenantData = await request.json()
     
     console.log('Creating tenant:', tenantData)
@@ -194,7 +199,9 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { id, ...updateData } = await request.json()
     
     if (!id) {
@@ -315,7 +322,9 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

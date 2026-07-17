@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { PeriodMapRequest, PeriodMapResponse, PeriodInvoiceRow } from '@/types/rent';
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 
 export async function POST(request: NextRequest) {
-  try {
+  const auth = await requireApiAuth(request, { write: true })
+  if (isAuthError(auth)) return auth
+try {
     // Log request details for debugging
     const url = request.url;
     const method = request.method;

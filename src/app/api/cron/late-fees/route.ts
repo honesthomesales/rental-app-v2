@@ -22,6 +22,12 @@ function authorizeCron(request: NextRequest): NextResponse | null {
   return null;
 }
 
+function addDays(date: string, days: number): string {
+  const result = new Date(`${date}T12:00:00Z`);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
 /** Authorized health/preview check. GET never performs financial writes. */
 export async function GET(request: NextRequest) {
   const authError = authorizeCron(request);
@@ -59,9 +65,62 @@ export async function POST(request: NextRequest) {
   }
 
   const businessDate = getBusinessDate();
+  const automationStartDate = String(
+    process.env.LATE_FEE_AUTOMATION_START_DATE || "",
+  ).split("T")[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(automationStartDate)) {
+    return NextResponse.json(
+      {
+        error: "LATE_FEE_AUTOMATION_START_DATE is not configured",
+        writePerformed: false,
+      },
+      { status: 503 },
+    );
+  }
+  if (businessDate < automationStartDate) {
+    return NextResponse.json({
+      automationEnabled: true,
+      automationStartDate,
+      businessDate,
+      writePerformed: false,
+      reason: "automation_start_date_not_reached",
+    });
+  }
+
+  // Never backfill invoices that became late before automation activation.
+  // Catch up safely after scheduler downtime only within the post-activation window.
+  const firstEligibleDueDate = addDays(automationStartDate, -6);
+  const latestEligibleDueDate = addDays(businessDate, -6);
+  const { data: candidateInvoices, error: candidateError } =
+    await supabaseServer
+      .from("RENT_invoices")
+      .select("id")
+      .in("status", ["OPEN", "PARTIAL"])
+      .gte("due_date", firstEligibleDueDate)
+      .lte("due_date", latestEligibleDueDate);
+  if (candidateError) {
+    console.error("late-fee cron candidate selection failed");
+    return NextResponse.json(
+      { error: "Candidate selection failed", writePerformed: false },
+      { status: 500 },
+    );
+  }
+  const candidateInvoiceIds = (candidateInvoices || []).map((invoice) =>
+    String(invoice.id),
+  );
+  if (candidateInvoiceIds.length === 0) {
+    return NextResponse.json({
+      businessDate,
+      automationStartDate,
+      applied: 0,
+      feeTotal: 0,
+      writePerformed: false,
+    });
+  }
+
   const { data, error } = await supabaseServer.rpc("rent_reconcile_late_fees", {
     p_business_date: businessDate,
-    p_invoice_ids: null,
+    p_invoice_ids: candidateInvoiceIds,
     p_dry_run: false,
   });
   if (error) {
@@ -75,6 +134,7 @@ export async function POST(request: NextRequest) {
       : {};
   console.info("late-fee cron summary", {
     businessDate,
+    automationStartDate,
     applied: Number(result.applied || 0),
     feeTotal: Number(result.feeTotal || 0),
   });

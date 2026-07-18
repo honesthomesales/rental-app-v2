@@ -44,6 +44,11 @@ describe("cadence-safe late-fee reconciliation and automation", () => {
     expect(route).not.toContain('searchParams.get("secret")');
     expect(route).toContain('headers.get("authorization")');
     expect(postBody).toContain("LATE_FEE_AUTOMATION_ENABLED");
+    expect(postBody).toContain("LATE_FEE_AUTOMATION_START_DATE");
+    expect(postBody).toContain("firstEligibleDueDate");
+    expect(postBody).toContain("candidateInvoiceIds");
+    expect(postBody).toContain("p_invoice_ids: candidateInvoiceIds");
+    expect(postBody).not.toContain("p_invoice_ids: null");
     expect(postBody).toContain("p_dry_run: false");
     expect(postBody).toContain("late-fee cron summary");
   });

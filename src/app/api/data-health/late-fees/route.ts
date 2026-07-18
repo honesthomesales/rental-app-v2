@@ -61,6 +61,13 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (!invoiceIds || invoiceIds.length === 0) {
+      return NextResponse.json(
+        { error: "Explicit invoiceIds approval is required" },
+        { status: 400 },
+      );
+    }
+
     const { data, error } = await supabaseServer.rpc("rent_reconcile_late_fees", {
       p_business_date: businessDate,
       p_invoice_ids: invoiceIds,
@@ -141,18 +148,12 @@ async function loadAppSidePreview(businessDate: string) {
   const { data: invoices, error: invError } = await supabaseServer
     .from("RENT_invoices")
     .select(
-      "id, lease_id, due_date, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due",
+      "id, lease_id, due_date, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due, late_fee_waived",
     )
     .in("lease_id", leaseIds)
     .lte("due_date", businessDate);
 
   if (invError) throw new Error(invError.message);
-
-  // late_fee_waived is optional until migration is applied
-  const invoicesWithWaiver = (invoices || []).map((inv: Record<string, unknown>) => ({
-    ...inv,
-    late_fee_waived: Boolean(inv.late_fee_waived),
-  }));
 
   const { data: payments, error: payError } = await supabaseServer
     .from("RENT_payments")
@@ -164,7 +165,7 @@ async function loadAppSidePreview(businessDate: string) {
   return buildLateFeePreview({
     businessDate,
     leases: leaseInputs,
-    invoices: invoicesWithWaiver as never[],
+    invoices: (invoices || []) as never[],
     payments: (payments || []) as never[],
   });
 }

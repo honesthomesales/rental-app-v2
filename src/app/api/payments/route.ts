@@ -196,7 +196,7 @@ try {
     // Use receivedAt if provided, otherwise current timestamp
     const paymentDate = receivedAt || new Date().toISOString()
     
-    // Insert payment into database
+    const businessDate = getBusinessDate()
     const paymentRecord: any = {
       tenant_id: tenantId,
       lease_id: leaseId,
@@ -213,27 +213,24 @@ try {
     if (invoiceId) {
       paymentRecord.invoice_id = invoiceId
     }
-    
-    const { data: payment, error: paymentError } = await supabaseServer
-      .from('RENT_payments')
-      .insert([paymentRecord])
-      .select()
-      .single()
-    
-    if (paymentError) {
-      console.error('Error inserting payment:', paymentError)
-      return NextResponse.json(
-        { error: 'Failed to insert payment', details: paymentError.message },
-        { status: 500 }
-      )
-    }
-    
-    console.log('Payment inserted successfully:', payment.id)
 
     // Do not allocate future-dated completed payments before their payment_date.
     // They remain recorded but ineligible for balances / Last Paid until business date.
-    const businessDate = getBusinessDate()
-    if (!canAllocatePaymentAsOf(payment, businessDate)) {
+    if (!canAllocatePaymentAsOf(paymentRecord, businessDate)) {
+      const { data: payment, error: paymentError } = await supabaseServer
+        .from('RENT_payments')
+        .insert([paymentRecord])
+        .select()
+        .single()
+
+      if (paymentError) {
+        console.error('Error inserting future payment:', paymentError)
+        return NextResponse.json(
+          { error: 'Failed to insert payment', details: paymentError.message },
+          { status: 500 }
+        )
+      }
+
       return NextResponse.json({
         payment,
         allocations: [],
@@ -243,35 +240,44 @@ try {
           'Payment recorded but not allocated yet — payment_date is after the business date.',
       })
     }
-    
-    // Call Supabase RPC function to allocate payment using FIFO
-    const { data: allocations, error: rpcError } = await supabaseServer
-      .rpc('rent_apply_payment_fifo', {
-        payment_id: payment.id,
-        received_at: paymentDate
+
+    // Eligible payment insert and FIFO allocation succeed or roll back together.
+    const { data: result, error: rpcError } = await supabaseServer
+      .rpc('rent_record_and_apply_payment_fifo', {
+        p_tenant_id: tenantId,
+        p_lease_id: leaseId,
+        p_property_id: finalPropertyId,
+        p_payment_date: paymentDate,
+        p_amount: amount,
+        p_payment_type: paymentType,
+        p_payment_method: 'Manual Entry',
+        p_notes: memo || '',
+        p_invoice_id: invoiceId || null
       })
-    
+
     if (rpcError) {
-      console.error('Error calling rent_apply_payment_fifo RPC:', rpcError)
-      // Don't fail the entire request if allocation fails - payment is still recorded
-      console.warn('Payment recorded but allocation failed. Manual allocation may be needed.')
-      
-      return NextResponse.json({
-        payment: payment,
-        allocations: [],
-        warning: 'Payment recorded but automatic allocation failed. Manual allocation may be required.',
-        error: rpcError.message
-      })
+      console.error('Atomic payment recording/allocation failed:', rpcError)
+      return NextResponse.json(
+        {
+          error: 'Payment was not recorded because allocation failed',
+          details: rpcError.message
+        },
+        { status: 500 }
+      )
     }
-    
-    console.log('Payment allocated successfully:', {
-      paymentId: payment.id,
-      allocationsCount: allocations?.length || 0
+
+    const atomicResult = (result || {}) as {
+      payment?: { id?: string }
+      allocations?: unknown[]
+    }
+    console.log('Payment recorded and allocated atomically:', {
+      paymentId: atomicResult.payment?.id,
+      allocationsCount: atomicResult.allocations?.length || 0
     })
-    
+
     return NextResponse.json({
-      payment: payment,
-      allocations: allocations || []
+      payment: atomicResult.payment,
+      allocations: atomicResult.allocations || []
     })
   } catch (error) {
     console.error('Error in payments API:', error)

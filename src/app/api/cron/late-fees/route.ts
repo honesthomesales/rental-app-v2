@@ -25,11 +25,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Installing the release must not backfill existing invoices automatically.
+  // Owner enables daily apply only after reviewing/applying the explicit preview.
+  const automationEnabled =
+    process.env.LATE_FEE_AUTOMATION_ENABLED?.toLowerCase() === "true";
+
   const businessDate =
     new URL(request.url).searchParams.get("businessDate") || getBusinessDate();
-  const dryRun =
+  const requestedDryRun =
     new URL(request.url).searchParams.get("dryRun") === "1" ||
     new URL(request.url).searchParams.get("preview") === "1";
+  const dryRun = requestedDryRun || !automationEnabled;
 
   const { data, error } = await supabaseServer.rpc("rent_reconcile_late_fees", {
     p_business_date: businessDate,
@@ -48,6 +54,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ...(typeof data === "object" && data !== null ? data : {}),
     writePerformed: !dryRun,
+    automationEnabled,
+    requiresOwnerEnablement: !automationEnabled,
   });
 }
 

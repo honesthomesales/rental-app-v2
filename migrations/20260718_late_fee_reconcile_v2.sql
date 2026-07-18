@@ -1,24 +1,10 @@
--- =====================================================
--- Late-fee reconciliation (preview-compatible apply)
--- =====================================================
--- Adds invoice late_fee_waived flag and atomic batch apply RPC.
+-- Corrected idempotent late-fee reconciliation.
+-- Installation performs no reconciliation and no invoice writes.
+-- Fixed grace rule: business_date >= due_date + 6 days.
 -- Defaults: weekly $10, biweekly $25, monthly $45.
--- Positive lease.late_fee_amount overrides cadence default.
--- Idempotent: amount_late > 0 or late_fee_waived skips.
--- Never writes from GET. Backfill requires explicit apply.
--- =====================================================
 
 ALTER TABLE "RENT_invoices"
   ADD COLUMN IF NOT EXISTS late_fee_waived boolean NOT NULL DEFAULT false;
-
-COMMENT ON COLUMN "RENT_invoices".late_fee_waived IS
-  'When true, automatic late-fee reconciliation must not re-assess a fee on this invoice';
-
-ALTER TABLE "RENT_leases"
-  ADD COLUMN IF NOT EXISTS grace_days integer;
-
-COMMENT ON COLUMN "RENT_leases".grace_days IS
-  'Legacy field. Automatic late fees use the fixed five-full-calendar-day grace rule';
 
 CREATE OR REPLACE FUNCTION public.rent_reconcile_late_fees(
   p_business_date date,
@@ -36,13 +22,11 @@ DECLARE
   v_skipped int := 0;
   v_fee_total numeric(12,2) := 0;
   r record;
-  v_grace int;
   v_fee numeric(10,2);
   v_cadence text;
   v_paid numeric(12,2);
   v_total numeric(12,2);
   v_balance numeric(12,2);
-  v_new_late numeric(10,2);
   v_new_total numeric(12,2);
   v_new_balance numeric(12,2);
   v_new_status text;
@@ -66,7 +50,6 @@ BEGIN
       lower(coalesce(l.status, '')) AS lease_status,
       lower(coalesce(l.rent_cadence, 'monthly')) AS rent_cadence,
       l.late_fee_amount,
-      coalesce(l.grace_days, 0) AS grace_days,
       l.property_id,
       l.tenant_id
     FROM "RENT_invoices" i
@@ -78,7 +61,6 @@ BEGIN
   LOOP
     v_examined := v_examined + 1;
     v_reason := NULL;
-    v_grace := 5;
 
     IF r.status = 'VOID' THEN
       v_reason := 'void';
@@ -90,10 +72,7 @@ BEGIN
       v_reason := 'waived';
     ELSIF r.amount_late > 0.009 THEN
       v_reason := 'already_billed';
-    ELSIF r.due_date > p_business_date THEN
-      v_reason := 'future_invoice';
     ELSIF p_business_date < (r.due_date + 6) THEN
-      -- Five full calendar days after due are grace; eligible on due_date + 6.
       v_reason := 'within_grace';
     END IF;
 
@@ -120,15 +99,17 @@ BEGIN
         jsonb_build_object(
           'invoiceId', r.invoice_id,
           'leaseId', r.lease_id,
+          'dueDate', r.due_date,
+          'status', r.status,
           'eligible', false,
           'reasonSkipped', v_reason,
-          'existingLateFee', r.amount_late
+          'existingLateFee', r.amount_late,
+          'waived', r.late_fee_waived
         )
       );
       CONTINUE;
     END IF;
 
-    -- Resolve fee amount
     IF r.late_fee_amount IS NOT NULL AND r.late_fee_amount > 0 THEN
       v_fee := round(r.late_fee_amount::numeric, 2);
     ELSE
@@ -142,8 +123,7 @@ BEGIN
       END IF;
     END IF;
 
-    v_new_late := v_fee;
-    v_new_total := round(r.amount_rent + v_new_late + r.amount_other, 2);
+    v_new_total := round(r.amount_rent + v_fee + r.amount_other, 2);
     v_new_balance := round(greatest(0, v_new_total - v_paid), 2);
     IF v_new_balance <= 0.009 THEN
       v_new_status := 'PAID';
@@ -156,7 +136,7 @@ BEGIN
     IF NOT p_dry_run THEN
       UPDATE "RENT_invoices" i
       SET
-        amount_late = v_new_late,
+        amount_late = v_fee,
         amount_total = v_new_total,
         balance_due = v_new_balance,
         status = v_new_status,
@@ -217,4 +197,4 @@ GRANT EXECUTE ON FUNCTION public.rent_reconcile_late_fees(date, uuid[], boolean)
 GRANT EXECUTE ON FUNCTION public.rent_reconcile_late_fees(date, uuid[], boolean) TO service_role;
 
 COMMENT ON FUNCTION public.rent_reconcile_late_fees(date, uuid[], boolean) IS
-  'Idempotent late-fee reconciliation. dry_run=true is preview-only. Apply with dry_run=false in one transaction.';
+  'Transactional idempotent late-fee preview/apply. Five full grace days; eligible on due+6. Installation does not invoke the function.';

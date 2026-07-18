@@ -1,13 +1,13 @@
 /**
  * Authoritative late-fee defaults and lease overrides.
- * Weekly $12 / biweekly $25 / monthly $45.
+ * Weekly $10 / biweekly $25 / monthly $45.
  * Positive lease.late_fee_amount overrides the cadence default.
  */
 
 import { normalizeCadence, type Cadence } from "@/lib/rent/cadence";
 
 export const LATE_FEE_DEFAULTS: Record<Cadence, number> = {
-  weekly: 12,
+  weekly: 10,
   biweekly: 25,
   monthly: 45,
 };
@@ -33,11 +33,11 @@ export function resolveLateFeeAmount(args: {
   return roundMoney(defaultLateFeeForCadence(args.cadence));
 }
 
-export function resolveGraceDays(graceDays?: number | null): number {
-  if (graceDays != null && Number.isFinite(Number(graceDays)) && Number(graceDays) >= 0) {
-    return Math.floor(Number(graceDays));
-  }
-  return 0;
+/** Five full calendar days after due date are always grace days. */
+export const LATE_FEE_GRACE_DAYS = 5;
+
+export function resolveGraceDays(_graceDays?: number | null): number {
+  return LATE_FEE_GRACE_DAYS;
 }
 
 /** First calendar date after which a late fee may be assessed (due + grace). */

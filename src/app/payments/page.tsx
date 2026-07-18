@@ -706,7 +706,7 @@ return'<div class="s">'+l+'</div>';
       
       const currentLateFee = parseFloat(invoice.amount_late as any || 0)
       
-      // Authoritative defaults: weekly $12 / biweekly $25 / monthly $45;
+      // Authoritative defaults: weekly $10 / biweekly $25 / monthly $45;
       // positive lease.late_fee_amount overrides.
       let lateFeeAmount = 45
       if (selectedLease) {
@@ -720,7 +720,7 @@ return'<div class="s">'+l+'</div>';
           if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) {
             lateFeeAmount = 25
           } else if (cadence.includes('weekly')) {
-            lateFeeAmount = 12
+            lateFeeAmount = 10
           } else {
             lateFeeAmount = 45
           }

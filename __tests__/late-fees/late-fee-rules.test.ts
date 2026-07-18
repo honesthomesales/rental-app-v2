@@ -6,8 +6,8 @@ import {
 import { buildLateFeePreview } from "@/lib/late-fees/preview";
 
 describe("late fee rules", () => {
-  it("uses weekly $12 / biweekly $25 / monthly $45 defaults", () => {
-    expect(defaultLateFeeForCadence("weekly")).toBe(12);
+  it("uses weekly $10 / biweekly $25 / monthly $45 defaults", () => {
+    expect(defaultLateFeeForCadence("weekly")).toBe(10);
     expect(defaultLateFeeForCadence("biweekly")).toBe(25);
     expect(defaultLateFeeForCadence("monthly")).toBe(45);
   });
@@ -18,21 +18,21 @@ describe("late fee rules", () => {
     ).toBe(20);
     expect(
       resolveLateFeeAmount({ cadence: "weekly", leaseLateFeeAmount: 0 }),
-    ).toBe(12);
+    ).toBe(10);
   });
 
   it("respects grace period", () => {
     expect(
       isPastGrace({
         dueDate: "2026-07-10",
-        graceDays: 5,
+        graceDays: 999,
         businessDate: "2026-07-15",
       }),
     ).toBe(false);
     expect(
       isPastGrace({
         dueDate: "2026-07-10",
-        graceDays: 5,
+        graceDays: 0,
         businessDate: "2026-07-16",
       }),
     ).toBe(true);
@@ -79,7 +79,7 @@ describe("late fee preview eligibility", () => {
     });
     const row = preview.rows.find((r) => r.invoiceId === "inv-overdue");
     expect(row?.eligible).toBe(true);
-    expect(row?.proposedLateFee).toBe(12);
+    expect(row?.proposedLateFee).toBe(10);
   });
 
   it("skips future invoice, within grace, paid, void, waived, already billed", () => {
@@ -101,8 +101,8 @@ describe("late fee preview eligibility", () => {
           ...baseInv,
           id: "billed",
           due_date: "2026-07-03",
-          amount_late: 12,
-          amount_total: 172,
+          amount_late: 10,
+          amount_total: 170,
         },
       ],
       payments: [],
@@ -146,6 +146,81 @@ describe("late fee preview eligibility", () => {
     expect(preview.rows.find((r) => r.invoiceId === "inv-1")?.eligible).toBe(
       true,
     );
+  });
+
+  it("assesses one fee on an overdue PARTIAL invoice with balance", () => {
+    const preview = buildLateFeePreview({
+      businessDate,
+      leases: [lease],
+      invoices: [
+        {
+          ...baseInv,
+          id: "partial",
+          due_date: "2026-07-10",
+          status: "PARTIAL",
+          amount_paid: 40,
+          balance_due: 120,
+        },
+      ],
+      payments: [
+        {
+          id: "paid-40",
+          lease_id: "lease-1",
+          invoice_id: "partial",
+          amount: 40,
+          payment_date: "2026-07-11",
+          status: "completed",
+        },
+      ],
+    });
+    const row = preview.rows.find((r) => r.invoiceId === "partial");
+    expect(row?.eligible).toBe(true);
+    expect(row?.currentRentBalance).toBe(120);
+    expect(row?.proposedLateFee).toBe(10);
+    expect(row?.resultingBalance).toBe(130);
+  });
+
+  it("the sixth calendar day is eligible and the fifth remains grace", () => {
+    const fifth = buildLateFeePreview({
+      businessDate: "2026-07-06",
+      leases: [lease],
+      invoices: [{ ...baseInv, id: "fifth", due_date: "2026-07-01" }],
+      payments: [],
+    });
+    const sixth = buildLateFeePreview({
+      businessDate: "2026-07-07",
+      leases: [lease],
+      invoices: [{ ...baseInv, id: "sixth", due_date: "2026-07-01" }],
+      payments: [],
+    });
+    expect(fifth.rows[0].reasonSkipped).toBe("within_grace");
+    expect(sixth.rows[0].eligible).toBe(true);
+  });
+
+  it("a second reconciliation preview proposes zero after fee exists", () => {
+    const first = buildLateFeePreview({
+      businessDate,
+      leases: [lease],
+      invoices: [{ ...baseInv, id: "once", due_date: "2026-07-10" }],
+      payments: [],
+    });
+    const second = buildLateFeePreview({
+      businessDate,
+      leases: [lease],
+      invoices: [
+        {
+          ...baseInv,
+          id: "once",
+          due_date: "2026-07-10",
+          amount_late: first.rows[0].proposedLateFee,
+          amount_total: 170,
+        },
+      ],
+      payments: [],
+    });
+    expect(first.proposedFeeTotal).toBe(10);
+    expect(second.proposedFeeTotal).toBe(0);
+    expect(second.rows[0].reasonSkipped).toBe("already_billed");
   });
 
   it("running preview twice is identical and write-free", () => {

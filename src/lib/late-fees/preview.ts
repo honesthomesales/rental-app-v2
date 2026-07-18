@@ -54,10 +54,14 @@ export type LateFeePreviewRow = {
   leaseId: string;
   invoiceId: string;
   dueDate: string;
+  cadence: string;
   currentRentBalance: number;
   graceDays: number;
   existingLateFee: number;
+  waived: boolean;
   proposedLateFee: number;
+  currentTotal: number;
+  resultingTotal: number;
   resultingBalance: number;
   eligible: boolean;
   reasonEligible: string | null;
@@ -151,9 +155,21 @@ export function buildLateFeePreview(args: {
       leaseId: inv.lease_id,
       invoiceId: inv.id,
       dueDate,
+      cadence: String(lease?.rent_cadence || "monthly"),
       graceDays,
       existingLateFee: existingLate,
+      waived: Boolean(inv.late_fee_waived),
       proposedLateFee: 0,
+      currentTotal: roundMoney(
+        Number(inv.amount_rent || 0) +
+          Number(inv.amount_late || 0) +
+          Number(inv.amount_other || 0),
+      ),
+      resultingTotal: roundMoney(
+        Number(inv.amount_rent || 0) +
+          Number(inv.amount_late || 0) +
+          Number(inv.amount_other || 0),
+      ),
       currentRentBalance: 0,
       resultingBalance: 0,
       eligible: false,
@@ -228,6 +244,7 @@ export function buildLateFeePreview(args: {
       ...base,
       currentRentBalance: balance,
       proposedLateFee: proposed,
+      resultingTotal,
       resultingBalance,
       eligible: true,
       reasonEligible: "past_grace_unpaid_no_existing_fee",

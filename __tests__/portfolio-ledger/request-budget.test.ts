@@ -46,4 +46,15 @@ describe("portfolio collections request budget", () => {
       expect(getBody).not.toMatch(/\.(insert|update|delete|upsert)\(/);
     }
   });
+
+  it("eligible payment recording and FIFO allocation use one transaction RPC", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "src/app/api/payments/route.ts"),
+      "utf8",
+    );
+    const postBody = source.split("export async function GET")[0];
+    expect(postBody).toContain(".rpc('rent_record_and_apply_payment_fifo'");
+    expect(postBody).not.toContain(".rpc('rent_apply_payment_fifo'");
+    expect(postBody).toContain("Payment was not recorded because allocation failed");
+  });
 });

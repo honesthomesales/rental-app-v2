@@ -140,6 +140,10 @@ export type LedgerAccountSummary = {
   /** Payments-page baseline total owed (OPEN + positive balance, due <= asOf). */
   totalBalanceDue: number;
   unpaidInvoiceCount: number;
+  /** Count of current invoices that are past the 5-day grace window. */
+  pastDueInvoiceCount: number;
+  /** Sum of balances for past-due invoices only (excludes within-grace unpaid). */
+  pastDueBalanceDue: number;
   rentBalance: number;
   lateFeeBalance: number;
   otherChargeBalance: number;
@@ -175,6 +179,8 @@ export type CollectionsSummaryRow = {
   lateFeeBalance: number;
   otherChargeBalance: number;
   unpaidInvoicesCount: number;
+  pastDueInvoicesCount: number;
+  pastDueBalanceDue: number;
   lastPaidDate: string | null;
   oldestUnpaidDueDate: string | null;
   daysLate: number | null;
@@ -359,14 +365,20 @@ export function buildAccountLedger(args: {
   const unpaidDueDates = collectibleCurrent
     .map((invoice) => invoice.dueDate)
     .sort();
-  const overdueUnpaid = collectibleCurrent
-    .filter((invoice) => invoice.collectionStatus === "past_due")
-    .map((invoice) => invoice.dueDate)
-    .sort();
+  const overdueInvoices = collectibleCurrent.filter(
+    (invoice) => invoice.collectionStatus === "past_due",
+  );
+  const overdueUnpaid = overdueInvoices.map((invoice) => invoice.dueDate).sort();
   const oldestUnpaidDueDate = unpaidDueDates[0] || null;
   const oldestLateDueDate = overdueUnpaid[0] || null;
   const daysLate =
     oldestLateDueDate != null ? daysBetween(oldestLateDueDate, asOf) : null;
+  const pastDueBalanceDue = roundMoney(
+    overdueInvoices.reduce(
+      (sum, invoice) => sum + Math.max(0, invoice.calculatedBalance),
+      0,
+    ),
+  );
 
   const remainingInvoiceCapacity = new Map(
     invoiceDetails.map((invoice) => [
@@ -445,6 +457,8 @@ export function buildAccountLedger(args: {
       lease.prior_rent != null ? roundMoney(Number(lease.prior_rent)) : null,
     totalBalanceDue,
     unpaidInvoiceCount: collectibleCurrent.length,
+    pastDueInvoiceCount: overdueInvoices.length,
+    pastDueBalanceDue,
     rentBalance,
     lateFeeBalance,
     otherChargeBalance,
@@ -507,6 +521,8 @@ export function toCollectionsSummaryRow(
     lateFeeBalance: account.lateFeeBalance,
     otherChargeBalance: account.otherChargeBalance,
     unpaidInvoicesCount: account.unpaidInvoiceCount,
+    pastDueInvoicesCount: account.pastDueInvoiceCount,
+    pastDueBalanceDue: account.pastDueBalanceDue,
     lastPaidDate: account.lastEligiblePositivePaymentDate,
     oldestUnpaidDueDate: account.oldestUnpaidDueDate,
     daysLate: account.daysLate,

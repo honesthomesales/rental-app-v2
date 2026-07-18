@@ -76,11 +76,14 @@ export async function GET(request: Request) {
           ['OPEN', 'PARTIAL'].includes(inv.storedStatus),
       )
 
-      if (unpaidInvoices.length === 0 || account.totalBalanceDue <= 0) {
+      if (unpaidInvoices.length === 0 || account.pastDueBalanceDue <= 0) {
         continue
       }
 
-      const rowTotals = buildLateTenantRowTotals(account.totalBalanceDue)
+      const rowTotals = buildLateTenantRowTotals(
+        account.totalBalanceDue,
+        account.pastDueBalanceDue,
+      )
       const daysLate = account.daysLate ?? 0
 
       const lastPay = account.payments
@@ -99,8 +102,8 @@ export async function GET(request: Request) {
           lease_end_date: lease.lease_end_date,
         },
         ...rowTotals,
-        unpaidCount: account.unpaidInvoiceCount,
-        unpaidInvoiceCount: account.unpaidInvoiceCount,
+        unpaidCount: account.pastDueInvoiceCount,
+        unpaidInvoiceCount: account.pastDueInvoiceCount,
         unpaidInvoiceIds: unpaidInvoices.map((inv) => inv.invoiceId),
         daysLate,
         mostRecentPayment: lastPay
@@ -110,19 +113,25 @@ export async function GET(request: Request) {
               method: lastPay.paymentMethod || '',
             }
           : null,
-        lateInvoices: unpaidInvoices.map((inv) => ({
-          id: inv.invoiceId,
-          due_date: inv.dueDate,
-          period_start: inv.periodStart,
-          period_end: inv.periodEnd,
-          amount_total: inv.calculatedTotal,
-          amount_paid: inv.eligiblePaidAmount,
-          amount_late: inv.storedLateFee,
-          late_fee_waived: inv.lateFeeWaived,
-          balance_due: inv.calculatedBalance,
-          days_late: account.daysLate ?? 0,
-          status: inv.storedStatus,
-        })),
+        lateInvoices: unpaidInvoices.map((inv) => {
+          const due = String(inv.dueDate).split('T')[0]
+          const ms =
+            Date.parse(`${today}T00:00:00Z`) - Date.parse(`${due}T00:00:00Z`)
+          const invoiceDaysLate = Math.max(0, Math.round(ms / 86_400_000))
+          return {
+            id: inv.invoiceId,
+            due_date: inv.dueDate,
+            period_start: inv.periodStart,
+            period_end: inv.periodEnd,
+            amount_total: inv.calculatedTotal,
+            amount_paid: inv.eligiblePaidAmount,
+            amount_late: inv.storedLateFee,
+            late_fee_waived: inv.lateFeeWaived,
+            balance_due: inv.calculatedBalance,
+            days_late: invoiceDaysLate,
+            status: inv.storedStatus,
+          }
+        }),
         ledgerVersion: account.ledgerVersion,
       })
     }

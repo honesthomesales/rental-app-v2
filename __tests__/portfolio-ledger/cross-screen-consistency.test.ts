@@ -83,10 +83,37 @@ describe("portfolio ledger cross-screen consistency", () => {
       asOfDate: "2026-07-07",
     });
     expect(onFifth.totalBalanceDue).toBe(175);
+    expect(onFifth.pastDueBalanceDue).toBe(0);
+    expect(onFifth.pastDueInvoiceCount).toBe(0);
     expect(onFifth.daysLate).toBeNull();
     expect(onFifth.collectionStatus).toBe("balance_due");
     expect(onSixth.daysLate).toBe(6);
     expect(onSixth.collectionStatus).toBe("past_due");
+    expect(onSixth.pastDueInvoiceCount).toBe(1);
+    expect(onSixth.pastDueBalanceDue).toBe(175);
+  });
+
+  it("past-due totals exclude within-grace invoices on the same account", () => {
+    const invoices = [invoice("2026-06-01"), invoice("2026-07-01")];
+    const account = buildAccountLedger({
+      lease,
+      invoices,
+      payments: [],
+      asOfDate: "2026-07-03",
+    });
+    const dashboard = buildCollectionsSummary({
+      leases: [lease],
+      invoicesByLease: new Map([[lease.id, invoices]]),
+      paymentsByLease: new Map([[lease.id, []]]),
+      asOfDate: "2026-07-03",
+    }).rows[0];
+
+    expect(account.unpaidInvoiceCount).toBe(2);
+    expect(account.pastDueInvoiceCount).toBe(1);
+    expect(account.pastDueBalanceDue).toBe(175);
+    expect(account.totalBalanceDue).toBe(350);
+    expect(dashboard.pastDueInvoicesCount).toBe(1);
+    expect(dashboard.pastDueBalanceDue).toBe(175);
   });
 
   it("future payments affect neither balance nor Last Paid early", () => {

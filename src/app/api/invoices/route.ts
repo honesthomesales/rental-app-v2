@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { supabaseServer } from '@/lib/supabase-server'
 import { normalizeCadence } from '@/lib/rent/cadence'
 
@@ -278,6 +279,9 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const auth = await requireApiAuth(request, { write: true })
+    if (isAuthError(auth)) return auth
+
     const { searchParams } = new URL(request.url)
     const invoiceId = searchParams.get('id')
     const body = await request.json()
@@ -289,47 +293,28 @@ export async function PUT(request: Request) {
       )
     }
 
-    console.log('Updating invoice:', invoiceId, body)
-
-    // If amount_paid or amount_late is being updated, recalculate totals
-    if (body.amount_paid !== undefined || body.amount_late !== undefined) {
-      // Get current invoice to calculate balance
-      const { data: currentInvoice, error: fetchError } = await supabaseServer
-        .from('RENT_invoices')
-        .select('amount_total, amount_rent, amount_late, amount_other, amount_paid')
-        .eq('id', invoiceId)
-        .single()
-
-      if (fetchError) {
-        console.error('Error fetching invoice:', fetchError)
-        throw new Error('Failed to fetch invoice')
-      }
-
-      // Use updated values or current values
-      const amountRent = parseFloat(currentInvoice.amount_rent)
-      const amountLate = body.amount_late !== undefined ? parseFloat(body.amount_late) : parseFloat(currentInvoice.amount_late)
-      const amountOther = parseFloat(currentInvoice.amount_other || 0)
-      const amountPaid = body.amount_paid !== undefined ? parseFloat(body.amount_paid) : parseFloat(currentInvoice.amount_paid)
-
-      // Recalculate total and balance
-      const amountTotal = amountRent + amountLate + amountOther
-      const balanceDue = amountTotal - amountPaid
-
-      body.amount_total = amountTotal
-      body.balance_due = balanceDue
-      body.status = balanceDue <= 0 ? 'PAID' : 'OPEN'
-      body.paid_in_full_at = balanceDue <= 0 ? new Date().toISOString() : null
-
-      console.log('Calculated invoice totals:', { 
-        amountRent, 
-        amountLate, 
-        amountOther, 
-        amountTotal, 
-        amountPaid, 
-        balanceDue, 
-        status: body.status 
-      })
+    // Late-fee and balance mutations must use transactional correction/waive RPCs.
+    if (
+      body.amount_late !== undefined ||
+      body.amount_paid !== undefined ||
+      body.amount_rent !== undefined ||
+      body.amount_other !== undefined ||
+      body.amount_total !== undefined ||
+      body.balance_due !== undefined ||
+      body.late_fee_waived !== undefined ||
+      body.status !== undefined
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Financial invoice fields must be updated via Edit Invoice or Waive Fee endpoints.',
+          writePerformed: false,
+        },
+        { status: 409 },
+      )
     }
+
+    console.log('Updating invoice:', invoiceId, body)
 
     // Update invoice in database
     const { data, error } = await supabaseServer

@@ -196,7 +196,7 @@ export async function GET(request: Request) {
         (s, r) =>
           s +
           (r.collectionStatus === 'past_due'
-            ? r.unpaidInvoicesCount || 0
+            ? r.pastDueInvoicesCount || 0
             : 0),
         0,
       )

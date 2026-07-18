@@ -2345,11 +2345,6 @@ return'<div class="s">'+l+'</div>';
                                 >
                                   Edit
                                 </button>
-                                {invoice.cadence_exception && (
-                                  <span className="px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs font-medium">
-                                    Cadence review
-                                  </span>
-                                )}
                                 {invoice.late_fee_waived && (
                                   <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-medium">
                                     Waived

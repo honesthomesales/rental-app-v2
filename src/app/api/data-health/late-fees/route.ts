@@ -3,6 +3,12 @@ import { getBusinessDate } from "@/lib/business-date";
 import { isAuthError, requireApiAuth } from "@/lib/auth/api-auth";
 import { supabaseServer } from "@/lib/supabase-server";
 import { buildLateFeePreview } from "@/lib/late-fees/preview";
+import { analyzeLeaseCadence } from "@/lib/invoice-cadence";
+import {
+  loadBillingLeases,
+  loadInvoicesForLeases,
+  loadPaymentsForLeases,
+} from "@/lib/portfolio-ledger/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -67,10 +73,31 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    const uniqueInvoiceIds = [...new Set(invoiceIds)];
+    const validationPreview = await loadAppSidePreview(businessDate);
+    const eligibleInvoiceIds = new Set(
+      validationPreview.rows
+        .filter((row) => row.eligible)
+        .map((row) => row.invoiceId),
+    );
+    const invalidInvoiceIds = uniqueInvoiceIds.filter(
+      (invoiceId) => !eligibleInvoiceIds.has(invoiceId),
+    );
+    if (invalidInvoiceIds.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "One or more approved invoices are no longer eligible or require cadence review",
+          invalidInvoiceIds,
+          writePerformed: false,
+        },
+        { status: 409 },
+      );
+    }
 
     const { data, error } = await supabaseServer.rpc("rent_reconcile_late_fees", {
       p_business_date: businessDate,
-      p_invoice_ids: invoiceIds,
+      p_invoice_ids: uniqueInvoiceIds,
       p_dry_run: false,
     });
 
@@ -103,39 +130,8 @@ export async function POST(request: NextRequest) {
 }
 
 async function loadAppSidePreview(businessDate: string) {
-  const { data: leases, error: leaseError } = await supabaseServer
-    .from("RENT_leases")
-    .select(
-      `
-      id, property_id, tenant_id, status, rent_cadence, late_fee_amount, grace_days,
-      RENT_properties(name, address),
-      RENT_tenants(full_name, first_name, last_name)
-    `,
-    )
-    .in("status", ["occupied", "eviction"]);
-
-  if (leaseError) throw new Error(leaseError.message);
-
-  const leaseInputs = (leases || []).map((l: Record<string, unknown>) => {
-    const prop = (l.RENT_properties || {}) as Record<string, unknown>;
-    const ten = (l.RENT_tenants || {}) as Record<string, unknown>;
-    return {
-      id: String(l.id),
-      property_id: String(l.property_id),
-      tenant_id: String(l.tenant_id),
-      status: String(l.status || ""),
-      rent_cadence: (l.rent_cadence as string) || "monthly",
-      late_fee_amount: l.late_fee_amount != null ? Number(l.late_fee_amount) : null,
-      grace_days: l.grace_days != null ? Number(l.grace_days) : null,
-      property_name: (prop.name as string) || (prop.address as string) || "",
-      tenant_name:
-        (ten.full_name as string) ||
-        [ten.first_name, ten.last_name].filter(Boolean).join(" ") ||
-        "",
-    };
-  });
-
-  const leaseIds = leaseInputs.map((l) => l.id);
+  const leases = await loadBillingLeases();
+  const leaseIds = leases.map((lease) => lease.id);
   if (leaseIds.length === 0) {
     return buildLateFeePreview({
       businessDate,
@@ -145,27 +141,46 @@ async function loadAppSidePreview(businessDate: string) {
     });
   }
 
-  const { data: invoices, error: invError } = await supabaseServer
-    .from("RENT_invoices")
-    .select(
-      "id, lease_id, due_date, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due, late_fee_waived",
-    )
-    .in("lease_id", leaseIds)
-    .lte("due_date", businessDate);
-
-  if (invError) throw new Error(invError.message);
-
-  const { data: payments, error: payError } = await supabaseServer
-    .from("RENT_payments")
-    .select("id, lease_id, invoice_id, amount, payment_date, status")
-    .in("lease_id", leaseIds);
-
-  if (payError) throw new Error(payError.message);
+  const [invoicesByLease, paymentsByLease] = await Promise.all([
+    loadInvoicesForLeases(leaseIds),
+    loadPaymentsForLeases(leaseIds),
+  ]);
+  const invoices = [...invoicesByLease.values()].flat();
+  const payments = [...paymentsByLease.values()].flat();
+  const excludedInvoiceIds = new Set<string>();
+  for (const lease of leases) {
+    const leasePayments = paymentsByLease.get(lease.id) || [];
+    const paymentInvoiceIds = new Set(
+      leasePayments
+        .filter((payment) => payment.invoice_id)
+        .map((payment) => String(payment.invoice_id)),
+    );
+    const audit = analyzeLeaseCadence({
+      currentCadence: lease.rent_cadence,
+      cadenceEffectiveDate: lease.cadence_effective_date,
+      invoices: invoicesByLease.get(lease.id) || [],
+      paymentInvoiceIds,
+    });
+    audit.excludedInvoiceIds.forEach((id) => excludedInvoiceIds.add(id));
+  }
 
   return buildLateFeePreview({
     businessDate,
-    leases: leaseInputs,
-    invoices: (invoices || []) as never[],
-    payments: (payments || []) as never[],
+    leases: leases.map((lease) => ({
+      id: lease.id,
+      property_id: lease.property_id,
+      tenant_id: lease.tenant_id,
+      status: lease.status,
+      rent_cadence: lease.rent_cadence,
+      late_fee_amount: lease.late_fee_amount,
+      grace_days: lease.grace_days,
+      property_name: lease.property_name,
+      tenant_name: lease.tenant_name,
+    })),
+    invoices: invoices.filter(
+      (invoice) => String(invoice.due_date).split("T")[0] <= businessDate,
+    ),
+    payments,
+    excludedInvoiceIds,
   });
 }

@@ -17,12 +17,14 @@ const lease = {
 };
 
 function invoice(dueDate: string) {
+  const periodEnd = new Date(`${dueDate}T00:00:00Z`);
+  periodEnd.setUTCDate(periodEnd.getUTCDate() + 6);
   return {
     id: `invoice-${dueDate}`,
     lease_id: lease.id,
     due_date: dueDate,
     period_start: dueDate,
-    period_end: dueDate,
+    period_end: periodEnd.toISOString().slice(0, 10),
     status: "OPEN",
     amount_rent: 160,
     amount_late: 10,

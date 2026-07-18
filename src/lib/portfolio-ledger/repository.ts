@@ -35,7 +35,8 @@ export async function loadBillingLeases(): Promise<LedgerLease[]> {
       .select(
         `
         id, property_id, tenant_id, status, rent, rent_cadence, rent_due_day,
-        lease_start_date, lease_end_date, late_fee_amount,
+        lease_start_date, lease_end_date, late_fee_amount, grace_days,
+        cadence_effective_date, prior_rent_cadence,
         RENT_properties(id, name, address, property_type),
         RENT_tenants(id, full_name, first_name, last_name)
       `,
@@ -58,6 +59,12 @@ export async function loadBillingLeases(): Promise<LedgerLease[]> {
       status: String(r.status || ""),
       rent: Number(r.rent) || 0,
       rent_cadence: (r.rent_cadence as string) || "monthly",
+      cadence_effective_date:
+        (r.cadence_effective_date as string) || null,
+      prior_rent_cadence: (r.prior_rent_cadence as string) || null,
+      late_fee_amount:
+        r.late_fee_amount != null ? Number(r.late_fee_amount) : null,
+      grace_days: r.grace_days != null ? Number(r.grace_days) : null,
       rent_due_day: r.rent_due_day != null ? Number(r.rent_due_day) : null,
       lease_start_date: (r.lease_start_date as string) || null,
       lease_end_date: (r.lease_end_date as string) || null,
@@ -86,7 +93,7 @@ export async function loadInvoicesForLeases(
       supabaseServer
         .from("RENT_invoices")
         .select(
-          "id, lease_id, due_date, period_start, period_end, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due",
+          "id, lease_id, due_date, period_start, period_end, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due, late_fee_waived, rent_cadence, created_at",
         )
         .in("lease_id", slice)
         .range(from, to),
@@ -107,6 +114,9 @@ export async function loadInvoicesForLeases(
         amount_total: Number(r.amount_total) || 0,
         amount_paid: Number(r.amount_paid) || 0,
         balance_due: Number(r.balance_due) || 0,
+        late_fee_waived: Boolean(r.late_fee_waived),
+        rent_cadence: (r.rent_cadence as string) || null,
+        created_at: (r.created_at as string) || null,
       });
       map.set(leaseId, list);
     }

@@ -1,0 +1,29 @@
+name: Daily late-fee reconciliation
+
+on:
+  schedule:
+    - cron: "15 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-late-fee-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run secure idempotent reconciliation
+        env:
+          CRON_SECRET: ${{ secrets.LATE_FEE_CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "Content-Type: application/json" \
+            https://rental-app-v3.vercel.app/api/cron/late-fees

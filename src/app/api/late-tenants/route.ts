@@ -118,6 +118,7 @@ export async function GET(request: Request) {
           amount_total: inv.calculatedTotal,
           amount_paid: inv.eligiblePaidAmount,
           amount_late: inv.storedLateFee,
+          late_fee_waived: inv.lateFeeWaived,
           balance_due: inv.calculatedBalance,
           days_late: account.daysLate ?? 0,
           status: inv.storedStatus,

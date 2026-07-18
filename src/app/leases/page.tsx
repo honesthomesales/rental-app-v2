@@ -41,6 +41,9 @@ export default function LeasesPage() {
   const [editRent, setEditRent] = useState<number>(0)
   const [originalStatus, setOriginalStatus] = useState<string>('occupied')
   const [editStatus, setEditStatus] = useState<string>('occupied')
+  const [originalCadence, setOriginalCadence] = useState<string>('monthly')
+  const [editCadence, setEditCadence] = useState<string>('monthly')
+  const [cadenceEffectiveDate, setCadenceEffectiveDate] = useState<string>('')
   const [rentEffectiveDate, setRentEffectiveDate] = useState<string>('')
   const [effectiveDateOptions, setEffectiveDateOptions] = useState<string[]>([])
   const [rentPreview, setRentPreview] = useState<RentChangePreview | null>(null)
@@ -50,6 +53,9 @@ export default function LeasesPage() {
   const [endingDate, setEndingDate] = useState<string>('')
 
   const rentChanged = editRent !== originalRent
+  const cadenceChanged =
+    editCadence.toLowerCase().replace(/[-_\s]/g, '') !==
+    originalCadence.toLowerCase().replace(/[-_\s]/g, '')
   const isTransitioningToVacant =
     ['empty', 'sold'].includes(editStatus) && isPhysicallyOccupied(originalStatus)
 
@@ -222,11 +228,20 @@ export default function LeasesPage() {
 
   const handleEditLease = (lease: LeaseWithDetails) => {
     const status = lease.status || 'occupied'
+    const rawCadence = String(lease.rent_cadence || 'monthly').toLowerCase()
+    const cadence = rawCadence.includes('bi') && rawCadence.includes('week')
+      ? 'biweekly'
+      : rawCadence.includes('week')
+        ? 'weekly'
+        : 'monthly'
     setEditingLease(lease)
     setOriginalRent(lease.rent)
     setEditRent(lease.rent)
     setOriginalStatus(status)
     setEditStatus(status)
+    setOriginalCadence(cadence)
+    setEditCadence(cadence)
+    setCadenceEffectiveDate(businessDate)
     setRentEffectiveDate(businessDate)
     setEffectiveDateOptions([businessDate])
     setRentPreview(null)
@@ -247,7 +262,7 @@ export default function LeasesPage() {
         ? endingDate
         : (formData.get('lease_end_date') as string),
       rent: editRent,
-      rent_cadence: formData.get('rent_cadence') as string,
+      rent_cadence: editCadence,
       rent_due_day: parseInt(formData.get('rent_due_day') as string) || null,
       due_weekday: parseInt(formData.get('due_weekday') as string) || null,
       move_in_fee: parseFloat(formData.get('move_in_fee') as string) || 0,
@@ -258,6 +273,9 @@ export default function LeasesPage() {
 
     if (rentChanged) {
       leaseData.rentEffectiveDate = rentEffectiveDate || businessDate
+    }
+    if (cadenceChanged) {
+      leaseData.cadenceEffectiveDate = cadenceEffectiveDate || businessDate
     }
 
     // Confirm path: reuse pending payload that already includes rentEffectiveDate.
@@ -965,7 +983,14 @@ export default function LeasesPage() {
                       <label className="block text-sm font-medium text-gray-700">Rent Cadence</label>
                       <select
                         name="rent_cadence"
-                        defaultValue={editingLease.rent_cadence || 'monthly'}
+                        value={editCadence}
+                        onChange={e => {
+                          setEditCadence(e.target.value)
+                          setCadenceEffectiveDate(businessDate)
+                          setRentPreview(null)
+                          setShowPreviewPanel(false)
+                          setPendingLeaseData(null)
+                        }}
                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                       >
                         <option value="weekly">Weekly</option>
@@ -974,6 +999,28 @@ export default function LeasesPage() {
                       </select>
                     </div>
                   </div>
+
+                  {cadenceChanged && (
+                    <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2">
+                      <p className="text-sm font-medium text-amber-800">
+                        Cadence changed from {originalCadence} to {editCadence}.
+                      </p>
+                      <label className="block text-xs font-medium text-gray-700">
+                        First due date under the new cadence
+                      </label>
+                      <input
+                        type="date"
+                        value={cadenceEffectiveDate || businessDate}
+                        min={businessDate}
+                        onChange={e => setCadenceEffectiveDate(e.target.value)}
+                        className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                        required
+                      />
+                      <p className="text-xs text-gray-600">
+                        Historical periods remain unchanged. If an existing invoice overlaps the new schedule, generation stops for that period and flags it for review.
+                      </p>
+                    </div>
+                  )}
 
                   {(rentChanged || (rentPreview && (rentPreview.patches || []).some(
                     (p) => Number(p.previous_amount_rent) !== Number(p.new_amount_rent),

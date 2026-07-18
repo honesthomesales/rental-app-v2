@@ -10,11 +10,15 @@ import {
   resolveLateFeeAmount,
   roundMoney,
 } from "@/lib/late-fees/rules";
+import { inferInvoiceCadence } from "@/lib/invoice-cadence";
 
 export type LateFeeInvoiceInput = {
   id: string;
   lease_id: string;
   due_date: string;
+  period_start?: string | null;
+  period_end?: string | null;
+  rent_cadence?: string | null;
   status: string;
   amount_rent: number;
   amount_late: number;
@@ -43,7 +47,7 @@ export type LateFeePaymentInput = {
   lease_id: string;
   amount: number;
   payment_date: string;
-  status?: string;
+  status?: string | null;
 };
 
 export type LateFeePreviewRow = {
@@ -122,6 +126,7 @@ export function buildLateFeePreview(args: {
   leases: LateFeeLeaseInput[];
   invoices: LateFeeInvoiceInput[];
   payments: LateFeePaymentInput[];
+  excludedInvoiceIds?: Set<string>;
 }): LateFeePreviewResult {
   const businessDate = toDateOnly(args.businessDate);
   const leaseById = new Map(args.leases.map((l) => [l.id, l]));
@@ -140,9 +145,14 @@ export function buildLateFeePreview(args: {
     const dueDate = toDateOnly(inv.due_date);
     const existingLate = roundMoney(Number(inv.amount_late) || 0);
     const graceDays = resolveGraceDays(lease?.grace_days);
+    const invoiceCadence =
+      inv.rent_cadence ||
+      inferInvoiceCadence(inv) ||
+      lease?.rent_cadence ||
+      "monthly";
     const proposed = lease
       ? resolveLateFeeAmount({
-          cadence: lease.rent_cadence,
+          cadence: invoiceCadence,
           leaseLateFeeAmount: lease.late_fee_amount,
         })
       : 0;
@@ -155,7 +165,7 @@ export function buildLateFeePreview(args: {
       leaseId: inv.lease_id,
       invoiceId: inv.id,
       dueDate,
-      cadence: String(lease?.rent_cadence || "monthly"),
+      cadence: String(invoiceCadence),
       graceDays,
       existingLateFee: existingLate,
       waived: Boolean(inv.late_fee_waived),
@@ -195,6 +205,11 @@ export function buildLateFeePreview(args: {
 
     if (status === "PAID") {
       rows.push({ ...base, reasonSkipped: "paid_status" });
+      continue;
+    }
+
+    if (args.excludedInvoiceIds?.has(inv.id)) {
+      rows.push({ ...base, reasonSkipped: "cadence_exception" });
       continue;
     }
 

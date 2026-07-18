@@ -6,14 +6,13 @@ import { getBusinessDate } from "@/lib/business-date";
 import {
   isActiveBillingLease,
   normalizeLeaseStatus,
-  resolveInvoiceScheduleEnd,
 } from "@/lib/lease-status";
 import {
   buildRentChangePreview,
-  rentAmountForDueDate,
   type InvoiceForRentChange,
 } from "@/lib/rent-change";
 import { partitionPaymentsByAsOf } from "@/lib/payment-eligibility";
+import { generateMissingFutureInvoicesOnly } from "@/lib/invoice-scheduler";
 
 // Cache leases for 60 seconds - they don't change frequently
 export const revalidate = 60;
@@ -126,7 +125,13 @@ export async function PUT(request: Request) {
   if (isAuthError(auth)) return auth;
   try {
     const body = await request.json();
-    const { id, rentEffectiveDate, previewOnly, ...rawUpdate } = body;
+    const {
+      id,
+      rentEffectiveDate,
+      cadenceEffectiveDate,
+      previewOnly,
+      ...rawUpdate
+    } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -167,7 +172,13 @@ export async function PUT(request: Request) {
 
     const cadenceChanged =
       updateData.rent_cadence != null &&
-      updateData.rent_cadence !== currentLease.rent_cadence;
+      normalizeCadence(String(updateData.rent_cadence)) !==
+        normalizeCadence(String(currentLease.rent_cadence || "monthly"));
+    const explicitCadenceEffectiveDate =
+      cadenceEffectiveDate != null &&
+      String(cadenceEffectiveDate).trim() !== ""
+        ? String(cadenceEffectiveDate).split("T")[0]
+        : null;
     const dueDayChanged =
       updateData.rent_due_day !== undefined &&
       updateData.rent_due_day !== currentLease.rent_due_day;
@@ -180,6 +191,29 @@ export async function PUT(request: Request) {
         { error: "rentEffectiveDate is required when rent changes" },
         { status: 400 },
       );
+    }
+    if (cadenceChanged && !explicitCadenceEffectiveDate) {
+      return NextResponse.json(
+        { error: "cadenceEffectiveDate is required when cadence changes" },
+        { status: 400 },
+      );
+    }
+    if (
+      cadenceChanged &&
+      explicitCadenceEffectiveDate &&
+      explicitCadenceEffectiveDate < businessDate
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "cadenceEffectiveDate cannot be historical; existing periods remain unchanged",
+        },
+        { status: 400 },
+      );
+    }
+    if (cadenceChanged) {
+      updateData.prior_rent_cadence = currentLease.rent_cadence;
+      updateData.cadence_effective_date = explicitCadenceEffectiveDate;
     }
 
     const effectiveDate = explicitEffectiveDate || businessDate;
@@ -358,6 +392,7 @@ export async function PUT(request: Request) {
       status?: string;
     };
 
+    let invoiceScheduleResult: Record<string, unknown> | null = null;
     if (
       (cadenceChanged ||
         dueDayChanged ||
@@ -365,11 +400,17 @@ export async function PUT(request: Request) {
         shouldApplyProspectiveRent) &&
       isActiveBillingLease(leaseForSchedule.status)
     ) {
-      const scheduleStart =
-        (updateData.lease_start_date as string) ||
-        currentLease.lease_start_date ||
+      const requestedStart =
+        (cadenceChanged ? explicitCadenceEffectiveDate : null) ||
+        (shouldApplyProspectiveRent ? explicitEffectiveDate : null) ||
         businessDate;
-      await generateMissingFutureInvoicesOnly(leaseForSchedule, scheduleStart, {
+      const scheduleStart =
+        String(requestedStart).split("T")[0] < businessDate
+          ? businessDate
+          : String(requestedStart).split("T")[0];
+      invoiceScheduleResult = await generateMissingFutureInvoicesOnly({
+        lease: leaseForSchedule,
+        scheduleStart,
         rentEffectiveDate: shouldApplyProspectiveRent
           ? explicitEffectiveDate
           : null,
@@ -387,6 +428,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({
       ...updatedLease,
       rentApplyResult,
+      invoiceScheduleResult,
       writePerformed: true,
     });
   } catch (error) {
@@ -467,143 +509,6 @@ async function buildLeaseRentPreview(args: {
     effectiveDate: args.effectiveDate,
     businessDate: args.businessDate,
   });
-}
-
-/**
- * Create missing future/current invoices only. Never deletes existing rows.
- */
-async function generateMissingFutureInvoicesOnly(
-  lease: {
-    id: string;
-    property_id: string;
-    tenant_id: string;
-    rent: number;
-    rent_cadence?: string;
-    rent_due_day?: number;
-    lease_end_date?: string | null;
-    status?: string;
-  },
-  startDate: string,
-  rentOpts?: {
-    rentEffectiveDate?: string | null;
-    priorRent?: number | null;
-  },
-) {
-  const cadence = normalizeCadence(lease.rent_cadence || "monthly");
-  const rentDueDay = lease.rent_due_day || 1;
-  const rentAmount = lease.rent || 0;
-  const rentEffectiveDate = rentOpts?.rentEffectiveDate
-    ? String(rentOpts.rentEffectiveDate).split("T")[0]
-    : null;
-  const priorRent = rentOpts?.priorRent ?? null;
-  const todayStr = getBusinessDate();
-  const todayDate = new Date(todayStr + "T00:00:00");
-
-  const endDate = resolveInvoiceScheduleEnd({
-    status: lease.status,
-    leaseEndDate: lease.lease_end_date,
-    asOfDate: todayStr,
-  });
-
-  const invoicesToCreate: Array<Record<string, unknown>> = [];
-
-  const pushIfMissing = async (
-    dueDate: string,
-    periodStart: string,
-    periodEnd: string,
-  ) => {
-    if (dueDate < startDate || dueDate > endDate) return;
-    const dueDateObj = new Date(dueDate + "T00:00:00");
-    if (dueDateObj < todayDate) return;
-
-    const { data: existing } = await supabaseServer
-      .from("RENT_invoices")
-      .select("id")
-      .eq("lease_id", lease.id)
-      .eq("due_date", dueDate)
-      .maybeSingle();
-
-    if (existing) return;
-
-    const amountRent = rentAmountForDueDate({
-      dueDate,
-      newRent: rentAmount,
-      priorRent,
-      rentEffectiveDate,
-    });
-
-    invoicesToCreate.push({
-      lease_id: lease.id,
-      property_id: lease.property_id,
-      tenant_id: lease.tenant_id,
-      due_date: dueDate,
-      period_start: periodStart,
-      period_end: periodEnd,
-      amount_rent: amountRent,
-      amount_late: 0,
-      amount_other: 0,
-      amount_total: amountRent,
-      amount_paid: 0,
-      balance_due: amountRent,
-      status: "OPEN",
-    });
-  };
-
-  if (cadence === "weekly") {
-    const start = new Date(startDate + "T00:00:00");
-    const endDateObj = new Date(endDate + "T00:00:00");
-    const current = new Date(start);
-    while (current <= endDateObj) {
-      const dueDate = current.toISOString().split("T")[0];
-      const periodEndDate = new Date(current);
-      periodEndDate.setDate(periodEndDate.getDate() + 6);
-      await pushIfMissing(
-        dueDate,
-        dueDate,
-        periodEndDate.toISOString().split("T")[0],
-      );
-      current.setDate(current.getDate() + 7);
-    }
-  } else if (cadence === "biweekly") {
-    const start = new Date(startDate + "T00:00:00");
-    const endDateObj = new Date(endDate + "T00:00:00");
-    const current = new Date(start);
-    while (current <= endDateObj) {
-      const dueDate = current.toISOString().split("T")[0];
-      const periodEndDate = new Date(current);
-      periodEndDate.setDate(periodEndDate.getDate() + 13);
-      await pushIfMissing(
-        dueDate,
-        dueDate,
-        periodEndDate.toISOString().split("T")[0],
-      );
-      current.setDate(current.getDate() + 14);
-    }
-  } else if (cadence === "monthly") {
-    const start = new Date(startDate + "T00:00:00");
-    const current = new Date(start.getFullYear(), start.getMonth(), 1);
-    const endDateObj = new Date(endDate + "T00:00:00");
-    while (current <= endDateObj) {
-      const year = current.getFullYear();
-      const month = current.getMonth();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const dueDay = Math.min(rentDueDay, daysInMonth);
-      const dueDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(dueDay).padStart(2, "0")}`;
-      const periodStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-      const periodEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
-      await pushIfMissing(dueDate, periodStart, periodEnd);
-      current.setMonth(current.getMonth() + 1);
-    }
-  }
-
-  if (invoicesToCreate.length > 0) {
-    const { error: insertError } = await supabaseServer
-      .from("RENT_invoices")
-      .insert(invoicesToCreate);
-    if (insertError) {
-      console.error("Error creating missing future invoices:", insertError);
-    }
-  }
 }
 
 export async function DELETE(request: Request) {

@@ -170,38 +170,6 @@ export default function LateTenantsPage() {
     window.open(`mailto:${email}`)
   }
 
-  const handleWaiveLateFee = async (tenant: any) => {
-    try {
-      const currentDate = new Date().toISOString().split('T')[0]
-      
-      
-      const response = await fetch('/api/late-fees/waive', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          leaseId: tenant.leaseId,
-          currentDate
-        })
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        // Refresh the data
-        await fetchLateTenants()
-        alert(`Late fees waived successfully! ${result.invoicesUpdated || 0} invoices updated.`)
-      } else {
-        console.error('Waive late fee failed')
-        alert(`Error: ${result.error}`)
-      }
-    } catch (error) {
-      console.error('Error waiving late fees')
-      alert('Failed to waive late fees. Please try again.')
-    }
-  }
-
   const toggleTenantDetails = (tenantId: string) => {
     setExpandedTenant(expandedTenant === tenantId ? null : tenantId)
   }
@@ -227,31 +195,45 @@ export default function LateTenantsPage() {
 
   const handleWaiveLateFeeForPeriod = async () => {
     if (!selectedPeriod) return
-    
+    const invoice = selectedPeriod.period
+    const amountLate = Number(invoice.amount_late || 0)
+    if (
+      amountLate <= 0 ||
+      invoice.late_fee_waived ||
+      !['OPEN', 'PARTIAL'].includes(String(invoice.status || '').toUpperCase())
+    ) {
+      return
+    }
+    if (
+      !window.confirm(
+        `Waive the $${amountLate.toFixed(2)} late fee for invoice due ${invoice.due_date}? Rent, other charges, payments, dates, and invoice identity will remain unchanged.`,
+      )
+    ) {
+      return
+    }
+
     try {
-      const currentDate = new Date().toISOString().split('T')[0]
-      
-      const response = await fetch('/api/late-fees/waive', {
+      const response = await fetch(`/api/invoices/${invoice.id}/waive-late-fee`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          invoiceId: selectedPeriod.period.invoice_id,
-          currentDate
-        })
+        body: JSON.stringify({ confirmed: true }),
+        cache: 'no-store',
       })
 
       const result = await response.json()
 
-      if (result.success) {
+      if (response.ok) {
         // Close the modal and refresh the data
         setShowPeriodModal(false)
         setSelectedPeriod(null)
         await fetchLateTenants()
-        alert(`Late fee waived successfully for this period!`)
+        alert(
+          `Late fee waived. Balance $${Number(result.before?.balanceDue || 0).toFixed(2)} → $${Number(result.after?.balanceDue || 0).toFixed(2)}.`,
+        )
       } else {
-        alert(`Error: ${result.error}`)
+        alert(`Error: ${result.details || result.error}`)
       }
     } catch (error) {
       console.error('Error waiving late fee for period')
@@ -586,12 +568,6 @@ export default function LateTenantsPage() {
                 </div>
 
                 <div className="flex flex-col space-y-2 ml-6">
-                  <button
-                    onClick={() => handleWaiveLateFee(tenant)}
-                    className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 text-sm"
-                  >
-                    Waive Late Fee
-                  </button>
                   <button className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 text-sm">
                     Add Note
                   </button>
@@ -756,15 +732,7 @@ export default function LateTenantsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleWaiveLateFee(tenant)
-                          }}
-                          className="text-yellow-600 hover:text-yellow-900"
-                        >
-                          Waive Fee
-                        </button>
+                        <span className="text-gray-500">Open a late period</span>
                       </td>
                     </tr>
                   ))}
@@ -826,17 +794,9 @@ export default function LateTenantsPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleWaiveLateFee(tenant)
-                      }}
-                      className="w-full bg-yellow-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-yellow-700 transition-colors"
-                    >
-                      Waive Fee
-                    </button>
-                  </div>
+                  <p className="text-xs text-gray-500">
+                    Open a late period to review or waive its existing fee.
+                  </p>
                 </div>
               ))}
             </div>
@@ -882,11 +842,11 @@ export default function LateTenantsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Late Period</label>
                   <div className="p-3 bg-red-50 rounded-lg">
                     <div className="font-medium text-gray-900">
-                      {new Date(selectedPeriod.period.dueDate).toLocaleDateString()}
+                      {new Date(selectedPeriod.period.due_date).toLocaleDateString()}
                     </div>
                     <div className="text-sm text-red-600">
-                      Owed: ${selectedPeriod.period.shortfall.toLocaleString()} 
-                      (Paid: ${selectedPeriod.period.amountPaid.toLocaleString()} / ${selectedPeriod.period.expectedAmount.toLocaleString()})
+                      Owed: ${Number(selectedPeriod.period.balance_due || 0).toLocaleString()} 
+                      (Paid: ${Number(selectedPeriod.period.amount_paid || 0).toLocaleString()} / ${Number(selectedPeriod.period.amount_total || 0).toLocaleString()})
                     </div>
                   </div>
                 </div>
@@ -897,7 +857,7 @@ export default function LateTenantsPage() {
                     type="number"
                     min="0"
                     step="0.01"
-                    defaultValue={selectedPeriod.period.shortfall}
+                    defaultValue={selectedPeriod.period.balance_due}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Enter payment amount"
                   />
@@ -912,12 +872,21 @@ export default function LateTenantsPage() {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleWaiveLateFeeForPeriod}
-                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
-              >
-                Waive Late Fee
-              </button>
+              {Number(selectedPeriod.period.amount_late || 0) > 0 &&
+                !selectedPeriod.period.late_fee_waived &&
+                ['OPEN', 'PARTIAL'].includes(String(selectedPeriod.period.status || '').toUpperCase()) && (
+                  <button
+                    onClick={handleWaiveLateFeeForPeriod}
+                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                  >
+                    Waive Fee
+                  </button>
+                )}
+              {selectedPeriod.period.late_fee_waived && (
+                <span className="px-3 py-2 rounded bg-gray-100 text-gray-700 text-sm font-medium">
+                  Waived
+                </span>
+              )}
               <button
                 onClick={handleAddPayment}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"

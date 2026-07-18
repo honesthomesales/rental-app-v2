@@ -14,6 +14,10 @@ import {
   partitionPaymentsByAsOf,
 } from "@/lib/payment-eligibility";
 import { isPastGrace, LATE_FEE_GRACE_DAYS } from "@/lib/late-fees/rules";
+import {
+  analyzeLeaseCadence,
+  inferInvoiceCadence,
+} from "@/lib/invoice-cadence";
 
 export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v1";
 
@@ -32,11 +36,15 @@ export type LedgerLease = {
   status: string;
   rent: number;
   rent_cadence?: string | null;
+  cadence_effective_date?: string | null;
+  prior_rent_cadence?: string | null;
   rent_due_day?: number | null;
   lease_start_date?: string | null;
   lease_end_date?: string | null;
   rent_effective_date?: string | null;
   prior_rent?: number | null;
+  late_fee_amount?: number | null;
+  grace_days?: number | null;
   property_name?: string | null;
   tenant_name?: string | null;
   property?: Record<string, unknown> | null;
@@ -56,6 +64,9 @@ export type LedgerInvoice = {
   amount_total: number;
   amount_paid?: number;
   balance_due?: number;
+  late_fee_waived?: boolean;
+  rent_cadence?: string | null;
+  created_at?: string | null;
 };
 
 export type LedgerPayment = {
@@ -87,6 +98,10 @@ export type LedgerInvoiceDetail = {
   storedRent: number;
   storedLateFee: number;
   storedOtherCharges: number;
+  cadence: string;
+  lateFeeWaived: boolean;
+  cadenceException: boolean;
+  cadenceExceptionReasons: string[];
   calculatedTotal: number;
   eligiblePaidAmount: number;
   calculatedBalance: number;
@@ -183,6 +198,7 @@ function classifyInvoice(
 ): InvoiceCollectionStatus {
   if (inv.storedStatus === "VOID") return "void";
   if (inv.storedStatus === "PAID") return "paid";
+  if (inv.cadenceException) return "manual_review";
   if (inv.isFuture) return "future";
   if (inv.calculatedBalance < -0.009) return "credit";
   if (inv.calculatedBalance <= 0.009) return "paid";
@@ -228,6 +244,23 @@ export function buildAccountLedger(args: {
       roundMoney((paidByInvoice.get(p.invoice_id) || 0) + (Number(p.amount) || 0)),
     );
   }
+  const paymentInvoiceIds = new Set(
+    args.payments
+      .filter((payment) => payment.invoice_id)
+      .map((payment) => String(payment.invoice_id)),
+  );
+  const cadenceAudit = analyzeLeaseCadence({
+    currentCadence: lease.rent_cadence,
+    cadenceEffectiveDate: lease.cadence_effective_date,
+    invoices: args.invoices,
+    paymentInvoiceIds,
+  });
+  const cadenceExceptionById = new Map(
+    cadenceAudit.exceptions.map((exception) => [
+      exception.invoiceId,
+      exception,
+    ]),
+  );
 
   const invoiceDetails: LedgerInvoiceDetail[] = args.invoices
     .filter((inv) => String(inv.status || "").toUpperCase() !== "VOID")
@@ -248,6 +281,7 @@ export function buildAccountLedger(args: {
       const paidToRent = Math.min(remainingPaid, storedRent);
       remainingPaid = roundMoney(remainingPaid - paidToRent);
       const paidToOther = Math.min(remainingPaid, storedOtherCharges);
+      const cadenceException = cadenceExceptionById.get(inv.id);
       const draft: LedgerInvoiceDetail = {
         invoiceId: inv.id,
         dueDate,
@@ -257,6 +291,13 @@ export function buildAccountLedger(args: {
         storedRent,
         storedLateFee,
         storedOtherCharges,
+        cadence:
+          inv.rent_cadence ||
+          inferInvoiceCadence(inv) ||
+          String(lease.rent_cadence || "monthly"),
+        lateFeeWaived: Boolean(inv.late_fee_waived),
+        cadenceException: Boolean(cadenceException),
+        cadenceExceptionReasons: cadenceException?.reasons || [],
         calculatedTotal,
         eligiblePaidAmount,
         calculatedBalance,
@@ -381,6 +422,9 @@ export function buildAccountLedger(args: {
   if (excludedFuture.length > 0) exceptionFlags.push("has_future_dated_payments");
   if (totalUnallocatedEligible > 0.009) {
     exceptionFlags.push("unapplied_eligible_credit");
+  }
+  if (cadenceAudit.exceptions.length > 0) {
+    exceptionFlags.push("cadence_review_required");
   }
 
   return {

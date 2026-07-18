@@ -46,6 +46,8 @@ interface Invoice {
   balance_due: number
   status: string
   paid_in_full_at: string | null
+  late_fee_waived?: boolean
+  cadence_exception?: boolean
 }
 
 interface LeaseRow {
@@ -93,7 +95,7 @@ export default function PaymentsPage() {
   const [showDeleteInvoiceModal, setShowDeleteInvoiceModal] = useState(false)
   const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null)
   const [deletingInvoice, setDeletingInvoice] = useState(false)
-  const [togglingLateFee, setTogglingLateFee] = useState<string | null>(null)
+  const [waivingLateFee, setWaivingLateFee] = useState<string | null>(null)
   const [generatingNotice, setGeneratingNotice] = useState<string | null>(null)
   const [showNoticeModal, setShowNoticeModal] = useState(false)
   const [noticeContent, setNoticeContent] = useState('')
@@ -338,6 +340,8 @@ return'<div class="s">'+l+'</div>';
                 ? 'PAID'
                 : invoice.storedStatus,
             paid_in_full_at: null,
+            late_fee_waived: Boolean(invoice.lateFeeWaived),
+            cadence_exception: Boolean(invoice.cadenceException),
           }))
           .sort(
             (a: Invoice, b: Invoice) =>
@@ -782,72 +786,6 @@ return'<div class="s">'+l+'</div>';
     }
   }
 
-  const handleToggleLateFee = async (invoice: Invoice) => {
-    try {
-      setTogglingLateFee(invoice.id)
-      
-      const currentLateFee = parseFloat(invoice.amount_late as any || 0)
-      
-      // Authoritative defaults: weekly $10 / biweekly $25 / monthly $45;
-      // positive lease.late_fee_amount overrides.
-      let lateFeeAmount = 45
-      if (selectedLease) {
-        const override = Number(
-          (selectedLease.lease as { late_fee_amount?: number }).late_fee_amount,
-        )
-        if (Number.isFinite(override) && override > 0) {
-          lateFeeAmount = override
-        } else {
-          const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
-          if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) {
-            lateFeeAmount = 25
-          } else if (cadence.includes('weekly')) {
-            lateFeeAmount = 10
-          } else {
-            lateFeeAmount = 45
-          }
-        }
-      }
-      
-      const newLateFee = currentLateFee > 0 ? 0 : lateFeeAmount
-      // When removing a fee manually, mark waived so auto-reconcile does not recreate it.
-      const payload: Record<string, unknown> = {
-        amount_late: newLateFee,
-      }
-      if (currentLateFee > 0 && newLateFee === 0) {
-        payload.late_fee_waived = true
-      }
-      if (newLateFee > 0) {
-        payload.late_fee_waived = false
-      }
-      
-      const response = await fetch(`/api/invoices?id=${invoice.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      })
-
-      if (response.ok) {
-        // Refresh the invoice data
-        if (selectedLease) {
-          await handleViewInvoices(selectedLease)
-          await fetchLeases()
-        }
-        alert(`Late fee ${newLateFee > 0 ? `applied ($${newLateFee})` : 'removed'} successfully!`)
-      } else {
-        const errorData = await response.json()
-        alert(`Error: ${errorData.error}`)
-      }
-    } catch (error) {
-      console.error('Error toggling late fee:', error)
-      alert('Failed to toggle late fee. Please try again.')
-    } finally {
-      setTogglingLateFee(null)
-    }
-  }
-
   const handleGenerateLateNotice = async (invoice: Invoice) => {
     if (!selectedLease) return
 
@@ -940,36 +878,52 @@ return'<div class="s">'+l+'</div>';
   }
 
   const handleWaiveLateFee = async (invoice: Invoice) => {
+    const currentLateFee = Number(invoice.amount_late) || 0
+    if (
+      currentLateFee <= 0 ||
+      !['OPEN', 'PARTIAL'].includes(String(invoice.status).toUpperCase())
+    ) {
+      return
+    }
+    const newTotal = Math.max(0, Number(invoice.amount_total) - currentLateFee)
+    const newBalance = Math.max(0, newTotal - Number(invoice.amount_paid || 0))
+    const confirmed = window.confirm(
+      [
+        `Waive the $${currentLateFee.toFixed(2)} late fee for invoice due ${invoice.due_date}?`,
+        `Total: $${Number(invoice.amount_total).toFixed(2)} → $${newTotal.toFixed(2)}`,
+        `Balance: $${Number(invoice.balance_due).toFixed(2)} → $${newBalance.toFixed(2)}`,
+        'Rent, other charges, payments, dates, and invoice identity will remain unchanged.',
+      ].join('\n'),
+    )
+    if (!confirmed) return
+
     try {
-      const response = await fetch(`/api/invoices/${invoice.id}/correction`, {
-        method: 'PUT',
+      setWaivingLateFee(invoice.id)
+      const response = await fetch(`/api/invoices/${invoice.id}/waive-late-fee`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          confirmed: true,
-          amountRent: Number(invoice.amount_rent) || 0,
-          amountLate: 0,
-          amountOther: Number(invoice.amount_other) || 0,
-          waiveLateFee: true,
-        }),
+        body: JSON.stringify({ confirmed: true }),
         cache: 'no-store',
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        console.error('Failed to waive late fee:', errorData)
-        throw new Error('Failed to waive late fee')
+        throw new Error(errorData.details || errorData.error || 'Failed to waive late fee')
       }
 
       const result = await response.json()
-
-      // Refresh invoices
       if (selectedLease) {
         await handleViewInvoices(selectedLease)
         await fetchLeases()
       }
+      alert(
+        `Late fee waived. Balance $${Number(result.before?.balanceDue || 0).toFixed(2)} → $${Number(result.after?.balanceDue || 0).toFixed(2)}.`,
+      )
     } catch (error) {
       console.error('Error waiving late fee:', error)
       alert('Failed to waive late fee: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setWaivingLateFee(null)
     }
   }
 
@@ -2391,40 +2345,26 @@ return'<div class="s">'+l+'</div>';
                                 >
                                   Edit
                                 </button>
-                                {balance > 0 && (
-                                  <button
-                                    onClick={() => handleToggleLateFee(invoice)}
-                                    disabled={togglingLateFee === invoice.id}
-                                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                                      parseFloat(invoice.amount_late as any || 0) > 0
-                                        ? 'bg-red-600 text-white hover:bg-red-700'
-                                        : 'bg-green-600 text-white hover:bg-green-700'
-                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                                    title={(() => {
-                                      if (parseFloat(invoice.amount_late as any || 0) > 0) {
-                                        return 'Remove late fee'
-                                      }
-                                      // Determine late fee amount for tooltip
-                                      if (selectedLease) {
-                                        const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
-                                        if (cadence.includes('monthly')) return 'Apply $45 late fee'
-                                        if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) return 'Apply $25 late fee'
-                                        if (cadence.includes('weekly')) return 'Apply $10 late fee'
-                                      }
-                                      return 'Apply late fee'
-                                    })()}
-                                  >
-                                    {togglingLateFee === invoice.id ? '...' : 
-                                     parseFloat(invoice.amount_late as any || 0) > 0 ? 'Remove Fee' : 'Add Fee'}
-                                  </button>
+                                {invoice.cadence_exception && (
+                                  <span className="px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs font-medium">
+                                    Cadence review
+                                  </span>
                                 )}
-                                {parseFloat(invoice.amount_late as any) > 0 && (
+                                {invoice.late_fee_waived && (
+                                  <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-medium">
+                                    Waived
+                                  </span>
+                                )}
+                                {!invoice.late_fee_waived &&
+                                  parseFloat(invoice.amount_late as any || 0) > 0 &&
+                                  ['OPEN', 'PARTIAL'].includes(invoice.status.toUpperCase()) && (
                                   <button
                                     onClick={() => handleWaiveLateFee(invoice)}
-                                    className="px-3 py-1 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition-colors"
+                                    disabled={waivingLateFee === invoice.id}
+                                    className="px-3 py-1 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     title="Waive late fee"
                                   >
-                                    Waive Fee
+                                    {waivingLateFee === invoice.id ? 'Waiving…' : 'Waive Fee'}
                                   </button>
                                 )}
                               </div>

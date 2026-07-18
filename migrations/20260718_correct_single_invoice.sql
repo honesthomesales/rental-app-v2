@@ -6,7 +6,8 @@ CREATE OR REPLACE FUNCTION public.rent_correct_single_invoice(
   p_amount_rent numeric,
   p_amount_late numeric,
   p_amount_other numeric,
-  p_business_date date
+  p_business_date date,
+  p_waive_late_fee boolean DEFAULT false
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -78,6 +79,10 @@ BEGIN
     amount_rent = v_rent,
     amount_late = v_late,
     amount_other = v_other,
+    late_fee_waived = CASE
+      WHEN p_waive_late_fee THEN true
+      ELSE i.late_fee_waived
+    END,
     amount_total = v_total,
     balance_due = v_balance,
     status = v_status,
@@ -128,6 +133,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.rent_correct_single_invoice(uuid, numeric, numeric, numeric, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.rent_correct_single_invoice(uuid, numeric, numeric, numeric, date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.rent_correct_single_invoice(uuid, numeric, numeric, numeric, date) TO service_role;
+REVOKE ALL ON FUNCTION public.rent_correct_single_invoice(uuid, numeric, numeric, numeric, date, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.rent_correct_single_invoice(uuid, numeric, numeric, numeric, date, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.rent_correct_single_invoice(uuid, numeric, numeric, numeric, date, boolean) TO service_role;

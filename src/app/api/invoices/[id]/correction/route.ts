@@ -44,6 +44,7 @@ export async function PUT(
         p_amount_late: amountLate,
         p_amount_other: amountOther,
         p_business_date: getBusinessDate(),
+        p_waive_late_fee: body.waiveLateFee === true,
       },
     );
 

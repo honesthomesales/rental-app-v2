@@ -113,9 +113,14 @@ export async function GET(request: Request) {
         lateInvoices: unpaidInvoices.map((inv) => ({
           id: inv.invoiceId,
           due_date: inv.dueDate,
+          period_start: inv.periodStart,
+          period_end: inv.periodEnd,
           amount_total: inv.calculatedTotal,
+          amount_paid: inv.eligiblePaidAmount,
+          amount_late: inv.storedLateFee,
           balance_due: inv.calculatedBalance,
-          status: 'OPEN',
+          days_late: account.daysLate ?? 0,
+          status: inv.storedStatus,
         })),
         ledgerVersion: account.ledgerVersion,
       })

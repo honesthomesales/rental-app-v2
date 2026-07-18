@@ -22,6 +22,7 @@ interface PaymentInvoice {
 }
 
 interface PaymentEntry {
+  [key: string]: unknown
   id: string
   payment_date: string
   amount: number

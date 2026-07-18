@@ -983,7 +983,17 @@ export default function LateTenantsPage() {
                   {/* Late Invoices Breakdown */}
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-gray-700 mb-2">Late Invoices Breakdown</div>
-                    {selectedTenantInfo?.lateInvoices?.map((invoice: { balance_due: number; due_date: string; days_late?: number; amount_late?: number }, index: number) => (
+                    {selectedTenantInfo?.lateInvoices?.map((invoice: {
+                      balance_due: number
+                      due_date: string
+                      period_start: string
+                      period_end: string
+                      days_late: number
+                      amount_total: number
+                      amount_paid: number
+                      amount_late: number
+                      status: string
+                    }, index: number) => (
                       <div key={index} className="bg-red-50 border border-red-200 rounded-lg p-3">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">

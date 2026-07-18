@@ -34,9 +34,9 @@ export async function loadBillingLeases(): Promise<LedgerLease[]> {
       .from("RENT_leases")
       .select(
         `
-        id, property_id, tenant_id, status, rent, rent_cadence,
+        id, property_id, tenant_id, status, rent, rent_cadence, rent_due_day,
         lease_start_date, lease_end_date, late_fee_amount,
-        RENT_properties(id, name, address),
+        RENT_properties(id, name, address, property_type),
         RENT_tenants(id, full_name, first_name, last_name)
       `,
       )
@@ -58,6 +58,7 @@ export async function loadBillingLeases(): Promise<LedgerLease[]> {
       status: String(r.status || ""),
       rent: Number(r.rent) || 0,
       rent_cadence: (r.rent_cadence as string) || "monthly",
+      rent_due_day: r.rent_due_day != null ? Number(r.rent_due_day) : null,
       lease_start_date: (r.lease_start_date as string) || null,
       lease_end_date: (r.lease_end_date as string) || null,
       rent_effective_date: null,

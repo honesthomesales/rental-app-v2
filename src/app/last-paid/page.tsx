@@ -6,6 +6,8 @@ import { generateNoticeHTML } from '@/lib/form-html-generator'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { XMarkIcon } from '@heroicons/react/24/outline'
+import { getBusinessDate } from '@/lib/business-date'
+import { getMostRecentEligiblePaymentDate } from '@/lib/payment-eligibility'
 
 interface PaymentInvoice {
   id: string
@@ -39,39 +41,40 @@ interface PropertyPayments {
   rent_due_day: number | null
   lease_id: string | null
   totalOwed: number
+  lastPaidDate?: string | null
+  oldestUnpaidDueDate?: string | null
+  daysLate?: number | null
+  collectionStatus?: string
   payments: PaymentEntry[]
 }
 
 /** Real last paid date for a detail row (not invoice due date). */
 function getEntryLastPaidDate(
   payment: PaymentEntry,
-  allPayments: PaymentEntry[]
+  allPayments: PaymentEntry[],
+  businessDate: string,
 ): string | null {
   const amt = parseFloat(String(payment.amount)) || 0
-  if (amt > 0 && payment.payment_date?.trim()) {
-    return payment.payment_date
+  const ownDate = payment.payment_date?.trim()
+    ? String(payment.payment_date).split('T')[0]
+    : null
+  if (amt > 0 && ownDate && ownDate <= businessDate) {
+    return ownDate
   }
 
   const invoiceId = payment.invoice?.id
   if (!invoiceId) return null
 
-  let best = ''
-  let bestMs = -Infinity
-  for (const p of allPayments) {
-    if (p.invoice?.id !== invoiceId) continue
-    const a = parseFloat(String(p.amount)) || 0
-    if (a <= 0 || !p.payment_date) continue
-    const t = new Date(p.payment_date + 'T00:00:00').getTime()
-    if (!Number.isNaN(t) && t > bestMs) {
-      bestMs = t
-      best = p.payment_date
-    }
-  }
-  return best || null
+  const linked = allPayments.filter((p) => p.invoice?.id === invoiceId)
+  return getMostRecentEligiblePaymentDate(linked, businessDate)
 }
 
-function lastPaidSortKey(payment: PaymentEntry, allPayments: PaymentEntry[]): number {
-  const lastPaid = getEntryLastPaidDate(payment, allPayments)
+function lastPaidSortKey(
+  payment: PaymentEntry,
+  allPayments: PaymentEntry[],
+  businessDate: string,
+): number {
+  const lastPaid = getEntryLastPaidDate(payment, allPayments, businessDate)
   if (lastPaid) {
     const t = new Date(lastPaid + 'T00:00:00').getTime()
     if (!Number.isNaN(t)) return t
@@ -89,38 +92,37 @@ type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 
 type SortDirection = 'asc' | 'desc'
 type MonthlySortField = 'property' | 'cadence' | 'dayDue' | 'thisMonth' | 'lastMonth' | 'twoMonthsAgo'
 
-/** Max payment_date over real payments (amount > 0, linked to an invoice). Ignores invoice balance. */
-function getLastPaymentReceivedDate(prop: PropertyPayments): string {
-  let best = ''
-  let bestMs = -Infinity
-  for (const p of prop.payments) {
-    if (!p.invoice) continue
-    const amt = parseFloat(String(p.amount)) || 0
-    if (amt <= 0) continue
-    if (!p.payment_date) continue
-    const t = new Date(p.payment_date).getTime()
-    if (Number.isNaN(t)) continue
-    if (t > bestMs) {
-      bestMs = t
-      best = p.payment_date
-    }
-  }
-  return best
+/** Max eligible payment_date (amount > 0, linked to an invoice). Future-dated never win. */
+function getLastPaymentReceivedDate(
+  prop: PropertyPayments,
+  businessDate: string,
+): string {
+  return (
+    prop.lastPaidDate ||
+    getMostRecentEligiblePaymentDate(prop.payments, businessDate) ||
+    ''
+  )
 }
 
 /** Sort detail rows by Last Paid (most recent payment first); unpaid rows after paid. */
-function sortPaymentsByLastPaidDate(payments: PaymentEntry[]): PaymentEntry[] {
+function sortPaymentsByLastPaidDate(
+  payments: PaymentEntry[],
+  businessDate: string,
+): PaymentEntry[] {
   return [...payments].sort(
-    (a, b) => lastPaidSortKey(b, payments) - lastPaidSortKey(a, payments)
+    (a, b) =>
+      lastPaidSortKey(b, payments, businessDate) -
+      lastPaidSortKey(a, payments, businessDate),
   )
 }
 
 function formatLastPaidCell(
   payment: PaymentEntry,
   allPayments: PaymentEntry[],
-  formatDate: (d: string | null) => string
+  formatDate: (d: string | null) => string,
+  businessDate: string,
 ) {
-  const lastPaid = getEntryLastPaidDate(payment, allPayments)
+  const lastPaid = getEntryLastPaidDate(payment, allPayments, businessDate)
   return lastPaid ? formatDate(lastPaid) : '-'
 }
 
@@ -162,6 +164,7 @@ export default function LastPaidPage() {
   const [monthlyDayDueDir, setMonthlyDayDueDir] = useState<SortDirection>('asc')
   const [monthlySortSecondaryColumn, setMonthlySortSecondaryColumn] = useState<'thisMonth' | 'lastMonth' | 'twoMonthsAgo'>('thisMonth')
   const [monthlySortSecondaryDir, setMonthlySortSecondaryDir] = useState<SortDirection>('asc')
+  const [businessDate] = useState(() => getBusinessDate())
 
   useEffect(() => {
     fetchData()
@@ -170,7 +173,7 @@ export default function LastPaidPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/last-paid')
+      const response = await fetch('/api/last-paid', { cache: 'no-store' })
       if (!response.ok) throw new Error('Failed to fetch')
       const result = await response.json()
       setData(Array.isArray(result) ? result : [])
@@ -247,16 +250,23 @@ export default function LastPaidPage() {
               const paymentsData = await paymentsResponse.json()
               if (Array.isArray(paymentsData) && paymentsData.length > 0) {
                 const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
-                const actualPaid = linkedPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0)
+                const eligibleLinked = linkedPayments.filter((p: any) => {
+                  const d = String(p.payment_date || '').split('T')[0]
+                  return d && d <= businessDate
+                })
+                const actualPaid = eligibleLinked.reduce(
+                  (sum: number, p: any) => sum + (parseFloat(p.amount) || 0),
+                  0,
+                )
                 paymentTotalsMap.set(invoice.id, actualPaid)
                 
-                if (linkedPayments.length > 0) {
-                  const validPayments = linkedPayments.filter((p: any) => p.payment_date)
-                  if (validPayments.length > 0) {
-                    const sortedPayments = validPayments.sort((a: any, b: any) => 
-                      new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
-                    )
-                    paidDatesMap.set(invoice.id, sortedPayments[0].payment_date)
+                if (eligibleLinked.length > 0) {
+                  const lastEligible = getMostRecentEligiblePaymentDate(
+                    eligibleLinked,
+                    businessDate,
+                  )
+                  if (lastEligible) {
+                    paidDatesMap.set(invoice.id, lastEligible)
                   }
                 }
               }
@@ -551,7 +561,7 @@ export default function LastPaidPage() {
           return dir * (a.cadence || '').localeCompare(b.cadence || '')
         case 'lastPaid': {
           const ms = (prop: PropertyPayments) => {
-            const d = getLastPaymentReceivedDate(prop)
+            const d = getLastPaymentReceivedDate(prop, businessDate)
             if (!d) return sortDirection === 'desc' ? -Infinity : Infinity
             const t = new Date(d + 'T00:00:00').getTime()
             return Number.isNaN(t) ? (sortDirection === 'desc' ? -Infinity : Infinity) : t
@@ -587,7 +597,7 @@ export default function LastPaidPage() {
     })
 
     return sorted
-  }, [filteredOnly, sortField, sortDirection, gridDateColumns])
+  }, [filteredOnly, sortField, sortDirection, gridDateColumns, businessDate])
 
   const cadenceBadge = (cadence: string | null) => {
     const c = cadence?.toLowerCase() || ''
@@ -1245,7 +1255,7 @@ export default function LastPaidPage() {
               </tr>
             ) : (
               filteredAndSorted.map((property) => {
-                const lastPaymentDate = getLastPaymentReceivedDate(property)
+                const lastPaymentDate = getLastPaymentReceivedDate(property, businessDate)
                 const lastPayment = property.payments[0] // For tenant name display
                 const tenantName = lastPayment?.tenant_name || '-'
                 const isExpanded = expandedProperty === property.property_id
@@ -1497,7 +1507,7 @@ export default function LastPaidPage() {
       {expandedProperty && (() => {
         const property = filteredAndSorted.find(p => p.property_id === expandedProperty)
         if (!property) return null
-        const detailPayments = sortPaymentsByLastPaidDate(property.payments)
+        const detailPayments = sortPaymentsByLastPaidDate(property.payments, businessDate)
 
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setExpandedProperty(null)}>
@@ -1547,7 +1557,7 @@ export default function LastPaidPage() {
                     {detailPayments.map((payment) => (
                       <tr key={payment.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 text-sm text-gray-900">
-                          {formatLastPaidCell(payment, detailPayments, formatDate)}
+                          {formatLastPaidCell(payment, detailPayments, formatDate, businessDate)}
                         </td>
                         <td className="px-3 py-2 text-sm text-right font-medium text-green-700">{formatCurrency(payment.amount)}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{payment.payment_type || '-'}</td>

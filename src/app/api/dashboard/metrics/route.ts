@@ -193,7 +193,11 @@ export async function GET(request: Request) {
       })
       totalOwed = summary.totalOwed
       latePayments = summary.rows.reduce(
-        (s, r) => s + (r.unpaidInvoicesCount || 0),
+        (s, r) =>
+          s +
+          (r.collectionStatus === 'past_due'
+            ? r.unpaidInvoicesCount || 0
+            : 0),
         0,
       )
       ledgerVersion = summary.ledgerVersion

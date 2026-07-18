@@ -9,11 +9,11 @@
  * (OPEN invoices with due_date <= business date and positive recalculated balance).
  */
 
-import { calculateUnpaidInvoices } from "@/lib/invoice-calculations";
 import {
   isPaymentEligibleAsOf,
   partitionPaymentsByAsOf,
 } from "@/lib/payment-eligibility";
+import { isPastGrace, LATE_FEE_GRACE_DAYS } from "@/lib/late-fees/rules";
 
 export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v1";
 
@@ -32,6 +32,7 @@ export type LedgerLease = {
   status: string;
   rent: number;
   rent_cadence?: string | null;
+  rent_due_day?: number | null;
   lease_start_date?: string | null;
   lease_end_date?: string | null;
   rent_effective_date?: string | null;
@@ -82,12 +83,16 @@ export type LedgerInvoiceDetail = {
   dueDate: string;
   periodStart: string | null;
   periodEnd: string | null;
+  storedStatus: string;
   storedRent: number;
   storedLateFee: number;
   storedOtherCharges: number;
   calculatedTotal: number;
   eligiblePaidAmount: number;
   calculatedBalance: number;
+  rentBalance: number;
+  lateFeeBalance: number;
+  otherChargeBalance: number;
   collectionStatus: InvoiceCollectionStatus;
   isFuture: boolean;
 };
@@ -131,6 +136,11 @@ export type LedgerAccountSummary = {
   collectionStatus: string;
   invoices: LedgerInvoiceDetail[];
   payments: LedgerPaymentDetail[];
+  eligiblePayments: LedgerPaymentDetail[];
+  futureOrIneligiblePayments: LedgerPaymentDetail[];
+  allocatedPayments: LedgerPaymentDetail[];
+  unallocatedPayments: LedgerPaymentDetail[];
+  propertyTotalCollected: number;
   exceptionFlags: string[];
 };
 
@@ -146,10 +156,15 @@ export type CollectionsSummaryRow = {
   currentRent: number;
   leaseStartDate: string | null;
   totalOwed: number;
+  rentBalance: number;
+  lateFeeBalance: number;
+  otherChargeBalance: number;
   unpaidInvoicesCount: number;
   lastPaidDate: string | null;
   oldestUnpaidDueDate: string | null;
   daysLate: number | null;
+  collectionStatus: string;
+  propertyTotalCollected: number;
   /** Nested objects for existing Payments UI consumers */
   lease: Record<string, unknown>;
   property: Record<string, unknown>;
@@ -166,15 +181,20 @@ function classifyInvoice(
   inv: LedgerInvoiceDetail,
   asOf: string,
 ): InvoiceCollectionStatus {
-  const status = String(
-    // carried separately — use calculated fields
-    inv.collectionStatus,
-  );
-  void status;
+  if (inv.storedStatus === "VOID") return "void";
+  if (inv.storedStatus === "PAID") return "paid";
   if (inv.isFuture) return "future";
   if (inv.calculatedBalance < -0.009) return "credit";
   if (inv.calculatedBalance <= 0.009) return "paid";
-  if (inv.dueDate < asOf) return "past_due";
+  if (
+    isPastGrace({
+      dueDate: inv.dueDate,
+      graceDays: LATE_FEE_GRACE_DAYS,
+      businessDate: asOf,
+    })
+  ) {
+    return "past_due";
+  }
   if (inv.eligiblePaidAmount > 0.009) return "partial";
   return "current";
 }
@@ -190,8 +210,13 @@ export function buildAccountLedger(args: {
 }): LedgerAccountSummary {
   const asOf = toDateOnly(args.asOfDate);
   const lease = args.lease;
+  const completedPositive = args.payments.filter(
+    (payment) =>
+      String(payment.status || "completed").toLowerCase() === "completed" &&
+      Number(payment.amount) > 0,
+  );
   const { eligible, excludedFuture } = partitionPaymentsByAsOf(
-    args.payments,
+    completedPositive,
     asOf,
   );
 
@@ -217,67 +242,68 @@ export function buildAccountLedger(args: {
       );
       const eligiblePaidAmount = paidByInvoice.get(inv.id) || 0;
       const calculatedBalance = roundMoney(calculatedTotal - eligiblePaidAmount);
+      let remainingPaid = Math.max(0, eligiblePaidAmount);
+      const paidToLate = Math.min(remainingPaid, storedLateFee);
+      remainingPaid = roundMoney(remainingPaid - paidToLate);
+      const paidToRent = Math.min(remainingPaid, storedRent);
+      remainingPaid = roundMoney(remainingPaid - paidToRent);
+      const paidToOther = Math.min(remainingPaid, storedOtherCharges);
       const draft: LedgerInvoiceDetail = {
         invoiceId: inv.id,
         dueDate,
         periodStart: inv.period_start ? toDateOnly(inv.period_start) : null,
         periodEnd: inv.period_end ? toDateOnly(inv.period_end) : null,
+        storedStatus: String(inv.status || "OPEN").toUpperCase(),
         storedRent,
         storedLateFee,
         storedOtherCharges,
         calculatedTotal,
         eligiblePaidAmount,
         calculatedBalance,
+        rentBalance: roundMoney(Math.max(0, storedRent - paidToRent)),
+        lateFeeBalance: roundMoney(Math.max(0, storedLateFee - paidToLate)),
+        otherChargeBalance: roundMoney(
+          Math.max(0, storedOtherCharges - paidToOther),
+        ),
         collectionStatus: "current",
         isFuture,
       };
       draft.collectionStatus = classifyInvoice(draft, asOf);
-      if (String(inv.status || "").toUpperCase() === "VOID") {
-        draft.collectionStatus = "void";
-      }
       return draft;
     })
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
-  const unpaidBaseline = calculateUnpaidInvoices(
-    args.invoices as never[],
-    args.payments as never[],
-    lease.lease_start_date,
-    asOf,
-  );
-
   const currentInvoices = invoiceDetails.filter((i) => !i.isFuture);
   const futureInvoices = invoiceDetails.filter((i) => i.isFuture);
-
-  const rentBalance = roundMoney(
-    currentInvoices.reduce(
-      (s, i) =>
-        s +
-        Math.max(
-          0,
-          roundMoney(i.storedRent - Math.min(i.eligiblePaidAmount, i.storedRent)),
-        ),
+  const collectibleCurrent = currentInvoices.filter(
+    (invoice) =>
+      (invoice.storedStatus === "OPEN" || invoice.storedStatus === "PARTIAL") &&
+      invoice.calculatedBalance > 0.009,
+  );
+  const totalBalanceDue = roundMoney(
+    collectibleCurrent.reduce(
+      (sum, invoice) => sum + invoice.calculatedBalance,
       0,
     ),
   );
-  // Simpler component balances for unpaid OPEN baseline invoices
-  let lateFeeBalance = 0;
-  let otherChargeBalance = 0;
-  for (const u of unpaidBaseline.unpaidInvoices) {
-    lateFeeBalance += roundMoney(Number(u.amount_late) || 0);
-    otherChargeBalance += roundMoney(Number(u.amount_other) || 0);
-  }
-  lateFeeBalance = roundMoney(lateFeeBalance);
-  otherChargeBalance = roundMoney(otherChargeBalance);
+  const rentBalance = roundMoney(
+    collectibleCurrent.reduce((sum, invoice) => sum + invoice.rentBalance, 0),
+  );
+  const lateFeeBalance = roundMoney(
+    collectibleCurrent.reduce(
+      (sum, invoice) => sum + invoice.lateFeeBalance,
+      0,
+    ),
+  );
+  const otherChargeBalance = roundMoney(
+    collectibleCurrent.reduce(
+      (sum, invoice) => sum + invoice.otherChargeBalance,
+      0,
+    ),
+  );
 
   const futureScheduledCharges = roundMoney(
     futureInvoices.reduce((s, i) => s + Math.max(0, i.calculatedBalance), 0),
-  );
-
-  const unallocatedEligible = roundMoney(
-    eligible
-      .filter((p) => !p.invoice_id)
-      .reduce((s, p) => s + (Number(p.amount) || 0), 0),
   );
 
   const positiveEligible = eligible.filter((p) => Number(p.amount) > 0);
@@ -289,20 +315,49 @@ export function buildAccountLedger(args: {
     }
   }
 
-  const overdueUnpaid = unpaidBaseline.unpaidInvoices
-    .map((i) => toDateOnly(i.due_date))
-    .filter((d) => d <= asOf)
+  const unpaidDueDates = collectibleCurrent
+    .map((invoice) => invoice.dueDate)
     .sort();
-  const oldestUnpaidDueDate = overdueUnpaid[0] || null;
+  const overdueUnpaid = collectibleCurrent
+    .filter((invoice) => invoice.collectionStatus === "past_due")
+    .map((invoice) => invoice.dueDate)
+    .sort();
+  const oldestUnpaidDueDate = unpaidDueDates[0] || null;
+  const oldestLateDueDate = overdueUnpaid[0] || null;
   const daysLate =
-    oldestUnpaidDueDate != null ? daysBetween(oldestUnpaidDueDate, asOf) : null;
+    oldestLateDueDate != null ? daysBetween(oldestLateDueDate, asOf) : null;
 
-  const paymentDetails: LedgerPaymentDetail[] = args.payments.map((p) => {
+  const remainingInvoiceCapacity = new Map(
+    invoiceDetails.map((invoice) => [
+      invoice.invoiceId,
+      Math.max(0, invoice.calculatedTotal),
+    ]),
+  );
+  const orderedPayments = [...args.payments].sort((a, b) => {
+    const byDate = toDateOnly(a.payment_date).localeCompare(
+      toDateOnly(b.payment_date),
+    );
+    return byDate || a.id.localeCompare(b.id);
+  });
+  const paymentDetails: LedgerPaymentDetail[] = orderedPayments.map((p) => {
     const amount = roundMoney(Number(p.amount) || 0);
-    const eligibleFlag = isPaymentEligibleAsOf(p, asOf);
-    const allocated = p.invoice_id && eligibleFlag ? amount : 0;
-    const unallocated =
-      !p.invoice_id && eligibleFlag ? amount : eligibleFlag ? 0 : 0;
+    const completed =
+      String(p.status || "completed").toLowerCase() === "completed";
+    const eligibleFlag =
+      completed && amount > 0 && isPaymentEligibleAsOf(p, asOf);
+    let allocated = 0;
+    let unallocated = 0;
+    if (eligibleFlag && p.invoice_id) {
+      const capacity = remainingInvoiceCapacity.get(p.invoice_id) || 0;
+      allocated = roundMoney(Math.min(amount, capacity));
+      unallocated = roundMoney(Math.max(0, amount - allocated));
+      remainingInvoiceCapacity.set(
+        p.invoice_id,
+        roundMoney(Math.max(0, capacity - allocated)),
+      );
+    } else if (eligibleFlag) {
+      unallocated = amount;
+    }
     return {
       paymentId: p.id,
       paymentDate: toDateOnly(p.payment_date),
@@ -315,24 +370,18 @@ export function buildAccountLedger(args: {
       unallocatedAmount: unallocated,
     };
   });
-
-  // Conserve: for invoice-linked eligible payments, allocated === amount
-  for (const pd of paymentDetails) {
-    if (pd.eligible && pd.invoiceId) {
-      pd.allocatedAmount = pd.amount;
-      pd.unallocatedAmount = 0;
-    } else if (pd.eligible && !pd.invoiceId) {
-      pd.allocatedAmount = 0;
-      pd.unallocatedAmount = pd.amount;
-    } else {
-      pd.allocatedAmount = 0;
-      pd.unallocatedAmount = 0;
-    }
-  }
+  const totalUnallocatedEligible = roundMoney(
+    paymentDetails.reduce(
+      (sum, payment) => sum + payment.unallocatedAmount,
+      0,
+    ),
+  );
 
   const exceptionFlags: string[] = [];
   if (excludedFuture.length > 0) exceptionFlags.push("has_future_dated_payments");
-  if (unallocatedEligible > 0.009) exceptionFlags.push("unapplied_eligible_credit");
+  if (totalUnallocatedEligible > 0.009) {
+    exceptionFlags.push("unapplied_eligible_credit");
+  }
 
   return {
     ledgerVersion: PORTFOLIO_LEDGER_VERSION,
@@ -350,24 +399,40 @@ export function buildAccountLedger(args: {
       : null,
     priorRent:
       lease.prior_rent != null ? roundMoney(Number(lease.prior_rent)) : null,
-    totalBalanceDue: roundMoney(unpaidBaseline.totalOwed),
-    unpaidInvoiceCount: unpaidBaseline.unpaidCount,
+    totalBalanceDue,
+    unpaidInvoiceCount: collectibleCurrent.length,
     rentBalance,
     lateFeeBalance,
     otherChargeBalance,
     futureScheduledCharges,
-    eligibleUnappliedCredit: unallocatedEligible,
+    eligibleUnappliedCredit: totalUnallocatedEligible,
     lastEligiblePositivePaymentDate,
     oldestUnpaidDueDate,
     daysLate,
     collectionStatus:
-      unpaidBaseline.totalOwed > 0.009
-        ? daysLate != null && daysLate > 0
+      totalBalanceDue > 0.009
+        ? daysLate != null
           ? "past_due"
           : "balance_due"
         : "current",
     invoices: invoiceDetails,
     payments: paymentDetails,
+    eligiblePayments: paymentDetails.filter((payment) => payment.eligible),
+    futureOrIneligiblePayments: paymentDetails.filter(
+      (payment) => !payment.eligible,
+    ),
+    allocatedPayments: paymentDetails.filter(
+      (payment) => payment.allocatedAmount > 0,
+    ),
+    unallocatedPayments: paymentDetails.filter(
+      (payment) => payment.unallocatedAmount > 0,
+    ),
+    propertyTotalCollected: roundMoney(
+      paymentDetails.reduce(
+        (sum, payment) => sum + payment.allocatedAmount,
+        0,
+      ),
+    ),
     exceptionFlags,
   };
 }
@@ -394,10 +459,15 @@ export function toCollectionsSummaryRow(
       ? toDateOnly(lease.lease_start_date)
       : null,
     totalOwed: account.totalBalanceDue,
+    rentBalance: account.rentBalance,
+    lateFeeBalance: account.lateFeeBalance,
+    otherChargeBalance: account.otherChargeBalance,
     unpaidInvoicesCount: account.unpaidInvoiceCount,
     lastPaidDate: account.lastEligiblePositivePaymentDate,
     oldestUnpaidDueDate: account.oldestUnpaidDueDate,
     daysLate: account.daysLate,
+    collectionStatus: account.collectionStatus,
+    propertyTotalCollected: account.propertyTotalCollected,
     lease: {
       id: account.leaseId,
       status: account.leaseStatus,
@@ -455,5 +525,63 @@ export function buildCollectionsSummary(args: {
     asOfDate: asOf,
     rows,
     totalOwed: roundMoney(rows.reduce((s, r) => s + r.totalOwed, 0)),
+  };
+}
+
+/** Profit attribution: eligible payments belong to the invoice due month. */
+export function buildDueMonthCollectionFacts(args: {
+  invoices: Array<{
+    id: string;
+    property_id?: string | null;
+    due_date: string;
+    status?: string | null;
+  }>;
+  payments: LedgerPayment[];
+  monthStart: string;
+  monthEnd: string;
+  asOfDate: string;
+}): {
+  totalCollected: number;
+  collectedByProperty: Map<string, number>;
+  eligiblePayments: LedgerPayment[];
+} {
+  const invoiceById = new Map(
+    args.invoices
+      .filter(
+        (invoice) =>
+          toDateOnly(invoice.due_date) >= args.monthStart &&
+          toDateOnly(invoice.due_date) <= args.monthEnd &&
+          String(invoice.status || "").toUpperCase() !== "VOID",
+      )
+      .map((invoice) => [invoice.id, invoice]),
+  );
+  const eligiblePayments = args.payments.filter(
+    (payment) =>
+      Boolean(payment.invoice_id && invoiceById.has(payment.invoice_id)) &&
+      String(payment.status || "completed").toLowerCase() === "completed" &&
+      Number(payment.amount) > 0 &&
+      isPaymentEligibleAsOf(payment, args.asOfDate),
+  );
+  const collectedByProperty = new Map<string, number>();
+  for (const payment of eligiblePayments) {
+    const invoice = invoiceById.get(payment.invoice_id as string);
+    const propertyId = String(invoice?.property_id || "");
+    if (!propertyId) continue;
+    collectedByProperty.set(
+      propertyId,
+      roundMoney(
+        (collectedByProperty.get(propertyId) || 0) + Number(payment.amount),
+      ),
+    );
+  }
+  return {
+    totalCollected: roundMoney(
+      eligiblePayments.reduce(
+        (sum, payment) => sum + Number(payment.amount),
+        0,
+      ),
+    ),
+    collectedByProperty,
+    eligiblePayments,
   };
 }

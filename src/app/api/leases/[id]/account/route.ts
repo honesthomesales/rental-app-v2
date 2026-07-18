@@ -43,7 +43,10 @@ export async function GET(request: Request, context: Ctx) {
       asOfDate: asOf,
     });
 
-    return NextResponse.json({ ...account, writePerformed: false });
+    return NextResponse.json(
+      { ...account, writePerformed: false },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("lease account error:", error);
     return NextResponse.json(

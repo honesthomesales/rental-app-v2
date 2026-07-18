@@ -947,23 +947,17 @@ return'<div class="s">'+l+'</div>';
 
   const handleWaiveLateFee = async (invoice: Invoice) => {
     try {
-      const rentAmount = parseFloat(invoice.amount_rent as any)
-      const paidAmount = parseFloat(invoice.amount_paid as any)
-      const newTotal = rentAmount
-      const newBalance = rentAmount - paidAmount
-
-
-      // Update invoice to remove late fee
-      const response = await fetch(`/api/invoices?id=${invoice.id}`, {
+      const response = await fetch(`/api/invoices/${invoice.id}/correction`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount_late: 0,
-          amount_total: newTotal,
-          balance_due: newBalance,
-          status: newBalance <= 0 ? 'PAID' : 'OPEN',
-          paid_in_full_at: newBalance <= 0 ? new Date().toISOString() : null
-        })
+          confirmed: true,
+          amountRent: Number(invoice.amount_rent) || 0,
+          amountLate: 0,
+          amountOther: Number(invoice.amount_other) || 0,
+          waiveLateFee: true,
+        }),
+        cache: 'no-store',
       })
 
       if (!response.ok) {

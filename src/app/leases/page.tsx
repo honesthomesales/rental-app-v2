@@ -13,11 +13,6 @@ import {
 } from '@/lib/lease-status'
 import { getBusinessDate } from '@/lib/business-date'
 import type { RentChangePreview } from '@/lib/rent-change'
-import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
-import {
-  TextTenantModal,
-  type CommunicationTarget,
-} from '@/components/communications/TextTenantModal'
 
 interface LeaseWithDetails extends Lease {
   RENT_properties?: Property
@@ -53,7 +48,6 @@ export default function LeasesPage() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [pendingLeaseData, setPendingLeaseData] = useState<Record<string, any> | null>(null)
   const [endingDate, setEndingDate] = useState<string>('')
-  const [commTarget, setCommTarget] = useState<CommunicationTarget | null>(null)
 
   const rentChanged = editRent !== originalRent
   const isTransitioningToVacant =
@@ -613,29 +607,6 @@ export default function LeasesPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex flex-col gap-2">
-                      <TenantCommunicationActions
-                        phone={lease.RENT_tenants?.phone}
-                        onText={() =>
-                          setCommTarget({
-                            tenantId: lease.tenant_id || lease.RENT_tenants?.id || '',
-                            tenantName:
-                              lease.RENT_tenants?.full_name ||
-                              `${lease.RENT_tenants?.first_name || ''} ${lease.RENT_tenants?.last_name || ''}`.trim() ||
-                              'Tenant',
-                            phone: lease.RENT_tenants?.phone,
-                            propertyId: lease.property_id || lease.RENT_properties?.id || null,
-                            propertyLabel:
-                              lease.RENT_properties?.address ||
-                              lease.RENT_properties?.name ||
-                              null,
-                            leaseId: lease.id,
-                            leaseStatus: lease.status || null,
-                            templateContext: {
-                              amount_due: lease.rent != null ? `$${Number(lease.rent).toLocaleString()}` : '',
-                            },
-                          })
-                        }
-                      />
                       <div className="flex space-x-2">
                         <button
                           onClick={() => handleEditLease(lease)}
@@ -1164,11 +1135,6 @@ export default function LeasesPage() {
         </div>
       )}
 
-      <TextTenantModal
-        open={Boolean(commTarget)}
-        target={commTarget}
-        onClose={() => setCommTarget(null)}
-      />
     </div>
   )
 }

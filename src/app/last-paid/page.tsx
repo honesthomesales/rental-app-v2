@@ -41,6 +41,10 @@ interface PropertyPayments {
   rent_due_day: number | null
   lease_id: string | null
   totalOwed: number
+  lastPaidDate?: string | null
+  oldestUnpaidDueDate?: string | null
+  daysLate?: number | null
+  collectionStatus?: string
   payments: PaymentEntry[]
 }
 
@@ -93,7 +97,11 @@ function getLastPaymentReceivedDate(
   prop: PropertyPayments,
   businessDate: string,
 ): string {
-  return getMostRecentEligiblePaymentDate(prop.payments, businessDate) || ''
+  return (
+    prop.lastPaidDate ||
+    getMostRecentEligiblePaymentDate(prop.payments, businessDate) ||
+    ''
+  )
 }
 
 /** Sort detail rows by Last Paid (most recent payment first); unpaid rows after paid. */
@@ -165,7 +173,7 @@ export default function LastPaidPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/last-paid')
+      const response = await fetch('/api/last-paid', { cache: 'no-store' })
       if (!response.ok) throw new Error('Failed to fetch')
       const result = await response.json()
       setData(Array.isArray(result) ? result : [])

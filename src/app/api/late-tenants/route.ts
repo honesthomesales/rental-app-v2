@@ -60,7 +60,11 @@ export async function GET(request: Request) {
         asOfDate: today,
       })
 
-      if (account.unpaidInvoiceCount === 0 || account.totalBalanceDue <= 0) {
+      if (
+        account.collectionStatus !== 'past_due' ||
+        account.unpaidInvoiceCount === 0 ||
+        account.totalBalanceDue <= 0
+      ) {
         continue
       }
 
@@ -68,11 +72,8 @@ export async function GET(request: Request) {
         (inv) =>
           !inv.isFuture &&
           inv.calculatedBalance > 0 &&
-          // Payments / calculateUnpaidInvoices baseline: OPEN only
-          String(
-            (invoicesByLease.get(lease.id) || []).find((i) => i.id === inv.invoiceId)
-              ?.status || '',
-          ).toUpperCase() === 'OPEN',
+          inv.collectionStatus === 'past_due' &&
+          ['OPEN', 'PARTIAL'].includes(inv.storedStatus),
       )
 
       if (unpaidInvoices.length === 0 || account.totalBalanceDue <= 0) {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { resolveBusinessDate } from '@/lib/business-date'
-import { partitionPaymentsByAsOf } from '@/lib/payment-eligibility'
+import { buildDueMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
 
 export const revalidate = 60
 
@@ -33,7 +33,7 @@ const SUPABASE_PAGE_SIZE = 1000
 
 /** PostgREST defaults to 1000 rows; paginate so 12-month ranges include all payments. */
 async function fetchAllPages<T>(
-  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message: string } | null }>
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 ): Promise<T[]> {
   const rows: T[] = []
   let from = 0
@@ -117,13 +117,37 @@ try {
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
 
+    const invoices = await fetchAllPages<{
+      id: string
+      property_id: string | null
+      due_date: string
+      status: string
+    }>((from, to) =>
+      supabaseServer
+        .from('RENT_invoices')
+        .select('id, property_id, due_date, status')
+        .gte('due_date', rangeStart)
+        .lte('due_date', rangeEnd)
+        .order('due_date', { ascending: true })
+        .range(from, to)
+    )
+    const invoiceIds = invoices.map((invoice) => invoice.id)
+
     const [payments, miscExpenses, oneTimeExpenses] = await Promise.all([
-      fetchAllPages<{ amount: string | number; payment_date: string }>((from, to) =>
+      invoiceIds.length === 0
+        ? Promise.resolve([])
+        : fetchAllPages<{
+            id: string
+            lease_id: string
+            invoice_id: string | null
+            amount: number
+            payment_date: string
+            status: string | null
+          }>((from, to) =>
         supabaseServer
           .from('RENT_payments')
-          .select('amount, payment_date')
-          .not('invoice_id', 'is', null)
-          .gte('payment_date', rangeStart)
+          .select('id, lease_id, invoice_id, amount, payment_date, status')
+          .in('invoice_id', invoiceIds)
           .lte('payment_date', paymentRangeEnd)
           .order('payment_date', { ascending: true })
           .range(from, to)
@@ -159,14 +183,19 @@ try {
       map.set(key, (map.get(key) || 0) + amount)
     }
 
-    const { eligible: eligiblePayments } = partitionPaymentsByAsOf(
-      payments,
-      businessDate,
-    )
-
-    eligiblePayments.forEach((p) => {
-      addToMonth(rentByMonth, p.payment_date!, parseFloat(String(p.amount)) || 0)
-    })
+    for (const month of monthKeys) {
+      const facts = buildDueMonthCollectionFacts({
+        invoices,
+        payments,
+        monthStart: `${month}-01`,
+        monthEnd: endOfMonthIso(
+          Number(month.slice(0, 4)),
+          Number(month.slice(5, 7)) - 1,
+        ),
+        asOfDate: businessDate,
+      })
+      rentByMonth.set(month, facts.totalCollected)
+    }
 
     miscExpenses.forEach((e) => {
       addToMonth(miscByMonth, e.last_paid_date, Number(e.amount_owed) || 0)

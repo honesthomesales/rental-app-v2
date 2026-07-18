@@ -314,6 +314,61 @@ return'<div class="s">'+l+'</div>';
     setInvoices([])
 
     try {
+      // One account request supplies stored invoices plus eligible payment facts.
+      // This is the active path; it replaces per-invoice payment requests.
+      if (leaseRow.lease.id) {
+        const accountResponse = await fetch(
+          `/api/leases/${leaseRow.lease.id}/account`,
+          { cache: 'no-store' },
+        )
+        if (!accountResponse.ok) {
+          throw new Error('Failed to load lease account')
+        }
+        const account = await accountResponse.json()
+        const accountInvoices: Invoice[] = (account.invoices || [])
+          .map((invoice: any) => ({
+            id: invoice.invoiceId,
+            invoice_no: invoice.invoiceId,
+            lease_id: account.leaseId,
+            due_date: invoice.dueDate,
+            period_start: invoice.periodStart,
+            period_end: invoice.periodEnd,
+            amount_rent: invoice.storedRent,
+            amount_late: invoice.storedLateFee,
+            amount_other: invoice.storedOtherCharges,
+            amount_total: invoice.calculatedTotal,
+            amount_paid: invoice.eligiblePaidAmount,
+            balance_due: Math.max(0, invoice.calculatedBalance),
+            status:
+              invoice.collectionStatus === 'paid'
+                ? 'PAID'
+                : invoice.storedStatus,
+            paid_in_full_at: null,
+          }))
+          .sort(
+            (a: Invoice, b: Invoice) =>
+              new Date(b.due_date).getTime() - new Date(a.due_date).getTime(),
+          )
+        const totals = new Map<string, number>()
+        const paidDates = new Map<string, string | null>()
+        for (const invoice of accountInvoices) {
+          totals.set(invoice.id, Number(invoice.amount_paid) || 0)
+          paidDates.set(invoice.id, null)
+        }
+        for (const payment of account.eligiblePayments || []) {
+          if (!payment.invoiceId) continue
+          const currentDate = paidDates.get(payment.invoiceId)
+          if (!currentDate || payment.paymentDate > currentDate) {
+            paidDates.set(payment.invoiceId, payment.paymentDate)
+          }
+        }
+        setInvoicePaymentTotals(totals)
+        setInvoicePaidDates(paidDates)
+        setInvoices(accountInvoices)
+        setLoadingInvoices(false)
+        return
+      }
+
       // Fetch ALL invoices for this lease (no date filter to show history)
       // This ensures old invoices (before new lease_start_date) are also shown
       const today = new Date()

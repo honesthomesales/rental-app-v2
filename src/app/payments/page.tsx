@@ -91,8 +91,9 @@ export default function PaymentsPage() {
   const [editingPayment, setEditingPayment] = useState<any | null>(null)
   const [showEditSinglePaymentModal, setShowEditSinglePaymentModal] = useState(false)
   const [showEditInvoiceModal, setShowEditInvoiceModal] = useState(false)
-  const [editInvoiceAmountPaid, setEditInvoiceAmountPaid] = useState('')
+  const [editInvoiceRent, setEditInvoiceRent] = useState('')
   const [editInvoiceLateFee, setEditInvoiceLateFee] = useState('')
+  const [editInvoiceOther, setEditInvoiceOther] = useState('')
   const [showAllInvoices, setShowAllInvoices] = useState(false)
   const [showDeleteInvoiceModal, setShowDeleteInvoiceModal] = useState(false)
   const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null)
@@ -655,37 +656,69 @@ return'<div class="s">'+l+'</div>';
     }
   }
 
+  const openInvoiceEditor = (requested?: Invoice) => {
+    const correctable = invoices
+      .filter((invoice) => ['OPEN', 'PARTIAL'].includes(invoice.status.toUpperCase()))
+      .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    const highlighted = correctable.find((invoice) => invoice.id === highlightedInvoiceId)
+    const candidate =
+      requested && ['OPEN', 'PARTIAL'].includes(requested.status.toUpperCase())
+        ? requested
+        : highlighted || correctable[0]
+    if (!candidate) {
+      alert('There are no OPEN or PARTIAL invoices available to edit.')
+      return
+    }
+    setSelectedInvoice(candidate)
+    setEditInvoiceRent(String(candidate.amount_rent ?? 0))
+    setEditInvoiceLateFee(String(candidate.amount_late ?? 0))
+    setEditInvoiceOther(String(candidate.amount_other ?? 0))
+    setShowEditInvoiceModal(true)
+  }
+
   const handleUpdateInvoice = async () => {
     if (!selectedInvoice) return
 
-    setIsSubmitting(true)
     try {
-      const newAmountPaid = parseFloat(editInvoiceAmountPaid)
-      const newLateFee = parseFloat(editInvoiceLateFee)
-      const rentAmount = Number(selectedInvoice.amount_rent)
-      const newTotal = rentAmount + newLateFee
-      const newBalance = newTotal - newAmountPaid
+      const rentAmount = Number(editInvoiceRent)
+      const lateFee = Number(editInvoiceLateFee)
+      const otherCharge = Number(editInvoiceOther)
+      const newTotal = rentAmount + lateFee + otherCharge
+      const paidAmount =
+        invoicePaymentTotals.get(selectedInvoice.id) ??
+        Number(selectedInvoice.amount_paid || 0)
+      const newBalance = Math.max(0, newTotal - paidAmount)
+      const confirmed = window.confirm(
+        [
+          `Confirm correction for invoice due ${selectedInvoice.due_date}:`,
+          `Rent: $${Number(selectedInvoice.amount_rent).toFixed(2)} → $${rentAmount.toFixed(2)}`,
+          `Late fee: $${Number(selectedInvoice.amount_late).toFixed(2)} → $${lateFee.toFixed(2)}`,
+          `Other: $${Number(selectedInvoice.amount_other).toFixed(2)} → $${otherCharge.toFixed(2)}`,
+          `Total: $${Number(selectedInvoice.amount_total).toFixed(2)} → $${newTotal.toFixed(2)}`,
+          `Paid remains $${paidAmount.toFixed(2)}`,
+          `Balance: $${Number(selectedInvoice.balance_due).toFixed(2)} → $${newBalance.toFixed(2)}`,
+        ].join('\n'),
+      )
+      if (!confirmed) return
 
-
-      const response = await fetch(`/api/invoices?id=${selectedInvoice.id}`, {
+      setIsSubmitting(true)
+      const response = await fetch(`/api/invoices/${selectedInvoice.id}/correction`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount_late: newLateFee,
-          amount_total: newTotal,
-          amount_paid: newAmountPaid,
-          balance_due: newBalance,
-          status: newBalance <= 0 ? 'PAID' : 'OPEN',
-          paid_in_full_at: newBalance <= 0 ? new Date().toISOString() : null
-        })
+          confirmed: true,
+          amountRent: rentAmount,
+          amountLate: lateFee,
+          amountOther: otherCharge,
+        }),
+        cache: 'no-store',
       })
 
       if (!response.ok) {
         const errorData = await response.json()
         console.error('Failed to update invoice:', errorData)
-        throw new Error('Failed to update invoice')
+        throw new Error(errorData.error || 'Failed to update invoice')
       }
-
 
       setShowEditInvoiceModal(false)
       if (selectedLease) {
@@ -1755,8 +1788,12 @@ return'<div class="s">'+l+'</div>';
                 </button>
                 <button
                   onClick={async () => {
+                    if (showInvoiceModal) {
+                      openInvoiceEditor()
+                      return
+                    }
                     if (!selectedLease) return
-                    // Show all invoices when Next Invoice button is clicked
+                    // Legacy fallback is unreachable from the active Edit Invoice action.
                     setShowAllInvoices(true)
                     try {
                       // Find the most recent invoice by due_date (invoices are sorted newest first)
@@ -2146,10 +2183,9 @@ return'<div class="s">'+l+'</div>';
                   }}
                   className="px-3 py-1.5 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 transition-colors flex items-center gap-1"
                   type="button"
-                  title="Show next month's invoice (creates if needed)"
+                  title="Select one invoice to correct"
                 >
-                  <span className="text-lg">+</span>
-                  <span>Next Invoice</span>
+                  <span>Edit Invoice</span>
                 </button>
                 <button
                   onClick={() => setShowInvoiceModal(false)}
@@ -2320,20 +2356,19 @@ return'<div class="s">'+l+'</div>';
                                     Add Payment
                                   </button>
                                 )}
-                                {hasPayments && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInvoice(invoice)
-                                      setEditInvoiceAmountPaid(invoice.amount_paid.toString())
-                                      setEditInvoiceLateFee(invoice.amount_late.toString())
-                                      setShowEditInvoiceModal(true)
-                                    }}
-                                    className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
-                                    type="button"
-                                  >
-                                    Edit
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => openInvoiceEditor(invoice)}
+                                  disabled={!['OPEN', 'PARTIAL'].includes(invoice.status.toUpperCase())}
+                                  className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                  type="button"
+                                  title={
+                                    ['OPEN', 'PARTIAL'].includes(invoice.status.toUpperCase())
+                                      ? 'Correct this invoice'
+                                      : 'PAID and VOID invoices are read-only'
+                                  }
+                                >
+                                  Edit
+                                </button>
                                 {balance > 0 && (
                                   <button
                                     onClick={() => handleToggleLateFee(invoice)}
@@ -2352,7 +2387,7 @@ return'<div class="s">'+l+'</div>';
                                         const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || ''
                                         if (cadence.includes('monthly')) return 'Apply $45 late fee'
                                         if (cadence.includes('biweekly') || cadence.includes('bi-weekly')) return 'Apply $25 late fee'
-                                        if (cadence.includes('weekly')) return 'Apply $12 late fee'
+                                        if (cadence.includes('weekly')) return 'Apply $10 late fee'
                                       }
                                       return 'Apply late fee'
                                     })()}
@@ -2612,39 +2647,86 @@ return'<div class="s">'+l+'</div>';
 
             {/* Modal Body */}
             <div className="p-6 space-y-4">
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <div className="text-sm text-gray-600">Rent Amount (Fixed)</div>
-                <div className="text-lg font-bold">${Number(selectedInvoice.amount_rent).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Invoice</label>
+                <select
+                  value={selectedInvoice.id}
+                  onChange={(event) => {
+                    const invoice = invoices.find((row) => row.id === event.target.value)
+                    if (invoice) openInvoiceEditor(invoice)
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  {[...invoices]
+                    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+                    .map((invoice) => {
+                      const disabled = !['OPEN', 'PARTIAL'].includes(invoice.status.toUpperCase())
+                      const due = new Date(`${invoice.due_date}T12:00:00`).toLocaleDateString()
+                      const start = new Date(`${invoice.period_start}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      const end = new Date(`${invoice.period_end}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      return (
+                        <option key={invoice.id} value={invoice.id} disabled={disabled}>
+                          {due} · {start}–{end} · {invoice.status} · Rent ${Number(invoice.amount_rent).toFixed(2)} · Balance ${Number(invoice.balance_due).toFixed(2)}
+                        </option>
+                      )
+                    })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Rent</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editInvoiceRent}
+                  onChange={(e) => setEditInvoiceRent(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Late Fee</label>
                 <input
                   type="number"
+                  min="0"
                   step="0.01"
                   value={editInvoiceLateFee}
                   onChange={(e) => setEditInvoiceLateFee(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="0.00"
                 />
-                <p className="mt-1 text-xs text-gray-500">Set to 0 to waive late fee</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Amount Paid</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Other Charge</label>
                 <input
                   type="number"
+                  min="0"
                   step="0.01"
-                  value={editInvoiceAmountPaid}
-                  onChange={(e) => setEditInvoiceAmountPaid(e.target.value)}
+                  value={editInvoiceOther}
+                  onChange={(e) => setEditInvoiceOther(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+              </div>
+
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600">Amount Paid (read-only)</div>
+                <div className="text-lg font-bold">
+                  ${(invoicePaymentTotals.get(selectedInvoice.id) ?? Number(selectedInvoice.amount_paid || 0)).toFixed(2)}
+                </div>
               </div>
 
               <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
                 <div className="text-sm font-medium text-blue-900 mb-1">Calculated Balance:</div>
                 <div className="text-2xl font-bold text-blue-600">
-                  ${(Number(selectedInvoice.amount_rent) + parseFloat(editInvoiceLateFee || '0') - parseFloat(editInvoiceAmountPaid || '0')).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  ${Math.max(
+                    0,
+                    Number(editInvoiceRent || 0) +
+                      Number(editInvoiceLateFee || 0) +
+                      Number(editInvoiceOther || 0) -
+                      (invoicePaymentTotals.get(selectedInvoice.id) ?? Number(selectedInvoice.amount_paid || 0)),
+                  ).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
               </div>
             </div>

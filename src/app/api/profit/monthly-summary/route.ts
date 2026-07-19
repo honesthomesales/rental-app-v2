@@ -30,6 +30,16 @@ function labelForMonth(month: string): string {
 }
 
 const SUPABASE_PAGE_SIZE = 1000
+/** Keep PostgREST `.in()` URL length under gateway limits (~8–16KB). */
+const INVOICE_ID_CHUNK = 100
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message)
+  }
+  return 'Unknown error'
+}
 
 /** PostgREST defaults to 1000 rows; paginate so 12-month ranges include all payments. */
 async function fetchAllPages<T>(
@@ -46,6 +56,54 @@ async function fetchAllPages<T>(
     from += SUPABASE_PAGE_SIZE
   }
   return rows
+}
+
+async function fetchPaymentsForInvoiceIds(
+  invoiceIds: string[],
+  paymentRangeEnd: string,
+): Promise<
+  Array<{
+    id: string
+    lease_id: string
+    invoice_id: string | null
+    amount: number
+    payment_date: string
+    status: string | null
+  }>
+> {
+  if (invoiceIds.length === 0) return []
+
+  const all: Array<{
+    id: string
+    lease_id: string
+    invoice_id: string | null
+    amount: number
+    payment_date: string
+    status: string | null
+  }> = []
+
+  for (let i = 0; i < invoiceIds.length; i += INVOICE_ID_CHUNK) {
+    const chunk = invoiceIds.slice(i, i + INVOICE_ID_CHUNK)
+    const rows = await fetchAllPages<{
+      id: string
+      lease_id: string
+      invoice_id: string | null
+      amount: number
+      payment_date: string
+      status: string | null
+    }>((from, to) =>
+      supabaseServer
+        .from('RENT_payments')
+        .select('id, lease_id, invoice_id, amount, payment_date, status')
+        .in('invoice_id', chunk)
+        .lte('payment_date', paymentRangeEnd)
+        .order('payment_date', { ascending: true })
+        .range(from, to),
+    )
+    all.push(...rows)
+  }
+
+  return all
 }
 
 export async function GET(request: Request) {
@@ -134,24 +192,7 @@ try {
     const invoiceIds = invoices.map((invoice) => invoice.id)
 
     const [payments, miscExpenses, oneTimeExpenses] = await Promise.all([
-      invoiceIds.length === 0
-        ? Promise.resolve([])
-        : fetchAllPages<{
-            id: string
-            lease_id: string
-            invoice_id: string | null
-            amount: number
-            payment_date: string
-            status: string | null
-          }>((from, to) =>
-        supabaseServer
-          .from('RENT_payments')
-          .select('id, lease_id, invoice_id, amount, payment_date, status')
-          .in('invoice_id', invoiceIds)
-          .lte('payment_date', paymentRangeEnd)
-          .order('payment_date', { ascending: true })
-          .range(from, to)
-      ),
+      fetchPaymentsForInvoiceIds(invoiceIds, paymentRangeEnd),
       fetchAllPages<{ amount_owed: number | null; last_paid_date: string }>((from, to) =>
         supabaseServer
           .from('RENT_expenses')
@@ -231,7 +272,7 @@ try {
     return NextResponse.json(
       {
         error: 'Failed to fetch monthly profit summary',
-        details: error instanceof Error ? error.message : 'Unknown error',
+        details: errorMessage(error),
       },
       { status: 500 }
     )

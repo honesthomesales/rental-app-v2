@@ -16,6 +16,7 @@ import {
   ClockIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
 
@@ -32,6 +33,7 @@ const navigation = [
 ]
 
 const ownerNavigation = [
+  { name: 'Communication Approvals', href: '/communication-approvals', icon: ChatBubbleLeftRightIcon },
   { name: 'Data Health', href: '/data-health', icon: ShieldCheckIcon },
 ]
 

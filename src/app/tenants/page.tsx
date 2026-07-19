@@ -2,7 +2,13 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { Tenant, Property } from '@/types/database'
-import { UsersIcon, PlusIcon, PhoneIcon, EnvelopeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { UsersIcon, PlusIcon, PhoneIcon, EnvelopeIcon, PencilIcon, TrashIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
+import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
+import {
+  TextTenantModal,
+  type CommunicationTarget,
+} from '@/components/communications/TextTenantModal'
+import { TenantConsentModal } from '@/components/communications/TenantConsentModal'
 
 type SortField = 'name' | 'email' | 'phone' | 'is_active' | 'property' | 'lease_start_date'
 type SortDirection = 'asc' | 'desc'
@@ -17,6 +23,8 @@ export default function TenantsPage() {
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [searchTerm, setSearchTerm] = useState('')
+  const [commTarget, setCommTarget] = useState<CommunicationTarget | null>(null)
+  const [consentTarget, setConsentTarget] = useState<CommunicationTarget | null>(null)
 
   useEffect(() => {
     fetchTenants()
@@ -435,7 +443,43 @@ export default function TenantsPage() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
+                    <div className="flex flex-col gap-2">
+                      <TenantCommunicationActions
+                        phone={tenant.phone}
+                        onText={() =>
+                          setCommTarget({
+                            tenantId: tenant.id,
+                            tenantName:
+                              tenant.full_name ||
+                              `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim() ||
+                              'Tenant',
+                            phone: tenant.phone,
+                            propertyId: tenant.property?.id || null,
+                            propertyLabel: tenant.property
+                              ? `${tenant.property.name || ''} ${tenant.property.address || ''}`.trim()
+                              : null,
+                            leaseStatus: tenant.is_active ? 'active' : 'inactive',
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConsentTarget({
+                            tenantId: tenant.id,
+                            tenantName:
+                              tenant.full_name ||
+                              `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim() ||
+                              'Tenant',
+                            phone: tenant.phone,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-blue-700"
+                      >
+                        <ShieldCheckIcon className="h-4 w-4" />
+                        SMS Consent
+                      </button>
+                      <div className="flex space-x-2">
                       <button
                         onClick={() => handleEditTenant(tenant)}
                         className="text-blue-600 hover:text-blue-900"
@@ -450,6 +494,7 @@ export default function TenantsPage() {
                       >
                         <TrashIcon className="h-4 w-4" />
                       </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -849,6 +894,17 @@ export default function TenantsPage() {
           </div>
         </div>
       )}
+
+      <TextTenantModal
+        open={Boolean(commTarget)}
+        target={commTarget}
+        onClose={() => setCommTarget(null)}
+      />
+      <TenantConsentModal
+        open={Boolean(consentTarget)}
+        target={consentTarget}
+        onClose={() => setConsentTarget(null)}
+      />
     </div>
   )
 }

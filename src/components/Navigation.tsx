@@ -16,6 +16,7 @@ import {
   ClockIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
 
@@ -31,9 +32,15 @@ const navigation = [
   { name: 'Profit', href: '/profit', icon: ChartBarIcon },
 ]
 
-const ownerNavigation = [
+const ownerNavigationAlways = [
   { name: 'Data Health', href: '/data-health', icon: ShieldCheckIcon },
 ]
+
+const ownerCommunicationsNav = {
+  name: 'Communication Approvals',
+  href: '/communication-approvals',
+  icon: ChatBubbleLeftRightIcon,
+}
 
 const DEAL_DOCS = { deals: '/deals', docs: '/documents' } as const
 
@@ -134,6 +141,7 @@ export function Navigation() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
+  const [communicationsEnabled, setCommunicationsEnabled] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -145,11 +153,19 @@ export function Navigation() {
         if (!res.ok) return
         const data = await res.json()
         setIsOwner(data.role === 'owner')
+        setCommunicationsEnabled(
+          Boolean(data.features?.tenantCommunicationsEnabled),
+        )
       } catch {
         /* ignore */
       }
     })()
   }, [])
+
+  const ownerNavigation = [
+    ...(communicationsEnabled ? [ownerCommunicationsNav] : []),
+    ...ownerNavigationAlways,
+  ]
 
   const navItems = isOwner
     ? [...navigation, ...ownerNavigation]

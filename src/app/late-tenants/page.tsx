@@ -1,12 +1,20 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { ExclamationTriangleIcon, PhoneIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { ExclamationTriangleIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
+import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
+import {
+  TextTenantModal,
+  type CommunicationTarget,
+} from '@/components/communications/TextTenantModal'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 export default function LateTenantsPage() {
+  const { features } = useCommunicationsFeatures()
+  const communicationsEnabled = features.tenantCommunicationsEnabled
   const [summary, setSummary] = useState<any>({
     lateLeases: 0,
     totalLateOwed: 0,
@@ -28,6 +36,7 @@ export default function LateTenantsPage() {
   const [sortField, setSortField] = useState<string>('daysLate')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showPaymentsModal, setShowPaymentsModal] = useState(false)
+  const [commTarget, setCommTarget] = useState<CommunicationTarget | null>(null)
   const [selectedTenantPayments, setSelectedTenantPayments] = useState<any[]>([])
   const [selectedTenantInfo, setSelectedTenantInfo] = useState<any>(null)
   const [allLateTenants, setAllLateTenants] = useState<any[]>([])
@@ -550,6 +559,31 @@ export default function LateTenantsPage() {
 
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center flex-wrap gap-2">
+                      <TenantCommunicationActions
+                        phone={tenant.tenant.phone}
+                        size="lg"
+                        textEnabled={communicationsEnabled}
+                        onText={() =>
+                          setCommTarget({
+                            tenantId: tenant.tenant.id,
+                            tenantName:
+                              tenant.tenant.full_name ||
+                              `${tenant.tenant.first_name || ''} ${tenant.tenant.last_name || ''}`.trim() ||
+                              'Tenant',
+                            phone: tenant.tenant.phone,
+                            propertyId: tenant.property?.id || null,
+                            propertyLabel:
+                              tenant.property?.address ||
+                              tenant.property?.name ||
+                              null,
+                            leaseId: tenant.lease?.id || null,
+                            leaseStatus: tenant.lease?.status || null,
+                            templateContext: {
+                              amount_due: `$${Number(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}`,
+                            },
+                          })
+                        }
+                      />
                       <button
                         onClick={() => handleEmail(tenant.tenant.email || '')}
                         className="flex items-center px-3 py-2 text-sm text-blue-600 hover:text-blue-800"
@@ -1365,6 +1399,12 @@ export default function LateTenantsPage() {
           </div>
         </div>
       )}
+
+      <TextTenantModal
+        open={Boolean(commTarget)}
+        target={commTarget}
+        onClose={() => setCommTarget(null)}
+      />
 
     </div>
   )

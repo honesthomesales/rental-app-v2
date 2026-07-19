@@ -5,6 +5,12 @@ import { XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
+import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
+import {
+  TextTenantModal,
+  type CommunicationTarget,
+} from '@/components/communications/TextTenantModal'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 interface Lease {
   id: string
@@ -60,6 +66,8 @@ interface LeaseRow {
 }
 
 export default function PaymentsPage() {
+  const { features } = useCommunicationsFeatures()
+  const communicationsEnabled = features.tenantCommunicationsEnabled
   const [leases, setLeases] = useState<LeaseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -101,6 +109,7 @@ export default function PaymentsPage() {
   const [noticeContent, setNoticeContent] = useState('')
   const [noticeTitle, setNoticeTitle] = useState('')
   const [showMiscIncomeModal, setShowMiscIncomeModal] = useState(false)
+  const [commTarget, setCommTarget] = useState<CommunicationTarget | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [showPastInvoiceApprovalModal, setShowPastInvoiceApprovalModal] = useState(false)
   const [pastInvoicesToApprove, setPastInvoicesToApprove] = useState<any[]>([])
@@ -1695,6 +1704,28 @@ return'<div class="s">'+l+'</div>';
                       </td>
                       <td className="px-4 py-4 text-center">
                         <div className="flex flex-col items-center gap-2">
+                          <TenantCommunicationActions
+                            phone={row.tenant?.phone}
+                            textEnabled={communicationsEnabled}
+                            onText={() =>
+                              setCommTarget({
+                                tenantId: row.tenant?.id || row.lease.tenant_id,
+                                tenantName:
+                                  row.tenant?.full_name ||
+                                  `${row.tenant?.first_name || ''} ${row.tenant?.last_name || ''}`.trim() ||
+                                  'Tenant',
+                                phone: row.tenant?.phone,
+                                propertyId: row.property?.id || row.lease.property_id,
+                                propertyLabel:
+                                  row.property?.address || row.property?.name || null,
+                                leaseId: row.lease.id,
+                                leaseStatus: row.lease.status || null,
+                                templateContext: {
+                                  amount_due: `$${Number(row.totalOwed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                },
+                              })
+                            }
+                          />
                           <div className="flex justify-center space-x-2">
                           <button
                             onClick={() => handleViewInvoices(row)}
@@ -3829,6 +3860,12 @@ return'<div class="s">'+l+'</div>';
           </div>
         </div>
       )}
+
+      <TextTenantModal
+        open={Boolean(commTarget)}
+        target={commTarget}
+        onClose={() => setCommTarget(null)}
+      />
 
     </div>
     </>

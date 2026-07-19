@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/late-fees",
       "schedule": "15 12 * * *"
+    },
+    {
+      "path": "/api/cron/communication-drafts",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/communication-sends",
+      "schedule": "0 13 * * *"
     }
   ]
 }

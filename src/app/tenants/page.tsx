@@ -9,11 +9,14 @@ import {
   type CommunicationTarget,
 } from '@/components/communications/TextTenantModal'
 import { TenantConsentModal } from '@/components/communications/TenantConsentModal'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 type SortField = 'name' | 'email' | 'phone' | 'is_active' | 'property' | 'lease_start_date'
 type SortDirection = 'asc' | 'desc'
 
 export default function TenantsPage() {
+  const { features } = useCommunicationsFeatures()
+  const communicationsEnabled = features.tenantCommunicationsEnabled
   const [allTenants, setAllTenants] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -446,6 +449,7 @@ export default function TenantsPage() {
                     <div className="flex flex-col gap-2">
                       <TenantCommunicationActions
                         phone={tenant.phone}
+                        textEnabled={communicationsEnabled}
                         onText={() =>
                           setCommTarget({
                             tenantId: tenant.id,
@@ -462,6 +466,7 @@ export default function TenantsPage() {
                           })
                         }
                       />
+                      {communicationsEnabled && (
                       <button
                         type="button"
                         onClick={() =>
@@ -479,6 +484,7 @@ export default function TenantsPage() {
                         <ShieldCheckIcon className="h-4 w-4" />
                         SMS Consent
                       </button>
+                      )}
                       <div className="flex space-x-2">
                       <button
                         onClick={() => handleEditTenant(tenant)}

@@ -6,8 +6,8 @@ import { telHref, isUsablePhone } from '@/lib/communications/phone'
 type Props = {
   phone?: string | null
   onText: () => void
-  /** When feature is off, show Coming soon on Text */
-  comingSoon?: boolean
+  /** When false, Text Tenant is hidden entirely (feature flag off). */
+  textEnabled?: boolean
   size?: 'sm' | 'lg'
   className?: string
 }
@@ -15,7 +15,7 @@ type Props = {
 export function TenantCommunicationActions({
   phone,
   onText,
-  comingSoon = false,
+  textEnabled = false,
   size = 'sm',
   className = '',
 }: Props) {
@@ -41,20 +41,16 @@ export function TenantCommunicationActions({
         <PhoneIcon className={icon} />
         Call Tenant
       </a>
-      <button
-        type="button"
-        onClick={onText}
-        disabled={comingSoon && !usable}
-        title={comingSoon ? 'Coming soon' : undefined}
-        className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium ${pad} ${
-          comingSoon
-            ? 'bg-gray-200 text-gray-600'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
-        }`}
-      >
-        <ChatBubbleLeftRightIcon className={icon} />
-        {comingSoon ? 'Text (Coming soon)' : 'Text Tenant'}
-      </button>
+      {textEnabled && (
+        <button
+          type="button"
+          onClick={onText}
+          className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 ${pad}`}
+        >
+          <ChatBubbleLeftRightIcon className={icon} />
+          Text Tenant
+        </button>
+      )}
     </div>
   )
 }

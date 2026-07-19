@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 type ApprovalRow = {
   id: string
@@ -22,8 +23,11 @@ type ApprovalRow = {
 const actionable = new Set(['draft', 'pending_approval', 'approved', 'scheduled'])
 
 export default function CommunicationApprovalsPage() {
+  const { features, loaded: featuresLoaded } = useCommunicationsFeatures()
   const [drafts, setDrafts] = useState<ApprovalRow[]>([])
   const [canApprove, setCanApprove] = useState(false)
+  const [providerEnabled, setProviderEnabled] = useState(false)
+  const [featureDisabled, setFeatureDisabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -37,13 +41,21 @@ export default function CommunicationApprovalsPage() {
         credentials: 'include',
       })
       const data = await res.json()
+      if (res.status === 403 && data.code === 'COMMUNICATIONS_DISABLED') {
+        setFeatureDisabled(true)
+        setDrafts([])
+        setCanApprove(false)
+        return
+      }
       if (!res.ok) {
         setMessage(data.error || 'Could not load communication approvals')
         setDrafts([])
         return
       }
+      setFeatureDisabled(false)
       setDrafts(Array.isArray(data.drafts) ? data.drafts : [])
       setCanApprove(Boolean(data.canApprove))
+      setProviderEnabled(Boolean(data.providerEnabled))
     } catch {
       setMessage('Could not load communication approvals')
     } finally {
@@ -52,8 +64,14 @@ export default function CommunicationApprovalsPage() {
   }, [])
 
   useEffect(() => {
+    if (!featuresLoaded) return
+    if (!features.tenantCommunicationsEnabled) {
+      setFeatureDisabled(true)
+      setLoading(false)
+      return
+    }
     void load()
-  }, [load])
+  }, [features.tenantCommunicationsEnabled, featuresLoaded, load])
 
   const act = async (id: string, action: 'approve_send' | 'reject' | 'cancel') => {
     if (action === 'approve_send') {
@@ -90,6 +108,21 @@ export default function CommunicationApprovalsPage() {
     }
   }
 
+  if (featuresLoaded && (featureDisabled || !features.tenantCommunicationsEnabled)) {
+    return (
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <h1 className="text-2xl font-bold text-gray-900">
+          Tenant communications are not enabled
+        </h1>
+        <p className="mt-3 text-sm text-gray-600">
+          The Communication Approval Center is turned off for this environment.
+          Drafts, consent tools, and SMS sending stay unavailable until an owner
+          enables the tenant-communications feature flag.
+        </p>
+      </main>
+    )
+  }
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -98,6 +131,12 @@ export default function CommunicationApprovalsPage() {
           <p className="text-sm text-gray-600 mt-1">
             Drafts never send automatically. Owner approval and server revalidation are required.
           </p>
+          {!providerEnabled && (
+            <p className="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              SMS provider sending is disabled. You can manage consent, create drafts,
+              and review the approval list. Messages will not be submitted to a provider.
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -180,4 +219,3 @@ export default function CommunicationApprovalsPage() {
     </main>
   )
 }
-

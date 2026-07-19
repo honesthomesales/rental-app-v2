@@ -10,6 +10,7 @@ import {
   TextTenantModal,
   type CommunicationTarget,
 } from '@/components/communications/TextTenantModal'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 interface Lease {
   id: string
@@ -65,6 +66,8 @@ interface LeaseRow {
 }
 
 export default function PaymentsPage() {
+  const { features } = useCommunicationsFeatures()
+  const communicationsEnabled = features.tenantCommunicationsEnabled
   const [leases, setLeases] = useState<LeaseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -1703,6 +1706,7 @@ return'<div class="s">'+l+'</div>';
                         <div className="flex flex-col items-center gap-2">
                           <TenantCommunicationActions
                             phone={row.tenant?.phone}
+                            textEnabled={communicationsEnabled}
                             onText={() =>
                               setCommTarget({
                                 tenantId: row.tenant?.id || row.lease.tenant_id,

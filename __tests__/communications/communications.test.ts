@@ -361,8 +361,20 @@ describe("scheduled approved delivery", () => {
     );
     expect(route).toContain('allowedFrom: ["approved", "scheduled"]');
     expect(route).toContain("requireExistingApproval: true");
+    expect(route).toContain("export const GET = handler");
+    expect(route).toContain("export const POST = handler");
     expect(route).not.toContain('"pending_approval"');
     expect(route).not.toContain("approved_by_auth_user_id:");
+  });
+
+  it("draft cron exports the same handler for GET and POST", () => {
+    const route = readSrc(
+      "src/app/api/cron/communication-drafts/route.ts",
+    );
+    expect(route).toContain("export const GET = handler");
+    expect(route).toContain("export const POST = handler");
+    expect(route).toContain("sent: 0");
+    expect(route).not.toContain("405");
   });
 
   it("allows day-15 drafts at or beyond day 15 but stales below day 15", () => {
@@ -556,10 +568,29 @@ describe("schema, UI, and financial isolation", () => {
       "src/app/late-tenants/page.tsx",
       "src/app/payments/page.tsx",
     ]) {
-      expect(readSrc(page)).toMatch(
-        /TenantCommunicationActions|TextTenantModal/,
-      );
+      const src = readSrc(page);
+      expect(src).toMatch(/TenantCommunicationActions|TextTenantModal/);
+      expect(src).toContain("textEnabled={communicationsEnabled}");
+      expect(src).toContain("useCommunicationsFeatures");
     }
+  });
+
+  it("hides Communication Approvals nav and shows disabled page when flag is off", () => {
+    const nav = readSrc("src/components/Navigation.tsx");
+    expect(nav).toContain("communicationsEnabled");
+    expect(nav).toContain("ownerCommunicationsNav");
+    expect(nav).toContain(
+      "Boolean(data.features?.tenantCommunicationsEnabled)",
+    );
+
+    const page = readSrc("src/app/communication-approvals/page.tsx");
+    expect(page).toContain("Tenant communications are not enabled");
+    expect(page).toContain("COMMUNICATIONS_DISABLED");
+    expect(page).toContain("SMS provider sending is disabled");
+
+    const session = readSrc("src/app/api/auth/session/route.ts");
+    expect(session).toContain("getPublicCommunicationsFeatures");
+    expect(session).not.toMatch(/TWILIO_|CRON_SECRET|AUTH_TOKEN/);
   });
 
   it("creates an owner consent UI and immutable event history", () => {

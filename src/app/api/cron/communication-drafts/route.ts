@@ -1,26 +1,26 @@
 import { NextResponse } from "next/server";
 import { getBusinessDate } from "@/lib/business-date";
+import { authorizeCommunicationCron } from "@/lib/communications/cron-auth";
 import {
   isCommunicationDraftGeneratorEnabled,
   isTenantCommunicationsEnabled,
 } from "@/lib/communications/feature-flag";
 import { generateAutomaticCommunicationDrafts } from "@/lib/communications/draft-generator";
 
-function authorized(request: Request): boolean {
-  const configured = String(
-    process.env.COMMUNICATION_DRAFT_CRON_SECRET ||
-      process.env.CRON_SECRET ||
-      "",
-  ).trim();
-  if (!configured) return false;
-  return request.headers.get("authorization") === `Bearer ${configured}`;
-}
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-/** Secure daily generator. It creates approval drafts and never sends SMS. */
-export async function POST(request: Request) {
-  if (!authorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+/**
+ * Secure draft generator. Creates approval drafts only and never sends SMS.
+ * Vercel Cron invokes GET; POST remains available for manual testing.
+ */
+async function handler(request: Request) {
+  const authError = authorizeCommunicationCron(request, [
+    "COMMUNICATION_DRAFT_CRON_SECRET",
+    "CRON_SECRET",
+  ]);
+  if (authError) return authError;
+
   if (
     !isTenantCommunicationsEnabled() ||
     !isCommunicationDraftGeneratorEnabled()
@@ -53,7 +53,5 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
-}
-
+export const GET = handler;
+export const POST = handler;

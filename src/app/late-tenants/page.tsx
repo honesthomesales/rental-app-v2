@@ -10,8 +10,11 @@ import {
   TextTenantModal,
   type CommunicationTarget,
 } from '@/components/communications/TextTenantModal'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 export default function LateTenantsPage() {
+  const { features } = useCommunicationsFeatures()
+  const communicationsEnabled = features.tenantCommunicationsEnabled
   const [summary, setSummary] = useState<any>({
     lateLeases: 0,
     totalLateOwed: 0,
@@ -559,6 +562,7 @@ export default function LateTenantsPage() {
                       <TenantCommunicationActions
                         phone={tenant.tenant.phone}
                         size="lg"
+                        textEnabled={communicationsEnabled}
                         onText={() =>
                           setCommTarget({
                             tenantId: tenant.tenant.id,

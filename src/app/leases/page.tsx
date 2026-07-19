@@ -18,6 +18,7 @@ import {
   TextTenantModal,
   type CommunicationTarget,
 } from '@/components/communications/TextTenantModal'
+import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 
 interface LeaseWithDetails extends Lease {
   RENT_properties?: Property
@@ -28,6 +29,8 @@ type SortField = 'property' | 'tenant' | 'lease_start_date' | 'rent' | 'status'
 type SortDirection = 'asc' | 'desc'
 
 export default function LeasesPage() {
+  const { features } = useCommunicationsFeatures()
+  const communicationsEnabled = features.tenantCommunicationsEnabled
   const [allLeases, setAllLeases] = useState<LeaseWithDetails[]>([])
   const [properties, setProperties] = useState<Property[]>([])
   const [tenants, setTenants] = useState<Tenant[]>([])
@@ -633,6 +636,7 @@ export default function LeasesPage() {
                     <div className="flex flex-col gap-2">
                       <TenantCommunicationActions
                         phone={lease.RENT_tenants?.phone}
+                        textEnabled={communicationsEnabled}
                         onText={() =>
                           setCommTarget({
                             tenantId: lease.tenant_id || lease.RENT_tenants?.id || '',

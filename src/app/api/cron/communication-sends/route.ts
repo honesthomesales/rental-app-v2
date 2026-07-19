@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getBusinessDate } from "@/lib/business-date";
 import { listApprovedOrScheduledForDelivery } from "@/lib/communications/approval-store";
+import { authorizeCommunicationCron } from "@/lib/communications/cron-auth";
 import {
   isCommunicationScheduledSendsEnabled,
   isTenantCommunicationsEnabled,
@@ -11,27 +12,21 @@ import {
   processApprovedCommunication,
 } from "@/lib/communications/submission";
 
-function authorized(request: Request): boolean {
-  const configured = String(
-    process.env.COMMUNICATION_SEND_CRON_SECRET ||
-      process.env.COMMUNICATION_DRAFT_CRON_SECRET ||
-      process.env.CRON_SECRET ||
-      "",
-  ).trim();
-  return Boolean(
-    configured &&
-      request.headers.get("authorization") === `Bearer ${configured}`,
-  );
-}
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 /**
- * Delivers only owner-approved records. This endpoint never transitions a
- * pending_approval record and never creates an approval.
+ * Delivers only owner-approved records. Never self-approves pending_approval.
+ * Vercel Cron invokes GET; POST remains available for manual testing.
  */
-export async function POST(request: Request) {
-  if (!authorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+async function handler(request: Request) {
+  const authError = authorizeCommunicationCron(request, [
+    "COMMUNICATION_SEND_CRON_SECRET",
+    "COMMUNICATION_DRAFT_CRON_SECRET",
+    "CRON_SECRET",
+  ]);
+  if (authError) return authError;
+
   if (
     !isTenantCommunicationsEnabled() ||
     !isCommunicationScheduledSendsEnabled()
@@ -102,6 +97,5 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
-}
+export const GET = handler;
+export const POST = handler;

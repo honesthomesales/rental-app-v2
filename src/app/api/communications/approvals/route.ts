@@ -5,6 +5,7 @@ import { supabaseServer } from "@/lib/supabase-server";
 import {
   communicationsDisabledResponse,
   communicationsNotConfiguredResponse,
+  isCommunicationsProviderEnabled,
   isTenantCommunicationsEnabled,
 } from "@/lib/communications/feature-flag";
 import { areCommunicationTablesReady } from "@/lib/communications/schema";
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       role: auth.role,
       canApprove: auth.role === "owner",
+      providerEnabled: isCommunicationsProviderEnabled(),
       drafts: drafts.map((draft) => {
         const tenant = tenantById.get(draft.tenant_id);
         const property = draft.property_id

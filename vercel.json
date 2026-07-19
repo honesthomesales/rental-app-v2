@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/communication-sends",
-      "schedule": "0 * * * *"
+      "schedule": "0 13 * * *"
     }
   ]
 }

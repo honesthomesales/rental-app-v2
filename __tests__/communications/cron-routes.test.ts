@@ -266,3 +266,22 @@ describe("communication cron GET/POST handlers", () => {
     expect(mockProcess).not.toHaveBeenCalled();
   });
 });
+
+describe("Vercel communication cron schedule", () => {
+  it("runs communication-sends daily at 13:00 UTC, not hourly", () => {
+    const config = JSON.parse(
+      readFileSync(join(__dirname, "../../vercel.json"), "utf8"),
+    ) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    const sendCron = config.crons.find(
+      (cron) => cron.path === "/api/cron/communication-sends",
+    );
+
+    expect(sendCron).toEqual({
+      path: "/api/cron/communication-sends",
+      schedule: "0 13 * * *",
+    });
+    expect(sendCron?.schedule).not.toBe("0 * * * *");
+  });
+});

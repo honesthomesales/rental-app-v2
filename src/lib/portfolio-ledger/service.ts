@@ -588,7 +588,10 @@ export function buildCollectionsSummary(args: {
   };
 }
 
-/** Profit attribution: eligible payments belong to the invoice due month. */
+/**
+ * Profit attribution (legacy): eligible payments belong to the invoice due month.
+ * Prefer buildCollectedMonthCollectionFacts for cash-collected Profit screens.
+ */
 export function buildDueMonthCollectionFacts(args: {
   invoices: Array<{
     id: string;
@@ -634,6 +637,69 @@ export function buildDueMonthCollectionFacts(args: {
       ),
     );
   }
+  return {
+    totalCollected: roundMoney(
+      eligiblePayments.reduce(
+        (sum, payment) => sum + Number(payment.amount),
+        0,
+      ),
+    ),
+    collectedByProperty,
+    eligiblePayments,
+  };
+}
+
+/**
+ * Profit attribution: cash collected in the calendar month.
+ * Uses payment_date (not invoice due_date). Future-dated payments stay
+ * ineligible until their payment_date <= asOfDate.
+ */
+export function buildCollectedMonthCollectionFacts(args: {
+  payments: Array<
+    LedgerPayment & {
+      property_id?: string | null;
+    }
+  >;
+  /** Optional lease_id → property_id when payment.property_id is missing. */
+  leasePropertyById?: Map<string, string>;
+  monthStart: string;
+  monthEnd: string;
+  asOfDate: string;
+}): {
+  totalCollected: number;
+  collectedByProperty: Map<string, number>;
+  eligiblePayments: Array<LedgerPayment & { property_id?: string | null }>;
+} {
+  const recognitionEnd =
+    args.monthEnd < args.asOfDate ? args.monthEnd : args.asOfDate;
+
+  const eligiblePayments = args.payments.filter((payment) => {
+    const pd = toDateOnly(payment.payment_date);
+    return (
+      String(payment.status || "completed").toLowerCase() === "completed" &&
+      Number(payment.amount) > 0 &&
+      isPaymentEligibleAsOf(payment, args.asOfDate) &&
+      pd >= args.monthStart &&
+      pd <= recognitionEnd
+    );
+  });
+
+  const collectedByProperty = new Map<string, number>();
+  for (const payment of eligiblePayments) {
+    const propertyId = String(
+      payment.property_id ||
+        args.leasePropertyById?.get(payment.lease_id) ||
+        "",
+    );
+    if (!propertyId) continue;
+    collectedByProperty.set(
+      propertyId,
+      roundMoney(
+        (collectedByProperty.get(propertyId) || 0) + Number(payment.amount),
+      ),
+    );
+  }
+
   return {
     totalCollected: roundMoney(
       eligiblePayments.reduce(

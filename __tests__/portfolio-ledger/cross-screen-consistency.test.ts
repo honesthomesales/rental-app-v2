@@ -1,7 +1,7 @@
 import {
   buildAccountLedger,
   buildCollectionsSummary,
-  buildDueMonthCollectionFacts,
+  buildCollectedMonthCollectionFacts,
 } from "@/lib/portfolio-ledger/service";
 
 const lease = {
@@ -175,36 +175,34 @@ describe("portfolio ledger cross-screen consistency", () => {
     expect(account.propertyTotalCollected).toBe(175);
   });
 
-  it("Profit attributes eligible collections to invoice due month", () => {
-    const invoices = [
-      { ...invoice("2026-07-01"), property_id: lease.property_id },
-      { ...invoice("2026-08-01"), property_id: lease.property_id },
-    ];
-    const facts = buildDueMonthCollectionFacts({
-      invoices,
+  it("Profit attributes eligible collections to payment collection month", () => {
+    const facts = buildCollectedMonthCollectionFacts({
       payments: [
         {
-          id: "early-july-rent",
+          id: "paid-in-june-for-july-invoice",
           lease_id: lease.id,
-          invoice_id: invoices[0].id,
+          property_id: lease.property_id,
+          invoice_id: "inv-july",
           payment_date: "2026-06-28",
+          amount: 160,
+          status: "completed",
+        },
+        {
+          id: "paid-in-july",
+          lease_id: lease.id,
+          property_id: lease.property_id,
+          invoice_id: "inv-august",
+          payment_date: "2026-07-02",
           amount: 160,
           status: "completed",
         },
         {
           id: "future-payment",
           lease_id: lease.id,
-          invoice_id: invoices[0].id,
+          property_id: lease.property_id,
+          invoice_id: "inv-july",
           payment_date: "2026-07-20",
           amount: 15,
-          status: "completed",
-        },
-        {
-          id: "august-invoice",
-          lease_id: lease.id,
-          invoice_id: invoices[1].id,
-          payment_date: "2026-07-02",
-          amount: 160,
           status: "completed",
         },
       ],
@@ -212,6 +210,7 @@ describe("portfolio ledger cross-screen consistency", () => {
       monthEnd: "2026-07-31",
       asOfDate: "2026-07-17",
     });
+    // Only the July 2 collection counts; June cash stays in June; future stays out.
     expect(facts.totalCollected).toBe(160);
     expect(facts.collectedByProperty.get(lease.property_id)).toBe(160);
   });

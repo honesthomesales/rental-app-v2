@@ -2,50 +2,57 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate } from '@/lib/business-date'
-import { buildDueMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
+import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
 
 // Cache profit metrics for 60 seconds - historical data doesn't change
 export const revalidate = 60
 
-const PAYMENTS_INVOICE_CHUNK = 150
+const SUPABASE_PAGE_SIZE = 1000
 
-/** Payments linked to invoices due in the month (matches Payments page paid status, not payment_date). */
-async function fetchPaymentsForInvoiceIds(invoiceIds: string[]) {
-  if (invoiceIds.length === 0) return []
+type CollectedPaymentRow = {
+  id: string
+  property_id?: string | null
+  lease_id: string
+  tenant_id?: string | null
+  invoice_id: string | null
+  amount: number
+  payment_date: string
+  status?: string | null
+}
 
-  const rows: Array<{
-    id: string
-    property_id?: string | null
-    lease_id: string
-    tenant_id?: string | null
-    invoice_id: string | null
-    amount: number
-    payment_date: string
-    status?: string | null
-  }> = []
-
-  for (let i = 0; i < invoiceIds.length; i += PAYMENTS_INVOICE_CHUNK) {
-    const chunk = invoiceIds.slice(i, i + PAYMENTS_INVOICE_CHUNK)
+/** Payments actually received in the date range (by payment_date). */
+async function fetchPaymentsCollectedBetween(
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<CollectedPaymentRow[]> {
+  const rows: CollectedPaymentRow[] = []
+  let from = 0
+  for (;;) {
     const { data, error } = await supabaseServer
       .from('RENT_payments')
       .select('id, property_id, lease_id, tenant_id, invoice_id, amount, payment_date, status')
-      .in('invoice_id', chunk)
+      .gte('payment_date', rangeStart)
+      .lte('payment_date', rangeEnd)
+      .order('payment_date', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1)
 
     if (error) throw error
-    if (data) {
-      rows.push(
-        ...data.map((row) => ({
-          ...row,
-          id: String(row.id),
-          lease_id: String(row.lease_id || ''),
-          invoice_id: row.invoice_id ? String(row.invoice_id) : null,
-          amount: Number(row.amount) || 0,
-          payment_date: String(row.payment_date || ''),
-        })),
-      )
-    }
+    const chunk = data || []
+    rows.push(
+      ...chunk.map((row) => ({
+        id: String(row.id),
+        property_id: row.property_id ? String(row.property_id) : null,
+        lease_id: String(row.lease_id || ''),
+        tenant_id: row.tenant_id ? String(row.tenant_id) : null,
+        invoice_id: row.invoice_id ? String(row.invoice_id) : null,
+        amount: Number(row.amount) || 0,
+        payment_date: String(row.payment_date || ''),
+        status: row.status,
+      })),
+    )
+    if (chunk.length < SUPABASE_PAGE_SIZE) break
+    from += SUPABASE_PAGE_SIZE
   }
-
   return rows
 }
 
@@ -57,53 +64,22 @@ function buildLeaseToPropertyMap(allLeases: Array<{ id?: string; property_id?: s
   return map
 }
 
-function enrichInvoicesWithProperty<
-  T extends { property_id?: string | null; lease_id?: string | null },
->(
-  invoices: T[],
-  leaseToPropertyMap: Map<string, string>
-): Array<T & { property_id: string | null }> {
-  return invoices.map((inv) => ({
-    ...inv,
-    property_id: inv.property_id || leaseToPropertyMap.get(inv.lease_id || '') || null,
-  }))
-}
-
 /** Cap income recognition at business date (or month end if earlier). */
 function incomeAsOfDate(endOfMonth: string): string {
   const businessDate = getBusinessDate()
   return endOfMonth < businessDate ? endOfMonth : businessDate
 }
 
-async function fetchRentCollectedForDueMonth(pastStartOfMonth: string, pastEndOfMonth: string) {
-  const { data: invoices, error: invError } = await supabaseServer
-    .from('RENT_invoices')
-    .select('id, lease_id, property_id, due_date, status')
-    .gte('due_date', pastStartOfMonth)
-    .lte('due_date', pastEndOfMonth)
-
-  if (invError) throw invError
-  if (!invoices?.length) return 0
-
-  const { data: leases } = await supabaseServer
-    .from('RENT_leases')
-    .select('id, property_id')
-
-  const leaseToPropertyMap = buildLeaseToPropertyMap(leases || [])
-  const invoicesWithProperty = enrichInvoicesWithProperty(invoices, leaseToPropertyMap)
-  const invoiceIds = invoicesWithProperty.map((i) => i.id).filter(Boolean) as string[]
-  const payments = await fetchPaymentsForInvoiceIds(invoiceIds)
-  return buildDueMonthCollectionFacts({
-    invoices: invoicesWithProperty.map((invoice) => ({
-      id: String(invoice.id),
-      property_id: invoice.property_id,
-      due_date: String(invoice.due_date),
-      status: invoice.status,
-    })),
+async function fetchRentCollectedInMonth(pastStartOfMonth: string, pastEndOfMonth: string) {
+  const asOf = incomeAsOfDate(pastEndOfMonth)
+  const payments = await fetchPaymentsCollectedBetween(pastStartOfMonth, asOf)
+  const { data: leases } = await supabaseServer.from('RENT_leases').select('id, property_id')
+  return buildCollectedMonthCollectionFacts({
     payments,
+    leasePropertyById: buildLeaseToPropertyMap(leases || []),
     monthStart: pastStartOfMonth,
     monthEnd: pastEndOfMonth,
-    asOfDate: incomeAsOfDate(pastEndOfMonth),
+    asOfDate: asOf,
   }).totalCollected
 }
 
@@ -208,65 +184,44 @@ try {
     console.log('Total payments from expenses:', totalPayments)
     console.log('Potential payments (excluding balance > 0):', potentialPayments)
     
-    // Rent collected: payments applied to invoices DUE in this month (matches Payments page "paid" status).
-    // Early payments (e.g. 04/28 for a 05/01 due invoice) count in the due month, not the payment_date month.
+    // Rent collected: cash received this month (payment_date), not invoice due month.
     let rentCollected = 0
     let expectedRent = 0
     const propertyDetails: any[] = []
 
     try {
-      const [invoicesResult, leasesResult] = await Promise.all([
-        supabaseServer
-          .from('RENT_invoices')
-          .select('id, lease_id, property_id, due_date, status')
-          .gte('due_date', startOfMonth)
-          .lte('due_date', endOfMonth),
+      const asOf = incomeAsOfDate(endOfMonth)
+      const [monthRentPayments, leasesResult] = await Promise.all([
+        fetchPaymentsCollectedBetween(startOfMonth, asOf),
         supabaseServer
           .from('RENT_leases')
           .select('id, property_id, rent, rent_cadence, lease_start_date, lease_end_date, status'),
       ])
 
-      if (invoicesResult.error) {
-        console.error('Error fetching invoices for month:', invoicesResult.error)
-      }
       if (leasesResult.error) {
         console.error('Error fetching leases:', leasesResult.error)
       }
 
-      const invoicesForMonth = invoicesResult.data || []
       const allLeasesForRent = leasesResult.data || []
       const leaseToPropertyMap = buildLeaseToPropertyMap(allLeasesForRent)
-      const invoicesWithProperty = enrichInvoicesWithProperty(invoicesForMonth, leaseToPropertyMap)
-      const invoiceIds = invoicesWithProperty
-        .map((inv) => inv.id)
-        .filter(Boolean) as string[]
-
-      const monthRentPayments = await fetchPaymentsForInvoiceIds(invoiceIds)
-      const collectionFacts = buildDueMonthCollectionFacts({
-        invoices: invoicesWithProperty.map((invoice) => ({
-          id: String(invoice.id),
-          property_id: invoice.property_id,
-          due_date: String(invoice.due_date),
-          status: invoice.status,
-        })),
+      const collectionFacts = buildCollectedMonthCollectionFacts({
         payments: monthRentPayments,
+        leasePropertyById: leaseToPropertyMap,
         monthStart: startOfMonth,
         monthEnd: endOfMonth,
-        asOfDate: incomeAsOfDate(endOfMonth),
+        asOfDate: asOf,
       })
       const eligibleMonthPayments = collectionFacts.eligiblePayments
       rentCollected = collectionFacts.totalCollected
 
       console.log(
-        'Rent collected for invoices due in month:',
+        'Rent collected by payment_date in month:',
         rentCollected,
         'from',
         monthRentPayments.length,
         'payments (',
         eligibleMonthPayments.length,
-        'eligible) on',
-        invoiceIds.length,
-        'invoices'
+        'eligible)'
       )
 
       // Billing-active leases: occupied + eviction both generate invoices
@@ -439,7 +394,7 @@ try {
         const pastMonthNum = pastMonth.getMonth()
         const pastEndOfMonth = new Date(pastYear, pastMonthNum + 1, 0).toISOString().slice(0, 10)
         
-        const pastRentCollected = await fetchRentCollectedForDueMonth(
+        const pastRentCollected = await fetchRentCollectedInMonth(
           pastStartOfMonth,
           pastEndOfMonth
         )

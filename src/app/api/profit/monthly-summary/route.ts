@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { resolveBusinessDate } from '@/lib/business-date'
-import { buildDueMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
+import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
 
 export const revalidate = 60
 
@@ -30,8 +30,6 @@ function labelForMonth(month: string): string {
 }
 
 const SUPABASE_PAGE_SIZE = 1000
-/** Keep PostgREST `.in()` URL length under gateway limits (~8–16KB). */
-const INVOICE_ID_CHUNK = 100
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -41,7 +39,7 @@ function errorMessage(error: unknown): string {
   return 'Unknown error'
 }
 
-/** PostgREST defaults to 1000 rows; paginate so 12-month ranges include all payments. */
+/** PostgREST defaults to 1000 rows; paginate so 12-month ranges include all rows. */
 async function fetchAllPages<T>(
   fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 ): Promise<T[]> {
@@ -56,54 +54,6 @@ async function fetchAllPages<T>(
     from += SUPABASE_PAGE_SIZE
   }
   return rows
-}
-
-async function fetchPaymentsForInvoiceIds(
-  invoiceIds: string[],
-  paymentRangeEnd: string,
-): Promise<
-  Array<{
-    id: string
-    lease_id: string
-    invoice_id: string | null
-    amount: number
-    payment_date: string
-    status: string | null
-  }>
-> {
-  if (invoiceIds.length === 0) return []
-
-  const all: Array<{
-    id: string
-    lease_id: string
-    invoice_id: string | null
-    amount: number
-    payment_date: string
-    status: string | null
-  }> = []
-
-  for (let i = 0; i < invoiceIds.length; i += INVOICE_ID_CHUNK) {
-    const chunk = invoiceIds.slice(i, i + INVOICE_ID_CHUNK)
-    const rows = await fetchAllPages<{
-      id: string
-      lease_id: string
-      invoice_id: string | null
-      amount: number
-      payment_date: string
-      status: string | null
-    }>((from, to) =>
-      supabaseServer
-        .from('RENT_payments')
-        .select('id, lease_id, invoice_id, amount, payment_date, status')
-        .in('invoice_id', chunk)
-        .lte('payment_date', paymentRangeEnd)
-        .order('payment_date', { ascending: true })
-        .range(from, to),
-    )
-    all.push(...rows)
-  }
-
-  return all
 }
 
 export async function GET(request: Request) {
@@ -175,24 +125,32 @@ try {
     const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
     const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
 
-    const invoices = await fetchAllPages<{
-      id: string
-      property_id: string | null
-      due_date: string
-      status: string
-    }>((from, to) =>
-      supabaseServer
-        .from('RENT_invoices')
-        .select('id, property_id, due_date, status')
-        .gte('due_date', rangeStart)
-        .lte('due_date', rangeEnd)
-        .order('due_date', { ascending: true })
-        .range(from, to)
-    )
-    const invoiceIds = invoices.map((invoice) => invoice.id)
+    const leasePropertyById = new Map<string, string>()
+    for (const lease of allLeases || []) {
+      if (lease.id && lease.property_id) {
+        leasePropertyById.set(String(lease.id), String(lease.property_id))
+      }
+    }
 
+    // Cash collected by payment_date (not invoice due month).
     const [payments, miscExpenses, oneTimeExpenses] = await Promise.all([
-      fetchPaymentsForInvoiceIds(invoiceIds, paymentRangeEnd),
+      fetchAllPages<{
+        id: string
+        lease_id: string
+        property_id: string | null
+        invoice_id: string | null
+        amount: number
+        payment_date: string
+        status: string | null
+      }>((from, to) =>
+        supabaseServer
+          .from('RENT_payments')
+          .select('id, lease_id, property_id, invoice_id, amount, payment_date, status')
+          .gte('payment_date', rangeStart)
+          .lte('payment_date', paymentRangeEnd)
+          .order('payment_date', { ascending: true })
+          .range(from, to),
+      ),
       fetchAllPages<{ amount_owed: number | null; last_paid_date: string }>((from, to) =>
         supabaseServer
           .from('RENT_expenses')
@@ -225,9 +183,17 @@ try {
     }
 
     for (const month of monthKeys) {
-      const facts = buildDueMonthCollectionFacts({
-        invoices,
-        payments,
+      const facts = buildCollectedMonthCollectionFacts({
+        payments: payments.map((payment) => ({
+          id: String(payment.id),
+          lease_id: String(payment.lease_id || ''),
+          property_id: payment.property_id,
+          invoice_id: payment.invoice_id ? String(payment.invoice_id) : null,
+          amount: Number(payment.amount) || 0,
+          payment_date: String(payment.payment_date || ''),
+          status: payment.status,
+        })),
+        leasePropertyById,
         monthStart: `${month}-01`,
         monthEnd: endOfMonthIso(
           Number(month.slice(0, 4)),

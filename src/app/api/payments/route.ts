@@ -209,13 +209,40 @@ try {
       notes: memo || ''
     }
     
-    // Add invoice_id if provided
-    if (invoiceId) {
-      paymentRecord.invoice_id = invoiceId
+    // Production allocation truth: RENT_payments.invoice_id + DB triggers that
+    // recalculate invoice amount_paid / balance_due. The legacy
+    // rent_apply_payment_fifo(uuid, timestamptz) function is not installed.
+    let targetInvoiceId: string | null = invoiceId || null
+    if (!targetInvoiceId) {
+      const { data: oldestUnpaid, error: oldestError } = await supabaseServer
+        .from('RENT_invoices')
+        .select('id')
+        .eq('lease_id', leaseId)
+        .in('status', ['OPEN', 'PARTIAL'])
+        .gt('balance_due', 0)
+        .order('due_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (oldestError) {
+        console.error('Error selecting oldest unpaid invoice:', oldestError)
+        return NextResponse.json(
+          {
+            error: 'Failed to select invoice for payment allocation',
+            details: oldestError.message,
+          },
+          { status: 500 },
+        )
+      }
+      targetInvoiceId = oldestUnpaid?.id || null
     }
 
-    // Do not allocate future-dated completed payments before their payment_date.
-    // They remain recorded but ineligible for balances / Last Paid until business date.
+    if (targetInvoiceId) {
+      paymentRecord.invoice_id = targetInvoiceId
+    }
+
+    // Do not treat future-dated payments as currently allocated for balances /
+    // Last Paid until their payment_date; still record them (and link invoice).
     if (!canAllocatePaymentAsOf(paymentRecord, businessDate)) {
       const { data: payment, error: paymentError } = await supabaseServer
         .from('RENT_payments')
@@ -233,51 +260,40 @@ try {
 
       return NextResponse.json({
         payment,
-        allocations: [],
+        allocations: targetInvoiceId
+          ? [{ invoice_id: targetInvoiceId, amount }]
+          : [],
         deferredAllocation: true,
         businessDate,
         warning:
-          'Payment recorded but not allocated yet — payment_date is after the business date.',
+          'Payment recorded but not eligible for balances yet — payment_date is after the business date.',
       })
     }
 
-    // Eligible payment insert and FIFO allocation succeed or roll back together.
-    const { data: result, error: rpcError } = await supabaseServer
-      .rpc('rent_record_and_apply_payment_fifo', {
-        p_tenant_id: tenantId,
-        p_lease_id: leaseId,
-        p_property_id: finalPropertyId,
-        p_payment_date: paymentDate,
-        p_amount: amount,
-        p_payment_type: paymentType,
-        p_payment_method: 'Manual Entry',
-        p_notes: memo || '',
-        p_invoice_id: invoiceId || null
-      })
+    const { data: payment, error: paymentError } = await supabaseServer
+      .from('RENT_payments')
+      .insert([paymentRecord])
+      .select()
+      .single()
 
-    if (rpcError) {
-      console.error('Atomic payment recording/allocation failed:', rpcError)
+    if (paymentError) {
+      console.error('Error inserting payment:', paymentError)
       return NextResponse.json(
-        {
-          error: 'Payment was not recorded because allocation failed',
-          details: rpcError.message
-        },
-        { status: 500 }
+        { error: 'Failed to insert payment', details: paymentError.message },
+        { status: 500 },
       )
     }
 
-    const atomicResult = (result || {}) as {
-      payment?: { id?: string }
-      allocations?: unknown[]
-    }
-    console.log('Payment recorded and allocated atomically:', {
-      paymentId: atomicResult.payment?.id,
-      allocationsCount: atomicResult.allocations?.length || 0
+    console.log('Payment recorded; invoice totals updated by DB trigger:', {
+      paymentId: payment.id,
+      invoiceId: targetInvoiceId,
     })
 
     return NextResponse.json({
-      payment: atomicResult.payment,
-      allocations: atomicResult.allocations || []
+      payment,
+      allocations: targetInvoiceId
+        ? [{ invoice_id: targetInvoiceId, amount, payment_id: payment.id }]
+        : [],
     })
   } catch (error) {
     console.error('Error in payments API:', error)

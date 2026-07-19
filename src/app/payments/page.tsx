@@ -1098,7 +1098,8 @@ return'<div class="s">'+l+'</div>';
       if (!response.ok) {
         const errorData = await response.json()
         console.error('Failed to create payment:', errorData)
-        throw new Error(errorData.error || 'Failed to add payment')
+        const detail = errorData.details ? `: ${errorData.details}` : ''
+        throw new Error((errorData.error || 'Failed to add payment') + detail)
       }
 
       const result = await response.json()

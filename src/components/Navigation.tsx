@@ -240,11 +240,6 @@ export function Navigation() {
     mobileItems.push(renderNavLink(item, 'mobile'))
   })
 
-  // Tenant payment pages are public customer surfaces — hide admin chrome.
-  if (pathname?.startsWith('/pay')) {
-    return null
-  }
-
   return (
     <>
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -259,7 +254,7 @@ export function Navigation() {
               <span className="ml-2 text-lg font-semibold text-gray-900">Rental App</span>
             </div>
 
-            <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
+            <div className="hidden lg:flex items-center gap-2 xl:gap-4 min-w-0 max-w-[calc(100vw-11rem)] overflow-x-auto overscroll-x-contain">
               {desktopItems}
               <button
                 type="button"
@@ -270,13 +265,13 @@ export function Navigation() {
                   })
                   window.location.href = "/login"
                 }}
-                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md"
+                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
               >
                 Log out
               </button>
             </div>
 
-            <div className="md:hidden flex items-center">
+            <div className="lg:hidden flex items-center">
               <button
                 type="button"
                 className="text-gray-400 hover:text-gray-600"
@@ -293,7 +288,7 @@ export function Navigation() {
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 bg-white">
+          <div className="lg:hidden border-t border-gray-200 bg-white">
             <div className="px-2 pt-2 pb-3 space-y-1">
               {mobileItems}
               <button

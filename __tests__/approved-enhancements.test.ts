@@ -1,9 +1,5 @@
 import { formatWholeDollarDisplay } from '@/lib/format-whole-dollar'
 import { smsHref, normalizeToE164, isUsablePhone } from '@/lib/communications/phone'
-import {
-  isTenantPaymentsEnabled,
-  isTenantPaymentsLiveMoneyEnabled,
-} from '@/lib/payments/feature-flags'
 
 describe('approved enhancement helpers', () => {
   it('formats whole dollars without cents', () => {
@@ -18,10 +14,5 @@ describe('approved enhancement helpers', () => {
     expect(smsHref('7045551212', 'Hello')).toContain('sms:+17045551212')
     expect(smsHref('7045551212', 'Hello')).toContain('body=Hello')
     expect(smsHref('bad')).toBeNull()
-  })
-
-  it('keeps tenant payment flags off by default', () => {
-    expect(isTenantPaymentsEnabled()).toBe(false)
-    expect(isTenantPaymentsLiveMoneyEnabled()).toBe(false)
   })
 })

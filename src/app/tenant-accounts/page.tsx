@@ -28,7 +28,7 @@ function TenantAccountsInner() {
     (next: TenantAccountsView) => {
       const params = new URLSearchParams(searchParams.toString())
       params.set('view', next)
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+      router.push(`${pathname}?${params.toString()}`, { scroll: false })
     },
     [pathname, router, searchParams],
   )

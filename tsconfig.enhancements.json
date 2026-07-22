@@ -21,9 +21,6 @@
   "files": [
     "src/lib/format-whole-dollar.ts",
     "src/lib/communications/phone.ts",
-    "src/lib/payments/feature-flags.ts",
-    "src/lib/payments/types.ts",
-    "src/lib/payments/provider.ts",
     "src/app/late-tenants/page.tsx",
     "src/app/last-paid/page.tsx",
     "src/components/communications/TenantCommunicationActions.tsx"

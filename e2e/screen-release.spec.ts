@@ -14,8 +14,7 @@ const ACTIVE_ROUTES = [
   { name: 'Payments', path: '/payments' },
   { name: 'Expenses', path: '/expenses' },
   { name: 'Profit', path: '/profit' },
-  { name: 'Deals', path: '/deals' },
-  { name: 'Documents', path: '/documents' },
+  { name: 'Deals / Docs', path: '/deals-docs?view=deals' },
   { name: 'Data Health', path: '/data-health' },
 ] as const
 

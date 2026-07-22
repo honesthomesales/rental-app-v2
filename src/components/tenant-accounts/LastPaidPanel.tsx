@@ -8,6 +8,11 @@ import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { getBusinessDate } from '@/lib/business-date'
 import { getMostRecentEligiblePaymentDate } from '@/lib/payment-eligibility'
+import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
+import {
+  TextTenantModal,
+  type CommunicationTarget,
+} from '@/components/communications/TextTenantModal'
 
 interface PaymentInvoice {
   id: string
@@ -41,6 +46,9 @@ interface PropertyPayments {
   rent: number | null
   rent_due_day: number | null
   lease_id: string | null
+  tenant_id?: string | null
+  tenant_name?: string | null
+  tenant_phone?: string | null
   totalOwed: number
   lastPaidDate?: string | null
   oldestUnpaidDueDate?: string | null
@@ -105,6 +113,23 @@ function getLastPaymentReceivedDate(
   )
 }
 
+/** Most recent eligible settled payment row (amount + method for Last Paid columns). */
+function getMostRecentEligiblePayment(
+  prop: PropertyPayments,
+  businessDate: string,
+): PaymentEntry | null {
+  const eligible = prop.payments.filter((p) => {
+    const amt = parseFloat(String(p.amount)) || 0
+    const d = String(p.payment_date || '').split('T')[0]
+    return amt > 0 && d && d <= businessDate
+  })
+  if (eligible.length === 0) return null
+  eligible.sort((a, b) =>
+    String(b.payment_date || '').localeCompare(String(a.payment_date || '')),
+  )
+  return eligible[0]
+}
+
 /** Sort detail rows by Last Paid (most recent payment first); unpaid rows after paid. */
 function sortPaymentsByLastPaidDate(
   payments: PaymentEntry[],
@@ -135,6 +160,7 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
   const [sortField, setSortField] = useState<SortField>('lastPaid')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [expandedProperty, setExpandedProperty] = useState<string | null>(null)
+  const [commTarget, setCommTarget] = useState<CommunicationTarget | null>(null)
   const [selectedLease, setSelectedLease] = useState<any>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoices, setInvoices] = useState<any[]>([])
@@ -1213,9 +1239,25 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
       {/* Main Table, Grid, or Monthly */}
       {viewMode === 'table' ? (
         <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
+          <p className="px-4 pt-3 text-xs text-gray-500 sm:hidden" data-testid="last-paid-swipe-hint">
+            Swipe to see more columns
+          </p>
+          <div
+            className="overflow-x-auto overscroll-x-contain"
+            tabIndex={0}
+            role="region"
+            aria-label="Last Paid table"
+            data-testid="last-paid-table-scroller"
+          >
+          <table className="min-w-[960px] w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th
+                className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('tenant')}
+              >
+                Tenant{sortIndicator('tenant')}
+              </th>
               <th
                 className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('property')}
@@ -1224,45 +1266,46 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
               </th>
               <th
                 className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('tenant')}
-              >
-                Tenant{sortIndicator('tenant')}
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('cadence')}
-              >
-                Cadence{sortIndicator('cadence')}
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('lastPaid')}
               >
-                Last Paid{sortIndicator('lastPaid')}
+                Most recent payment{sortIndicator('lastPaid')}
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Payment amount
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Payment method
               </th>
               <th
                 className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('totalOwed')}
               >
-                Total Owed{sortIndicator('totalOwed')}
+                Current balance{sortIndicator('totalOwed')}
               </th>
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Actions
+                View history
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                Text Tenant
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredAndSorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                   No payment history found
                 </td>
               </tr>
             ) : (
               filteredAndSorted.map((property) => {
                 const lastPaymentDate = getLastPaymentReceivedDate(property, businessDate)
-                const lastPayment = property.payments[0] // For tenant name display
-                const tenantName = lastPayment?.tenant_name || '-'
+                const lastPayment = getMostRecentEligiblePayment(property, businessDate)
+                const tenantName =
+                  property.tenant_name ||
+                  lastPayment?.tenant_name ||
+                  property.payments[0]?.tenant_name ||
+                  '-'
                 const isExpanded = expandedProperty === property.property_id
 
                 return (
@@ -1275,42 +1318,59 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
                       }
                     }}
                   >
-                    <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-gray-900">{property.property_name}</div>
-                      <div className="text-xs text-gray-500">{tenantName}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-700">
-                      {tenantName}
+                    <td className="sticky left-0 z-10 bg-white px-4 py-3">
+                      <div className="text-sm font-medium text-gray-900 max-w-[10rem] truncate" title={tenantName}>
+                        {tenantName}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
-                      {cadenceBadge(property.cadence)}
+                      <div className="text-sm font-medium text-gray-900 max-w-[12rem] truncate" title={property.property_name}>
+                        {property.property_name}
+                      </div>
+                      <div className="text-xs text-gray-500">{cadenceBadge(property.cadence)}</div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700">
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
                       {lastPaymentDate ? formatDate(lastPaymentDate) : 'Never'}
                     </td>
-                    <td className={`px-4 py-3 text-sm text-right font-medium ${property.totalOwed > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 whitespace-nowrap">
+                      {lastPayment ? formatCurrency(lastPayment.amount) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap max-w-[8rem] truncate" title={lastPayment?.payment_type || ''}>
+                      {lastPayment?.payment_type || '—'}
+                    </td>
+                    <td className={`px-4 py-3 text-sm text-right font-medium whitespace-nowrap ${property.totalOwed > 0 ? 'text-red-700' : 'text-green-700'}`}>
                       {formatCurrency(property.totalOwed)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={() => setExpandedProperty(isExpanded ? null : property.property_id)}
-                          className="px-3 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                        >
-                          {isExpanded ? 'Hide' : 'Detail'}
-                        </button>
-                        {property.lease_id && (
-                          <button
-                            onClick={() => {
-                              setSelectedPropertyForGenerate(property)
-                              setFormDate(new Date().toISOString().split('T')[0])
-                              setShowGenerateModal(true)
-                            }}
-                            className="px-3 py-1 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-                          >
-                            Forms
-                          </button>
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedProperty(isExpanded ? null : property.property_id)}
+                        className="px-3 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                      >
+                        {isExpanded ? 'Hide' : 'View history'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex justify-center">
+                        <TenantCommunicationActions
+                          phone={property.tenant_phone}
+                          size="sm"
+                          textEnabled={true}
+                          onText={() =>
+                            setCommTarget({
+                              tenantId: property.tenant_id || '',
+                              tenantName,
+                              phone: property.tenant_phone,
+                              propertyId: property.property_id,
+                              propertyLabel: property.property_name,
+                              leaseId: property.lease_id,
+                              leaseStatus: null,
+                              templateContext: {
+                                amount_due: formatCurrency(property.totalOwed),
+                              },
+                            })
+                          }
+                        />
                       </div>
                     </td>
                   </tr>
@@ -1318,8 +1378,9 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
               })
             )}
           </tbody>
-        </table>
-      </div>
+          </table>
+          </div>
+        </div>
       ) : viewMode === 'grid' ? (
         /* Grid View */
         <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -2156,6 +2217,11 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
           </div>
         </div>
       )}
+      <TextTenantModal
+        open={Boolean(commTarget)}
+        target={commTarget}
+        onClose={() => setCommTarget(null)}
+      />
     </div>
   )
 }

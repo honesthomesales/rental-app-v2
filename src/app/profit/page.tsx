@@ -609,7 +609,7 @@ export default function ProfitPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 min-w-0 overflow-x-hidden">
       <div className="mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
@@ -665,10 +665,19 @@ export default function ProfitPage() {
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Income and Rent Details - {formatMonth(currentDate)}</h2>
           <p className="text-sm text-gray-600 mt-1">Detailed breakdown by property for the selected month</p>
+          <p className="text-xs text-gray-500 mt-1 sm:hidden" data-testid="profit-swipe-hint">
+            Swipe to see more columns
+          </p>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        <div
+          className="overflow-x-auto overscroll-x-contain"
+          tabIndex={0}
+          role="region"
+          aria-label="Profit income and rent details"
+          data-testid="profit-totals-table-scroller"
+        >
+          <table className="min-w-[720px] w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th 

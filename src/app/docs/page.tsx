@@ -3,8 +3,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-/** Legacy /documents → combined Deals / Docs (docs view). */
-export default function DocumentsRedirectPage() {
+/** Alias /docs → Deals / Docs documents view. */
+export default function DocsAliasRedirectPage() {
   const router = useRouter()
   useEffect(() => {
     router.replace('/deals-docs?view=docs')

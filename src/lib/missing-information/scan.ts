@@ -727,7 +727,7 @@ export async function scanMissingInformation(
           problem: "Document missing file link",
           affectedRecord: { type: "document", id, label: title },
           explanation: "Document record has an empty file_url.",
-          href: `/documents`,
+          href: `/deals-docs?view=docs`,
           blocking: false,
         }),
       );
@@ -739,7 +739,7 @@ export async function scanMissingInformation(
           problem: "Broken document link",
           affectedRecord: { type: "document", id, label: title },
           explanation: "file_url is not a valid http(s) URL.",
-          href: `/documents`,
+          href: `/deals-docs?view=docs`,
           blocking: false,
         }),
       );

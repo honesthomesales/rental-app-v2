@@ -29,6 +29,7 @@ const navigation = [
   { name: 'Properties', href: '/properties', icon: BuildingOfficeIcon },
   { name: 'Tenants', href: '/tenants', icon: UsersIcon },
   { name: 'Leases', href: '/leases', icon: DocumentTextIcon },
+  { name: 'Deals / Docs', href: '/deals-docs?view=deals', icon: ShoppingBagIcon },
   { name: 'Payments', href: '/payments', icon: CurrencyDollarIcon },
   { name: 'Tenant Accounts', href: '/tenant-accounts?view=late', icon: ExclamationTriangleIcon },
   { name: 'Expenses', href: '/expenses', icon: ReceiptPercentIcon },
@@ -43,101 +44,6 @@ const ownerCommunicationsNav = {
   name: 'Communication Approvals',
   href: '/communication-approvals',
   icon: ChatBubbleLeftRightIcon,
-}
-
-const DEAL_DOCS = { deals: '/deals', docs: '/documents' } as const
-
-function DealDocsToggle({ onNavigate }: { onNavigate?: () => void }) {
-  const pathname = usePathname()
-  const isDeals = pathname === DEAL_DOCS.deals
-  const isDocs = pathname === DEAL_DOCS.docs
-
-  const segmentClass = (active: boolean) =>
-    `px-2 py-0.5 text-xs font-medium rounded transition-colors ${
-      active
-        ? 'bg-blue-600 text-white'
-        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-    }`
-
-  return (
-    <div
-      className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
-      role="group"
-      aria-label="Switch between Deals and Documents"
-    >
-      <Link
-        href={DEAL_DOCS.deals}
-        onClick={onNavigate}
-        className={segmentClass(isDeals)}
-      >
-        Deal
-      </Link>
-      <Link
-        href={DEAL_DOCS.docs}
-        onClick={onNavigate}
-        className={segmentClass(isDocs)}
-      >
-        Docs
-      </Link>
-    </div>
-  )
-}
-
-function DealDocsNavItem({
-  layout,
-  onNavigate,
-}: {
-  layout: 'desktop' | 'mobile'
-  onNavigate?: () => void
-}) {
-  const pathname = usePathname()
-  const isActive = pathname === DEAL_DOCS.deals || pathname === DEAL_DOCS.docs
-
-  if (layout === 'mobile') {
-    return (
-      <div
-        className={`rounded-md px-3 py-2 ${
-          isActive ? 'bg-blue-100' : 'text-gray-600'
-        }`}
-      >
-        <div className="flex items-center text-base font-medium text-gray-900">
-          <ShoppingBagIcon
-            className={`mr-3 h-5 w-5 flex-shrink-0 ${
-              isActive ? 'text-blue-500' : 'text-gray-400'
-            }`}
-          />
-          Deal / Docs
-        </div>
-        <div className="mt-2 ml-8">
-          <DealDocsToggle onNavigate={onNavigate} />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className={`flex flex-col items-center px-2 py-1 rounded-md ${
-        isActive ? 'bg-blue-50' : ''
-      }`}
-    >
-      <div
-        className={`flex items-center text-sm font-medium ${
-          isActive ? 'text-blue-700' : 'text-gray-600'
-        }`}
-      >
-        <ShoppingBagIcon
-          className={`mr-1.5 h-5 w-5 flex-shrink-0 ${
-            isActive ? 'text-blue-500' : 'text-gray-400'
-          }`}
-        />
-        Deal / Docs
-      </div>
-      <div className="mt-1">
-        <DealDocsToggle />
-      </div>
-    </div>
-  )
 }
 
 export function Navigation() {
@@ -231,7 +137,12 @@ export function Navigation() {
       (itemPath === '/tenant-accounts' &&
         (pathname === '/tenant-accounts' ||
           pathname === '/late-tenants' ||
-          pathname === '/last-paid'))
+          pathname === '/last-paid')) ||
+      (itemPath === '/deals-docs' &&
+        (pathname === '/deals-docs' ||
+          pathname === '/deals' ||
+          pathname === '/documents' ||
+          pathname === '/docs'))
     const isTenantAccounts = item.name === 'Tenant Accounts'
     const baseClass =
       layout === 'desktop'
@@ -268,29 +179,8 @@ export function Navigation() {
     )
   }
 
-  const desktopItems: React.ReactNode[] = []
-  navItems.forEach((item) => {
-    if (item.name === 'Payments') {
-      desktopItems.push(
-        <DealDocsNavItem key="deal-docs" layout="desktop" />
-      )
-    }
-    desktopItems.push(renderNavLink(item, 'desktop'))
-  })
-
-  const mobileItems: React.ReactNode[] = []
-  navItems.forEach((item) => {
-    if (item.name === 'Payments') {
-      mobileItems.push(
-        <DealDocsNavItem
-          key="deal-docs"
-          layout="mobile"
-          onNavigate={() => setMobileMenuOpen(false)}
-        />
-      )
-    }
-    mobileItems.push(renderNavLink(item, 'mobile'))
-  })
+  const desktopItems = navItems.map((item) => renderNavLink(item, 'desktop'))
+  const mobileItems = navItems.map((item) => renderNavLink(item, 'mobile'))
 
   return (
     <>

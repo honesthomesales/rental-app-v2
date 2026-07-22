@@ -94,6 +94,7 @@ export async function GET(request: Request) {
         String(b.payment_date || "").localeCompare(String(a.payment_date || "")),
       );
       const property = lease.property || {};
+      const tenant = (lease.tenant || {}) as Record<string, unknown>;
       return {
         property_id: account.propertyId,
         property_name: account.propertyName,
@@ -103,6 +104,12 @@ export async function GET(request: Request) {
         rent: account.currentRent,
         rent_due_day: lease.rent_due_day || null,
         lease_id: account.leaseId,
+        tenant_id: account.tenantId,
+        tenant_name: account.tenantName,
+        tenant_phone:
+          tenant.phone != null && String(tenant.phone).trim()
+            ? String(tenant.phone)
+            : null,
         totalOwed: account.totalBalanceDue,
         lastPaidDate: account.lastEligiblePositivePaymentDate,
         oldestUnpaidDueDate: account.oldestUnpaidDueDate,

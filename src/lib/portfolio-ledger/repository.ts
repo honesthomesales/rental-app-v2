@@ -38,7 +38,7 @@ export async function loadBillingLeases(): Promise<LedgerLease[]> {
         lease_start_date, lease_end_date, late_fee_amount, grace_days,
         cadence_effective_date, prior_rent_cadence,
         RENT_properties(id, name, address, property_type),
-        RENT_tenants(id, full_name, first_name, last_name)
+        RENT_tenants(id, full_name, first_name, last_name, phone)
       `,
       )
       .in("status", ["occupied", "eviction"])

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Navigation } from "@/components/Navigation";
-import PWAInstaller from "@/components/PWAInstaller";
+import { AppShell } from "@/components/AppShell";
 import { ErrorBoundaryWrapper } from "@/components/ErrorBoundaryWrapper";
 
 const geistSans = Geist({
@@ -47,13 +46,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ErrorBoundaryWrapper>
-          <div className="min-h-screen bg-gray-50">
-            <Navigation />
-            <main className="flex-1 min-w-0 overflow-x-hidden pb-8">
-              {children}
-            </main>
-            <PWAInstaller />
-          </div>
+          <AppShell>{children}</AppShell>
         </ErrorBoundaryWrapper>
       </body>
     </html>

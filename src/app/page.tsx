@@ -13,6 +13,12 @@ import {
 } from '@heroicons/react/24/outline'
 import { MissingInformationButton } from '@/components/missing-information/MissingInformationButton'
 import { formatWholeDollarDisplay } from '@/lib/format-whole-dollar'
+import { useAuth } from '@/components/auth/AuthProvider'
+import {
+  resolveProtectedDataView,
+  shouldRunProtectedQueries,
+  logoutRedirectPath,
+} from '@/lib/auth/session-state'
 
 /**
  * Insurance + Property Tax tables and dashboard metrics API: only these property_type values.
@@ -69,9 +75,12 @@ function overviewSearchMatches(property: any, searchLower: string): boolean {
 }
 
 export default function Dashboard() {
+  const auth = useAuth()
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [metricsHttpStatus, setMetricsHttpStatus] = useState<number | null>(null)
+  const [metricsNetworkError, setMetricsNetworkError] = useState(false)
   const [properties, setProperties] = useState<any[]>([])
   const [showInsuranceSection, setShowInsuranceSection] = useState(false)
   const [showTaxSection, setShowTaxSection] = useState(false)
@@ -109,8 +118,17 @@ export default function Dashboard() {
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    if (!shouldRunProtectedQueries(auth.status)) {
+      if (auth.status !== 'loading') {
+        setLoading(false)
+        setMetrics(null)
+        setMetricsHttpStatus(null)
+        setMetricsNetworkError(false)
+      }
+      return
+    }
+    void fetchDashboardData()
+  }, [auth.status])
 
   useEffect(() => {
     const allowedTypeFilter = ['', 'house', 'doublewide', 'singlewide']
@@ -130,6 +148,8 @@ export default function Dashboard() {
       } else {
         setLoading(true)
       }
+      setMetricsHttpStatus(null)
+      setMetricsNetworkError(false)
       console.log('Fetching dashboard data in parallel...')
       
       // Add cache-busting timestamp to ensure fresh data
@@ -137,18 +157,30 @@ export default function Dashboard() {
       
       // OPTIMIZED: Fetch all data in parallel instead of sequentially
       const [metricsResponse, propertiesResponse, leasesResponse] = await Promise.all([
-        fetch(`/api/dashboard/metrics?t=${timestamp}`),
-        fetch(`/api/properties?t=${timestamp}`),
-        fetch(`/api/leases?t=${timestamp}`)
+        fetch(`/api/dashboard/metrics?t=${timestamp}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        }),
+        fetch(`/api/properties?t=${timestamp}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        }),
+        fetch(`/api/leases?t=${timestamp}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        }),
       ])
 
       // Process metrics
       if (!metricsResponse.ok) {
+        setMetricsHttpStatus(metricsResponse.status)
+        setMetrics(null)
         throw new Error(`Dashboard metrics failed: ${metricsResponse.status}`)
       }
       const data = await metricsResponse.json()
       console.log('Dashboard data received:', data)
       setMetrics(data)
+      setMetricsHttpStatus(200)
 
       // Process properties
       if (propertiesResponse.ok) {
@@ -259,19 +291,11 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
-      // Set empty metrics on error
-      setMetrics({
-        totalProperties: 0,
-        occupiedProperties: 0,
-        monthlyIncome: 0,
-        latePayments: 0,
-        propertyTypeBreakdown: {
-          house: 0,
-          doublewide: 0,
-          singlewide: 0,
-          loan: 0
-        }
-      })
+      // Do not convert auth/network failures into legitimate-looking zeros.
+      setMetrics(null)
+      if (error instanceof TypeError) {
+        setMetricsNetworkError(true)
+      }
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -610,11 +634,28 @@ export default function Dashboard() {
     }
   }
 
-  if (loading) {
+  const dashboardView = resolveProtectedDataView({
+    authStatus: auth.status,
+    loading,
+    httpStatus: metricsHttpStatus,
+    networkError: metricsNetworkError,
+    itemCount: metrics ? 1 : 0,
+    emptyMessage: 'Unable to load dashboard',
+    loadNoun: 'dashboard',
+  })
+
+  if (
+    dashboardView.kind === 'auth_pending' ||
+    loading ||
+    auth.status === 'loading'
+  ) {
     return (
       <div className="p-6">
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <p className="text-gray-500 mb-4" data-testid="dashboard-auth-pending">
+            Checking sign-in…
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="bg-white p-6 rounded-lg shadow">
@@ -624,6 +665,47 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (
+    dashboardView.kind === 'sign_in_required' ||
+    dashboardView.kind === 'session_expired'
+  ) {
+    return (
+      <div className="p-6 text-center space-y-3" data-testid="dashboard-auth-required">
+        <p className="text-gray-700 font-medium">{dashboardView.message}</p>
+        <a
+          href={logoutRedirectPath()}
+          className="inline-block px-4 py-2 bg-slate-900 text-white rounded-md text-sm"
+        >
+          Sign In
+        </a>
+      </div>
+    )
+  }
+
+  if (
+    dashboardView.kind === 'access_denied' ||
+    dashboardView.kind === 'unable_to_load' ||
+    dashboardView.kind === 'network_failure' ||
+    !metrics
+  ) {
+    return (
+      <div className="p-6 text-center space-y-3" data-testid="dashboard-load-error">
+        <p className="text-gray-700 font-medium">
+          {dashboardView.kind === 'ready' || dashboardView.kind === 'empty'
+            ? 'Unable to load dashboard'
+            : dashboardView.message}
+        </p>
+        <button
+          type="button"
+          onClick={() => void fetchDashboardData()}
+          className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm"
+        >
+          Retry
+        </button>
       </div>
     )
   }

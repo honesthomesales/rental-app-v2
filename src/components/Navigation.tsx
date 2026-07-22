@@ -18,6 +18,11 @@ import {
   ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
+import {
+  performLogoutAndRedirect,
+  useAuth,
+} from '@/components/auth/AuthProvider'
+import { logoutRedirectPath } from '@/lib/auth/session-state'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
@@ -137,11 +142,18 @@ function DealDocsNavItem({
 
 export function Navigation() {
   const pathname = usePathname()
+  const auth = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [communicationsEnabled, setCommunicationsEnabled] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
+    if (auth.status !== 'authenticated') {
+      setIsOwner(false)
+      setCommunicationsEnabled(false)
+      return
+    }
     void (async () => {
       try {
         const res = await fetch('/api/auth/session', {
@@ -158,7 +170,47 @@ export function Navigation() {
         /* ignore */
       }
     })()
-  }, [])
+  }, [auth.status])
+
+  const handleSignOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await performLogoutAndRedirect(auth.signOut)
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
+  const authStatusLabel =
+    auth.status === 'authenticated' && auth.email
+      ? `Signed in as ${auth.email}`
+      : auth.status === 'session_error'
+        ? 'Session expired'
+        : auth.status === 'loading'
+          ? 'Checking sign-in…'
+          : 'Sign in required'
+
+  const authAction =
+    auth.status === 'authenticated' ? (
+      <button
+        type="button"
+        disabled={signingOut}
+        onClick={() => void handleSignOut()}
+        className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0 disabled:opacity-60"
+        data-testid="sign-out-button"
+      >
+        {signingOut ? 'Signing out…' : 'Sign Out'}
+      </button>
+    ) : (
+      <a
+        href={logoutRedirectPath()}
+        className="px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 rounded-md shrink-0"
+        data-testid="sign-in-link"
+      >
+        Sign In
+      </a>
+    )
 
   const ownerNavigation = [
     ...(communicationsEnabled ? [ownerCommunicationsNav] : []),
@@ -256,19 +308,14 @@ export function Navigation() {
 
             <div className="hidden lg:flex items-center gap-2 xl:gap-4 min-w-0 max-w-[calc(100vw-11rem)] overflow-x-auto overscroll-x-contain">
               {desktopItems}
-              <button
-                type="button"
-                onClick={async () => {
-                  await fetch("/api/auth/logout", {
-                    method: "POST",
-                    credentials: "include",
-                  })
-                  window.location.href = "/login"
-                }}
-                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md shrink-0"
+              <span
+                className="text-xs text-gray-500 shrink-0 max-w-[14rem] truncate"
+                title={authStatusLabel}
+                data-testid="auth-status-label"
               >
-                Log out
-              </button>
+                {authStatusLabel}
+              </span>
+              {authAction}
             </div>
 
             <div className="lg:hidden flex items-center">
@@ -291,19 +338,28 @@ export function Navigation() {
           <div className="lg:hidden border-t border-gray-200 bg-white">
             <div className="px-2 pt-2 pb-3 space-y-1">
               {mobileItems}
-              <button
-                type="button"
-                onClick={async () => {
-                  await fetch("/api/auth/logout", {
-                    method: "POST",
-                    credentials: "include",
-                  })
-                  window.location.href = "/login"
-                }}
-                className="w-full text-left px-3 py-2 text-base font-medium text-gray-600 hover:bg-gray-50 rounded-md"
-              >
-                Log out
-              </button>
+              <div className="px-3 py-2 text-sm text-gray-500" data-testid="auth-status-label-mobile">
+                {authStatusLabel}
+              </div>
+              {auth.status === 'authenticated' ? (
+                <button
+                  type="button"
+                  disabled={signingOut}
+                  onClick={() => void handleSignOut()}
+                  className="w-full text-left px-3 py-2 text-base font-medium text-gray-600 hover:bg-gray-50 rounded-md disabled:opacity-60"
+                  data-testid="sign-out-button-mobile"
+                >
+                  {signingOut ? 'Signing out…' : 'Sign Out'}
+                </button>
+              ) : (
+                <a
+                  href={logoutRedirectPath()}
+                  className="block px-3 py-2 text-base font-medium text-blue-700 hover:bg-blue-50 rounded-md"
+                  data-testid="sign-in-link-mobile"
+                >
+                  Sign In
+                </a>
+              )}
             </div>
           </div>
         )}

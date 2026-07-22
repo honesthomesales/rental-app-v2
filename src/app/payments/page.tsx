@@ -11,6 +11,12 @@ import {
   type CommunicationTarget,
 } from '@/components/communications/TextTenantModal'
 import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
+import { useAuth } from '@/components/auth/AuthProvider'
+import {
+  resolveProtectedDataView,
+  shouldRunProtectedQueries,
+  logoutRedirectPath,
+} from '@/lib/auth/session-state'
 
 interface Lease {
   id: string
@@ -67,9 +73,12 @@ interface LeaseRow {
 
 export default function PaymentsPage() {
   const { features } = useCommunicationsFeatures()
+  const auth = useAuth()
   const communicationsEnabled = features.tenantCommunicationsEnabled
   const [leases, setLeases] = useState<LeaseRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [leasesHttpStatus, setLeasesHttpStatus] = useState<number | null>(null)
+  const [leasesNetworkError, setLeasesNetworkError] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [cadenceFilter, setCadenceFilter] = useState('all')
   const [selectedLease, setSelectedLease] = useState<LeaseRow | null>(null)
@@ -135,9 +144,18 @@ export default function PaymentsPage() {
   const [missingPreviewError, setMissingPreviewError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchLeases()
-    fetchProperties()
-  }, [])
+    if (!shouldRunProtectedQueries(auth.status)) {
+      if (auth.status !== 'loading') {
+        setLoading(false)
+        setLeases([])
+        setLeasesHttpStatus(null)
+        setLeasesNetworkError(false)
+      }
+      return
+    }
+    void fetchLeases()
+    void fetchProperties()
+  }, [auth.status])
 
   useEffect(() => {
     // intentionally no debug logging
@@ -207,7 +225,10 @@ return'<div class="s">'+l+'</div>';
 
   const fetchProperties = async () => {
     try {
-      const response = await fetch('/api/properties')
+      const response = await fetch('/api/properties', {
+        credentials: 'include',
+        cache: 'no-store',
+      })
       if (response.ok) {
         const data = await response.json()
         setProperties(data)
@@ -220,6 +241,8 @@ return'<div class="s">'+l+'</div>';
   const fetchLeases = async () => {
     try {
       setLoading(true)
+      setLeasesHttpStatus(null)
+      setLeasesNetworkError(false)
 
       const response = await fetch(
         '/api/portfolio/collections-summary?pageSize=200&sort=totalOwed_desc',
@@ -230,6 +253,7 @@ return'<div class="s">'+l+'</div>';
         console.error('API Error:', response.status, response.statusText)
         const errorData = await response.json().catch(() => ({}))
         console.error('Error details:', errorData)
+        setLeasesHttpStatus(response.status)
         setLeases([])
         return
       }
@@ -264,6 +288,7 @@ return'<div class="s">'+l+'</div>';
       }))
 
       setLeases(leasesWithData)
+      setLeasesHttpStatus(200)
 
       if (typeof window !== 'undefined') {
         const focusLease = new URLSearchParams(window.location.search).get(
@@ -281,6 +306,9 @@ return'<div class="s">'+l+'</div>';
       }
     } catch (error) {
       console.error('Error fetching leases:', error)
+      setLeasesNetworkError(true)
+      setLeases([])
+      setLeasesHttpStatus(null)
     } finally {
       setLoading(false)
     }
@@ -1330,6 +1358,16 @@ return'<div class="s">'+l+'</div>';
     })
   }
 
+  const leasesView = resolveProtectedDataView({
+    authStatus: auth.status,
+    loading,
+    httpStatus: leasesHttpStatus,
+    networkError: leasesNetworkError,
+    itemCount: filteredLeases.length,
+    emptyMessage: 'No active leases found',
+    loadNoun: 'leases',
+  })
+
   const handleSaveMiscIncome = async (incomeData: any) => {
     try {
       // Ensure interest_rate is exactly 9.9999 (not rounded)
@@ -1569,13 +1607,42 @@ return'<div class="s">'+l+'</div>';
 
         {/* Leases Table */}
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
+          {leasesView.kind === 'auth_pending' || loading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              <p className="text-gray-500" data-testid="payments-auth-pending">
+                {leasesView.kind === 'auth_pending'
+                  ? leasesView.message
+                  : 'Checking sign-in…'}
+              </p>
             </div>
-          ) : filteredLeases.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-500">No active leases found</p>
+          ) : leasesView.kind === 'sign_in_required' ||
+            leasesView.kind === 'session_expired' ? (
+            <div className="text-center py-12 space-y-3" data-testid="payments-auth-required">
+              <p className="text-gray-700 font-medium">{leasesView.message}</p>
+              <a
+                href={logoutRedirectPath()}
+                className="inline-block px-4 py-2 bg-slate-900 text-white rounded-md text-sm"
+              >
+                Sign In
+              </a>
+            </div>
+          ) : leasesView.kind === 'access_denied' ||
+            leasesView.kind === 'unable_to_load' ||
+            leasesView.kind === 'network_failure' ? (
+            <div className="text-center py-12 space-y-3" data-testid="payments-load-error">
+              <p className="text-gray-700 font-medium">{leasesView.message}</p>
+              <button
+                type="button"
+                onClick={() => void fetchLeases()}
+                className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm"
+              >
+                Retry
+              </button>
+            </div>
+          ) : leasesView.kind === 'empty' ? (
+            <div className="text-center py-12" data-testid="payments-empty">
+              <p className="text-gray-500">{leasesView.message}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">

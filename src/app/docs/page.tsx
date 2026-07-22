@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-/** Alias /docs → Deals / Docs documents view. */
+/** Alias /docs -> Deals / Docs documents view. */
 export default function DocsAliasRedirectPage() {
   const router = useRouter()
   useEffect(() => {
@@ -11,7 +11,7 @@ export default function DocsAliasRedirectPage() {
   }, [router])
   return (
     <div className="p-6">
-      <p className="text-sm text-gray-600">Opening Docs…</p>
+      <p className="text-sm text-gray-600">Opening Docs...</p>
     </div>
   )
 }

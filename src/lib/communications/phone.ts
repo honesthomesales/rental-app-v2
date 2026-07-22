@@ -43,9 +43,24 @@ export function isUsablePhone(input: string | null | undefined): boolean {
   return normalizeToE164(input) != null;
 }
 
-/** tel: href for Call Tenant (uses normalized E.164 when possible). */
+/** tel: href (legacy helper; Call Tenant UI removed). */
 export function telHref(input: string | null | undefined): string | null {
   const e164 = normalizeToE164(input);
   if (!e164) return null;
   return `tel:${e164}`;
+}
+
+/**
+ * sms: href for manual Text Tenant. Opens the device messaging app with
+ * optional prefilled body. Does not prove the message was sent.
+ */
+export function smsHref(
+  input: string | null | undefined,
+  body?: string | null,
+): string | null {
+  const e164 = normalizeToE164(input);
+  if (!e164) return null;
+  const base = `sms:${e164}`;
+  if (body == null || !String(body).trim()) return base;
+  return `${base}?&body=${encodeURIComponent(String(body))}`;
 }

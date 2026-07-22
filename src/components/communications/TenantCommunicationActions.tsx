@@ -1,56 +1,46 @@
 'use client'
 
-import { PhoneIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
-import { telHref, isUsablePhone } from '@/lib/communications/phone'
+import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
+import { isUsablePhone } from '@/lib/communications/phone'
 
 type Props = {
   phone?: string | null
   onText: () => void
-  /** When false, Text Tenant is hidden entirely (feature flag off). */
+  /** Kept for call-site compatibility; Text Tenant is always shown. */
   textEnabled?: boolean
   size?: 'sm' | 'lg'
   className?: string
 }
 
+/**
+ * Primary tenant contact action: Text Tenant (manual SMS workflow).
+ * Telephone call actions are not offered in the active interface.
+ */
 export function TenantCommunicationActions({
   phone,
   onText,
-  textEnabled = false,
   size = 'sm',
   className = '',
 }: Props) {
   const usable = isUsablePhone(phone)
-  const href = telHref(phone)
   const pad = size === 'lg' ? 'px-4 py-3 text-base' : 'px-3 py-2 text-sm'
   const icon = size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'
 
   return (
     <div className={`flex flex-wrap gap-2 ${className}`}>
-      <a
-        href={usable && href ? href : undefined}
-        aria-disabled={!usable}
-        onClick={(e) => {
-          if (!usable) e.preventDefault()
-        }}
-        className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium border ${pad} ${
+      <button
+        type="button"
+        onClick={onText}
+        title={
           usable
-            ? 'bg-white border-gray-300 text-gray-800 hover:bg-gray-50'
-            : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'
-        }`}
+            ? 'Prepare a text message for this tenant'
+            : 'Open Text Tenant (phone missing or invalid)'
+        }
+        className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 ${pad}`}
       >
-        <PhoneIcon className={icon} />
-        Call Tenant
-      </a>
-      {textEnabled && (
-        <button
-          type="button"
-          onClick={onText}
-          className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 ${pad}`}
-        >
-          <ChatBubbleLeftRightIcon className={icon} />
-          Text Tenant
-        </button>
-      )}
+        <ChatBubbleLeftRightIcon className={icon} aria-hidden />
+        Text Tenant
+      </button>
     </div>
   )
 }

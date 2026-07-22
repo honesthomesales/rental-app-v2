@@ -6,9 +6,11 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint src/app/tenant-accounts src/app/late-tenants src/app/last-paid src/app/pay src/app/api/missing-information src/app/api/tenant-payments src/app/api/communications/manual-activity src/components/missing-information src/components/communications/TenantCommunicationActions.tsx src/components/communications/TextTenantModal.tsx src/components/Navigation.tsx src/lib/missing-information src/lib/payments src/lib/format-whole-dollar.ts src/lib/communications/phone.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.enhancements.json",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:e2e": "node scripts/e2e-mobile-matrix.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.8",

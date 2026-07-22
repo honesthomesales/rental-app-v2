@@ -449,7 +449,7 @@ export default function TenantsPage() {
                     <div className="flex flex-col gap-2">
                       <TenantCommunicationActions
                         phone={tenant.phone}
-                        textEnabled={communicationsEnabled}
+                        textEnabled={true}
                         onText={() =>
                           setCommTarget({
                             tenantId: tenant.id,

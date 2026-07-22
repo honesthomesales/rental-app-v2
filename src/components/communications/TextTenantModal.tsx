@@ -1,15 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   MESSAGE_TEMPLATES,
-  isOutsideDaytimeHours,
   renderTemplate,
   smsSegmentInfo,
   type MessageTemplate,
 } from '@/lib/communications/templates'
 import type { TemplateContext, TemplateKey } from '@/lib/communications/types'
-import { telHref } from '@/lib/communications/phone'
+import { isUsablePhone, normalizeToE164, smsHref } from '@/lib/communications/phone'
 
 export type CommunicationTarget = {
   tenantId: string
@@ -34,8 +33,14 @@ type HistoryItem = {
   delivered_at: string | null
   failed_at: string | null
   error_message: string | null
-  sent_by_auth_user_id: string | null
 }
+
+type ManualActivityKind =
+  | 'text_prepared'
+  | 'message_copied'
+  | 'sms_app_opened'
+  | 'manually_sent'
+  | 'canceled'
 
 type Props = {
   open: boolean
@@ -43,25 +48,30 @@ type Props = {
   onClose: () => void
 }
 
-function consentLabel(status: string | null | undefined): string {
-  if (status === 'opted_out') return 'Opted out — outbound SMS blocked'
-  if (status === 'opted_in') return 'Opted in'
-  return 'Consent unknown — confirmation required to send'
-}
+const MANUAL_TEMPLATES: TemplateKey[] = [
+  'rent_due_reminder',
+  'late_payment_reminder',
+  'promise_to_pay',
+  'custom',
+]
 
 export function TextTenantModal({ open, target, onClose }: Props) {
+  const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previouslyFocused = useRef<HTMLElement | null>(null)
   const [loading, setLoading] = useState(false)
-  const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [statusNote, setStatusNote] = useState<string | null>(null)
   const [templateKey, setTemplateKey] = useState<TemplateKey>('rent_due_reminder')
   const [messageBody, setMessageBody] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>([])
-  const [preference, setPreference] = useState<{ sms_consent_status?: string } | null>(null)
-  const [phoneSuppressed, setPhoneSuppressed] = useState(false)
-  const [canDraft, setCanDraft] = useState(false)
-  const [providerMessage, setProviderMessage] = useState<string | null>(null)
-  const [featureMessage, setFeatureMessage] = useState<string | null>(null)
-  const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [recording, setRecording] = useState(false)
+
+  const phoneE164 = useMemo(
+    () => normalizeToE164(target?.phone),
+    [target?.phone],
+  )
+  const phoneUsable = isUsablePhone(target?.phone)
 
   const ctx: TemplateContext = useMemo(
     () => ({
@@ -86,16 +96,62 @@ export function TextTenantModal({ open, target, onClose }: Props) {
     [ctx],
   )
 
+  const recordActivity = useCallback(
+    async (kind: ManualActivityKind, body?: string) => {
+      if (!target?.tenantId) return
+      setRecording(true)
+      try {
+        await fetch('/api/communications/manual-activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantId: target.tenantId,
+            propertyId: target.propertyId || null,
+            leaseId: target.leaseId || null,
+            kind,
+            message: body ?? messageBody,
+            templateKey,
+            // Never claim provider delivery
+            deliveryStatus: 'manual_unverified',
+          }),
+        })
+      } catch {
+        /* recording is best-effort when schema/flags unavailable */
+      } finally {
+        setRecording(false)
+      }
+    },
+    [messageBody, target, templateKey],
+  )
+
   useEffect(() => {
     if (!open || !target?.tenantId) return
     let cancelled = false
+    previouslyFocused.current = document.activeElement as HTMLElement | null
     setLoading(true)
     setError(null)
-    setIdempotencyKey(
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `idem_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    )
+    setStatusNote(null)
+    applyTemplate('rent_due_reminder')
+
+    void (async () => {
+      try {
+        await fetch('/api/communications/manual-activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantId: target.tenantId,
+            propertyId: target.propertyId || null,
+            leaseId: target.leaseId || null,
+            kind: 'text_prepared',
+            message: '',
+            templateKey: 'rent_due_reminder',
+            deliveryStatus: 'manual_unverified',
+          }),
+        })
+      } catch {
+        /* ignore */
+      }
+    })()
 
     ;(async () => {
       try {
@@ -104,196 +160,196 @@ export function TextTenantModal({ open, target, onClose }: Props) {
         )
         const data = await res.json()
         if (cancelled) return
-
-        if (data.comingSoon || data.code === 'COMMUNICATIONS_DISABLED') {
-          setFeatureMessage('Coming soon')
-          setCanDraft(false)
-        } else if (data.code === 'COMMUNICATIONS_NOT_CONFIGURED') {
-          setFeatureMessage('Communication Center not configured')
-          setCanDraft(false)
-        } else {
-          setFeatureMessage(null)
-          setCanDraft(Boolean(data.canDraft))
-        }
-
-        setProviderMessage(data.provider?.message || null)
-        setPreference(data.preference || null)
-        setPhoneSuppressed(Boolean(data.phoneSuppression?.is_suppressed))
         setHistory(Array.isArray(data.messages) ? data.messages : [])
-        applyTemplate('rent_due_reminder')
       } catch {
-        if (!cancelled) {
-          setError('Failed to load communication history')
-          setCanDraft(false)
-        }
+        if (!cancelled) setHistory([])
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
 
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
     return () => {
       cancelled = true
+      document.body.style.overflow = previousOverflow
+      previouslyFocused.current?.focus?.()
     }
-  }, [open, target?.tenantId, applyTemplate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once per tenant
+  }, [open, target?.tenantId])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        void recordActivity('canceled')
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    queueMicrotask(() => {
+      dialogRef.current?.querySelector<HTMLElement>('button, select, textarea')?.focus()
+    })
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose, recordActivity])
 
   const segment = smsSegmentInfo(messageBody)
-  const outsideHours = isOutsideDaytimeHours()
-  const optedOut = preference?.sms_consent_status === 'opted_out'
-  const callLink = telHref(target?.phone)
   const selectedTemplate: MessageTemplate | undefined = MESSAGE_TEMPLATES.find(
     (t) => t.key === templateKey,
   )
+  const openSmsLink = smsHref(target?.phone, messageBody)
 
-  const handleAddDraft = async () => {
-    if (!target) return
-    setSending(true)
-    setError(null)
+  const handleCopy = async () => {
     try {
-      const res = await fetch('/api/communications/approvals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: target.tenantId,
-          propertyId: target.propertyId || null,
-          leaseId: target.leaseId || null,
-          phone: target.phone,
-          message: messageBody,
-          templateKey,
-          idempotencyKey,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Failed to add message to approval list')
-        return
-      }
-      setIdempotencyKey(
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `idem_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      )
-      onClose()
+      await navigator.clipboard.writeText(messageBody)
+      setStatusNote('Message copied. Delivery was not confirmed.')
+      await recordActivity('message_copied')
     } catch {
-      setError('Failed to add message to approval list')
-    } finally {
-      setSending(false)
+      setError('Could not copy message')
     }
+  }
+
+  const handleOpenSms = async () => {
+    if (!openSmsLink) {
+      setError('Stored mobile number is missing or invalid')
+      return
+    }
+    await recordActivity('sms_app_opened')
+    setStatusNote(
+      'Messaging app opened. Opening SMS does not prove the message was sent or delivered.',
+    )
+    window.location.href = openSmsLink
+  }
+
+  const handleMarkManuallySent = async () => {
+    await recordActivity('manually_sent')
+    setStatusNote('Recorded as manually sent (unverified). Not treated as provider delivery.')
+  }
+
+  const handleCancel = async () => {
+    await recordActivity('canceled')
+    onClose()
   }
 
   if (!open || !target) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-gray-900/50 p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-lg rounded-t-xl max-h-[95vh] flex flex-col shadow-xl">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-gray-900/50 p-0 sm:p-4"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) void handleCancel()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="bg-white w-full sm:max-w-lg sm:rounded-lg rounded-t-xl max-h-[min(95vh,100dvh)] flex flex-col shadow-xl min-w-0"
+      >
         <div className="px-4 py-3 border-b border-gray-200 shrink-0">
-          <h2 className="text-lg font-semibold text-gray-900">Compose Tenant Message</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-gray-900">
+            Text Tenant
+          </h2>
           <p className="text-sm text-gray-600 mt-1">{target.tenantName}</p>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-4 py-3 space-y-3">
-          {featureMessage && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-md p-3">
-              {featureMessage}
-            </div>
-          )}
-
+        <div className="overflow-y-auto flex-1 px-4 py-3 space-y-3 overscroll-contain">
           <div className="grid grid-cols-1 gap-1 text-sm">
             <div>
               <span className="text-gray-500">Property: </span>
-              <span className="font-medium">{target.propertyLabel || '—'}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Lease status: </span>
-              <span className="font-medium">{target.leaseStatus || '—'}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Phone: </span>
-              <span className="font-medium">{target.phone || 'No phone on file'}</span>
-              {callLink && (
-                <a href={callLink} className="ml-2 text-blue-600 underline text-sm">
-                  Call
-                </a>
-              )}
-            </div>
-            <div>
-              <span className="text-gray-500">Consent: </span>
-              <span
-                className={`font-medium ${
-                  optedOut ? 'text-red-700' : preference?.sms_consent_status === 'opted_in' ? 'text-green-700' : 'text-amber-700'
-                }`}
-              >
-                {consentLabel(preference?.sms_consent_status)}
+              <span className="font-medium break-words">
+                {target.propertyLabel || '—'}
               </span>
             </div>
-            {phoneSuppressed && (
-              <div className="font-medium text-red-700">
-                Global phone suppression active — sending is blocked
+            <div>
+              <label className="text-gray-500" htmlFor="text-tenant-phone">
+                Stored mobile:{' '}
+              </label>
+              <span id="text-tenant-phone" className="font-medium break-all">
+                {phoneE164 || target.phone || 'No phone on file'}
+              </span>
+            </div>
+            {!phoneUsable && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-md p-3">
+                Missing or invalid phone. You can still prepare and copy a message,
+                but Open SMS App requires a usable number.
               </div>
             )}
           </div>
 
-          {providerMessage && (
-            <div className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-md p-3">
-              {providerMessage}
-            </div>
-          )}
-
-          {outsideHours && (
-            <div className="bg-orange-50 border border-orange-200 text-orange-900 text-sm rounded-md p-3">
-              Outside normal daytime hours (8am–8pm tenant local time).
-              Owner-approved messages will be scheduled, not sent immediately.
-            </div>
-          )}
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Template</label>
+            <label
+              htmlFor="text-tenant-template"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Message template
+            </label>
             <select
+              id="text-tenant-template"
               value={templateKey}
               onChange={(e) => applyTemplate(e.target.value as TemplateKey)}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             >
-              {MESSAGE_TEMPLATES.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
-                </option>
-              ))}
+              {MESSAGE_TEMPLATES.filter((t) => MANUAL_TEMPLATES.includes(t.key)).map(
+                (t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ),
+              )}
             </select>
-            {selectedTemplate?.requiresManualReview && (
-              <p className="mt-1 text-xs text-amber-800">
-                Eviction Process Notice requires manual review and confirmation. This is not an automated legal notice.
-              </p>
+            {selectedTemplate?.key === 'late_payment_reminder' && (
+              <p className="mt-1 text-xs text-gray-500">Past-due reminder template.</p>
+            )}
+            {selectedTemplate?.key === 'promise_to_pay' && (
+              <p className="mt-1 text-xs text-gray-500">Promise-to-pay follow-up template.</p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+            <label
+              htmlFor="text-tenant-message"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Editable message
+            </label>
             <textarea
+              id="text-tenant-message"
               value={messageBody}
-              onChange={(e) => {
-                setMessageBody(e.target.value)
-              }}
+              onChange={(e) => setMessageBody(e.target.value)}
               rows={5}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm resize-y min-h-[120px]"
               placeholder="Type your message…"
             />
-            <div className="mt-1 flex justify-between text-xs text-gray-500">
-              <span>
-                {segment.characters} characters · {segment.segments} SMS segment
-                {segment.segments === 1 ? '' : 's'}
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Preview</label>
-            <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm whitespace-pre-wrap break-words">
-              {messageBody || <span className="text-gray-400">Empty message</span>}
+            <div className="mt-1 text-xs text-gray-500">
+              {segment.characters} characters · {segment.segments} SMS segment
+              {segment.segments === 1 ? '' : 's'}
             </div>
           </div>
 
           <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm rounded-md p-3">
-            Adding this message creates an approval draft only. No SMS is sent
-            until the owner separately selects “Approve and Send.”
+            Manual SMS only. Opening the messaging app does not prove the message
+            was sent or delivered. Provider auto-send remains disabled unless
+            separately approved.
           </div>
 
           <div>
@@ -303,41 +359,28 @@ export function TextTenantModal({ open, target, onClose }: Props) {
             ) : history.length === 0 ? (
               <p className="text-sm text-gray-500">No messages yet.</p>
             ) : (
-              <ul className="space-y-2 max-h-48 overflow-y-auto">
+              <ul className="space-y-2 max-h-40 overflow-y-auto">
                 {history.map((m) => (
                   <li
                     key={m.id}
-                    className={`rounded-md border p-2 text-sm ${
-                      m.direction === 'outbound'
-                        ? 'border-blue-100 bg-blue-50'
-                        : 'border-gray-200 bg-white'
-                    }`}
+                    className="rounded-md border border-gray-200 bg-white p-2 text-sm"
                   >
-                    <div className="flex justify-between gap-2 text-xs text-gray-500 mb-1">
-                      <span>
-                        {m.direction === 'outbound' ? 'Outbound' : 'Inbound'} · {m.channel} ·{' '}
-                        {m.status}
-                        {m.template_key ? ` · ${m.template_key}` : ''}
-                      </span>
-                      <span className="shrink-0">
-                        {new Date(m.created_at).toLocaleString('en-US', {
-                          timeZone: 'America/New_York',
-                        })}
-                      </span>
+                    <div className="text-xs text-gray-500 mb-1">
+                      {m.status}
+                      {m.template_key ? ` · ${m.template_key}` : ''}
                     </div>
                     <p className="whitespace-pre-wrap break-words text-gray-900">{m.body}</p>
-                    {m.error_message && (
-                      <p className="text-xs text-red-600 mt-1">{m.error_message}</p>
-                    )}
-                    {m.delivered_at && (
-                      <p className="text-xs text-green-700 mt-1">Delivered</p>
-                    )}
                   </li>
                 ))}
               </ul>
             )}
           </div>
 
+          {statusNote && (
+            <div className="bg-green-50 border border-green-200 text-green-900 text-sm rounded-md p-3">
+              {statusNote}
+            </div>
+          )}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md p-3">
               {error}
@@ -345,29 +388,39 @@ export function TextTenantModal({ open, target, onClose }: Props) {
           )}
         </div>
 
-        <div className="px-4 py-3 border-t border-gray-200 flex flex-col sm:flex-row gap-2 shrink-0 bg-white">
+        <div className="px-4 py-3 border-t border-gray-200 flex flex-col gap-2 shrink-0 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              disabled={!messageBody.trim()}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+            >
+              Copy Message
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleOpenSms()}
+              disabled={!openSmsLink || !messageBody.trim()}
+              className="w-full px-4 py-3 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Open SMS App
+            </button>
+          </div>
           <button
             type="button"
-            onClick={onClose}
-            className="w-full sm:w-auto px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+            onClick={() => void handleMarkManuallySent()}
+            disabled={recording || !messageBody.trim()}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
           >
-            Cancel
+            Record Activity (manually sent, unverified)
           </button>
           <button
             type="button"
-            disabled={
-              sending ||
-              loading ||
-              !canDraft ||
-              !messageBody.trim() ||
-              Boolean(featureMessage)
-            }
-            onClick={handleAddDraft}
-            className="w-full sm:flex-1 px-4 py-3 rounded-lg text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700"
+            onClick={() => void handleCancel()}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
           >
-            {sending
-              ? 'Adding…'
-              : 'Add to Approval List'}
+            Cancel
           </button>
         </div>
       </div>

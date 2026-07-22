@@ -1706,7 +1706,7 @@ return'<div class="s">'+l+'</div>';
                         <div className="flex flex-col items-center gap-2">
                           <TenantCommunicationActions
                             phone={row.tenant?.phone}
-                            textEnabled={communicationsEnabled}
+                            textEnabled={true}
                             onText={() =>
                               setCommTarget({
                                 tenantId: row.tenant?.id || row.lease.tenant_id,

@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "baseUrl": "."
+  },
+  "files": [
+    "src/lib/format-whole-dollar.ts",
+    "src/lib/communications/phone.ts",
+    "src/lib/payments/feature-flags.ts",
+    "src/lib/payments/types.ts",
+    "src/lib/payments/provider.ts",
+    "src/app/late-tenants/page.tsx",
+    "src/app/last-paid/page.tsx",
+    "src/components/communications/TenantCommunicationActions.tsx"
+  ]
+}

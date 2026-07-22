@@ -11,6 +11,8 @@ import {
   PencilIcon,
   ArrowPathIcon
 } from '@heroicons/react/24/outline'
+import { MissingInformationButton } from '@/components/missing-information/MissingInformationButton'
+import { formatWholeDollarDisplay } from '@/lib/format-whole-dollar'
 
 /**
  * Insurance + Property Tax tables and dashboard metrics API: only these property_type values.
@@ -627,13 +629,15 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
+    <div className="p-4 sm:p-6 min-w-0 overflow-x-hidden">
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold text-gray-900">Dashboard 1.4</h1>
           <p className="text-gray-600 mt-2">Rental properties overview</p>
         </div>
-        <button
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <MissingInformationButton />
+          <button
           onClick={() => fetchDashboardData(true)}
           disabled={refreshing}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -642,6 +646,7 @@ export default function Dashboard() {
           <ArrowPathIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
           <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
+        </div>
       </div>
 
       {/* Key Metrics */}
@@ -674,7 +679,9 @@ export default function Dashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Monthly Income</p>
-              <p className="text-2xl font-semibold text-gray-900">${metrics?.monthlyIncome?.toLocaleString() || 0}</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {formatWholeDollarDisplay(metrics?.monthlyIncome)}
+              </p>
               <p className="text-xs text-green-600 mt-1 font-medium">Click to view/edit</p>
             </div>
           </div>
@@ -710,19 +717,19 @@ export default function Dashboard() {
                 <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                   <span className="text-gray-600">Current:</span>{' '}
                   <span className={metrics?.currentProfit && metrics.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                    ${metrics?.currentProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                    {formatWholeDollarDisplay(metrics?.currentProfit)}
                   </span>
                 </div>
                 <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                   <span className="text-gray-600">Potential:</span>{' '}
                   <span className={metrics?.potentialProfit && metrics.potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                    ${metrics?.potentialProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                    {formatWholeDollarDisplay(metrics?.potentialProfit)}
                   </span>
                 </div>
                 <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                   <span className="text-gray-600">Potential with No House Debt:</span>{' '}
                   <span className={metrics?.potentialProfitNoHouseDebt && metrics.potentialProfitNoHouseDebt >= 0 ? 'text-green-600' : 'text-red-600'}>
-                    ${metrics?.potentialProfitNoHouseDebt?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                    {formatWholeDollarDisplay(metrics?.potentialProfitNoHouseDebt)}
                   </span>
                 </div>
               </div>

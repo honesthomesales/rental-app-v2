@@ -205,7 +205,10 @@ describe("approval-first authorization and sending", () => {
     const modal = readSrc(
       "src/components/communications/TextTenantModal.tsx",
     );
-    expect(modal).toContain("/api/communications/approvals");
+    // Manual SMS workflow records activity; provider send remains approval-gated.
+    expect(modal).toContain("/api/communications/manual-activity");
+    expect(modal).toContain("Open SMS App");
+    expect(modal).toContain("manual_unverified");
     expect(modal).not.toContain("/api/communications/send");
     const direct = readSrc("src/app/api/communications/send/route.ts");
     expect(direct).toContain("APPROVAL_REQUIRED");
@@ -565,14 +568,18 @@ describe("schema, UI, and financial isolation", () => {
     for (const page of [
       "src/app/tenants/page.tsx",
       "src/app/leases/page.tsx",
-      "src/app/late-tenants/page.tsx",
+      "src/components/tenant-accounts/LateTenantsPanel.tsx",
       "src/app/payments/page.tsx",
     ]) {
       const src = readSrc(page);
       expect(src).toMatch(/TenantCommunicationActions|TextTenantModal/);
-      expect(src).toContain("textEnabled={communicationsEnabled}");
-      expect(src).toContain("useCommunicationsFeatures");
+      expect(src).toContain("textEnabled={true}");
     }
+    const actions = readSrc(
+      "src/components/communications/TenantCommunicationActions.tsx",
+    );
+    expect(actions).toContain("Text Tenant");
+    expect(actions).not.toContain("Call Tenant");
   });
 
   it("hides Communication Approvals nav and shows disabled page when flag is off", () => {

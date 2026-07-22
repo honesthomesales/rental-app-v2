@@ -33,8 +33,6 @@ export const metadata: Metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   themeColor: "#3b82f6",
 };
 
@@ -51,7 +49,7 @@ export default function RootLayout({
         <ErrorBoundaryWrapper>
           <div className="min-h-screen bg-gray-50">
             <Navigation />
-            <main className="flex-1">
+            <main className="flex-1 min-w-0 overflow-x-hidden pb-8">
               {children}
             </main>
             <PWAInstaller />

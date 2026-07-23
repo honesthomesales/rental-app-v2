@@ -4,7 +4,9 @@
  */
 
 function envTrue(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  return env[name] === "true";
+  const raw = env[name];
+  if (raw == null) return false;
+  return raw.trim().replace(/^["']|["']$/g, "").toLowerCase() === "true";
 }
 
 export function isTenantPaymentPortalEnabled(

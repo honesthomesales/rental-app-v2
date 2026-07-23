@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatCents } from "@/lib/payments/money";
+import { getBusinessDate } from "@/lib/business-date";
 
 type QueuePayload = {
   matches: Array<{
@@ -26,8 +27,15 @@ type QueuePayload = {
     rent_amount_cents: number;
     tenant_id: string;
     lease_id: string;
+    property_id?: string | null;
     tenant_reference_code: string | null;
     created_at: string;
+    tenant_name?: string | null;
+    property_label?: string | null;
+    sender_name?: string | null;
+    payment_note?: string | null;
+    tenant_href?: string | null;
+    lease_href?: string | null;
   }>;
   exceptions: Array<{
     id: string;
@@ -65,8 +73,8 @@ export default function IncomingPaymentsPage() {
     void load();
   }, [load]);
 
-  async function act(body: Record<string, string>) {
-    setBusy(body.attemptId || body.matchId || "x");
+  async function act(body: Record<string, string | number>) {
+    setBusy(String(body.attemptId || body.matchId || "x"));
     try {
       const res = await fetch("/api/staff/incoming-payments", {
         method: "POST",
@@ -83,6 +91,34 @@ export default function IncomingPaymentsPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function confirmReceived(row: QueuePayload["awaitingVerification"][0]) {
+    const amount = formatCents(row.rent_amount_cents);
+    const receivedDate = getBusinessDate();
+    const ok = window.confirm(
+      [
+        "Confirm Received?",
+        "",
+        `Tenant: ${row.tenant_name || row.tenant_id}`,
+        `Property: ${row.property_label || "—"}`,
+        `Method: ${row.method}`,
+        `Amount received: ${amount}`,
+        `Date received: ${receivedDate}`,
+        `Reference: ${row.tenant_reference_code || "—"}`,
+        `Sender: ${row.sender_name || "—"}`,
+        "",
+        "This will create exactly one settled payment and update the balance.",
+      ].join("\n"),
+    );
+    if (!ok) return;
+    void act({
+      action: "confirm_attempt",
+      attemptId: row.id,
+      confirmedAmountCents: row.rent_amount_cents,
+      receivedDate,
+      confirmedMethod: row.method,
+    });
   }
 
   return (
@@ -107,53 +143,115 @@ export default function IncomingPaymentsPage() {
           <table className="min-w-full text-left text-sm">
             <thead className="border-b text-xs text-gray-500">
               <tr>
-                <th className="py-2 pr-3">Created</th>
+                <th className="py-2 pr-3">Submitted</th>
+                <th className="py-2 pr-3">Tenant / Property</th>
                 <th className="py-2 pr-3">Method</th>
-                <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Amount</th>
-                <th className="py-2 pr-3">Reference</th>
+                <th className="py-2 pr-3">Reference / Sender</th>
+                <th className="py-2 pr-3">Status</th>
                 <th className="py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {(data?.awaitingVerification || []).map((row) => (
-                <tr key={row.id} className="border-b border-gray-100">
+                <tr key={row.id} className="border-b border-gray-100 align-top">
                   <td className="py-2 pr-3 whitespace-nowrap">
                     {new Date(row.created_at).toLocaleString()}
                   </td>
-                  <td className="py-2 pr-3">{row.method}</td>
-                  <td className="py-2 pr-3">{row.status}</td>
-                  <td className="py-2 pr-3">{formatCents(row.rent_amount_cents)}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    {row.tenant_reference_code || "—"}
+                  <td className="py-2 pr-3">
+                    <div className="font-medium text-gray-900">
+                      {row.tenant_name || "Tenant"}
+                    </div>
+                    <div className="text-xs text-gray-500 break-words">
+                      {row.property_label || "—"}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                      {row.tenant_href && (
+                        <a className="text-blue-700 hover:underline" href={row.tenant_href}>
+                          Open Tenant
+                        </a>
+                      )}
+                      {row.lease_href && (
+                        <a className="text-blue-700 hover:underline" href={row.lease_href}>
+                          Open Lease
+                        </a>
+                      )}
+                      <a
+                        className="text-blue-700 hover:underline"
+                        href={`/payments?leaseId=${encodeURIComponent(row.lease_id)}`}
+                      >
+                        Payment History
+                      </a>
+                    </div>
                   </td>
-                  <td className="py-2 space-x-2">
-                    <button
-                      type="button"
-                      disabled={busy === row.id}
-                      className="rounded bg-green-600 px-2 py-1 text-xs text-white disabled:opacity-50"
-                      onClick={() =>
-                        void act({ action: "confirm_attempt", attemptId: row.id })
-                      }
-                    >
-                      Post Payment
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === row.id}
-                      className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-800 disabled:opacity-50"
-                      onClick={() =>
-                        void act({ action: "reject_attempt", attemptId: row.id })
-                      }
-                    >
-                      Reject
-                    </button>
+                  <td className="py-2 pr-3">{row.method}</td>
+                  <td className="py-2 pr-3">{formatCents(row.rent_amount_cents)}</td>
+                  <td className="py-2 pr-3">
+                    <div className="font-mono text-xs">
+                      {row.tenant_reference_code || "—"}
+                    </div>
+                    <div className="text-xs text-gray-500 break-words">
+                      {row.sender_name || "—"}
+                      {row.payment_note ? ` · ${row.payment_note}` : ""}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">{row.status}</td>
+                  <td className="py-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busy === row.id || row.status !== "awaiting_verification"}
+                        className="rounded bg-green-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                        onClick={() => confirmReceived(row)}
+                      >
+                        Confirm Received
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy === row.id}
+                        className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-800 disabled:opacity-50"
+                        onClick={() => {
+                          const reason =
+                            window.prompt("Reject reason (optional):") || "";
+                          void act({
+                            action: "reject_attempt",
+                            attemptId: row.id,
+                            reason,
+                          });
+                        }}
+                      >
+                        Reject / Not Received
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy === row.id}
+                        className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-800 disabled:opacity-50"
+                        onClick={() =>
+                          void act({
+                            action: "mark_attempt_duplicate",
+                            attemptId: row.id,
+                          })
+                        }
+                      >
+                        Mark Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy === row.id}
+                        className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 disabled:opacity-50"
+                        onClick={() =>
+                          void act({ action: "leave_awaiting", attemptId: row.id })
+                        }
+                      >
+                        Leave Awaiting
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {(data?.awaitingVerification || []).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-gray-500">
+                  <td colSpan={7} className="py-4 text-gray-500">
                     No pending portal attempts.
                   </td>
                 </tr>

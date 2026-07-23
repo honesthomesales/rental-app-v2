@@ -3,6 +3,11 @@
  * Default OFF. Never expose secrets via NEXT_PUBLIC_*.
  */
 
+import {
+  hasCashAppDestination,
+  hasZelleDestination,
+} from "@/lib/payments/destinations";
+
 function envTrue(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env[name];
   if (raw == null) return false;
@@ -98,7 +103,7 @@ export function methodDisabledResponse(method: string) {
   };
 }
 
-/** Safe booleans for staff UI (no secrets). */
+/** Safe booleans for staff/portal UI (no secrets). Methods require destinations. */
 export function getPaymentPublicFeatureFlags(
   env: NodeJS.ProcessEnv = process.env,
 ) {
@@ -107,8 +112,9 @@ export function getPaymentPublicFeatureFlags(
     achEnabled: isTenantAchEnabled(env),
     cardEnabled: isTenantCardEnabled(env),
     cashAppPayEnabled: isTenantCashAppPayEnabled(env),
-    existingCashAppEnabled: isTenantExistingCashAppEnabled(env),
-    zelleEnabled: isTenantZelleEnabled(env),
+    existingCashAppEnabled:
+      isTenantExistingCashAppEnabled(env) && hasCashAppDestination(env),
+    zelleEnabled: isTenantZelleEnabled(env) && hasZelleDestination(env),
     feeEngineEnabled: isPaymentFeeEngineEnabled(env),
     bankReconciliationEnabled: isBankReconciliationEnabled(env),
     bankAutoMatchEnabled: isBankAutoMatchEnabled(env),

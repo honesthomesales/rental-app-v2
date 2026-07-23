@@ -1,15 +1,34 @@
 import { supabaseServer } from "@/lib/supabase-server";
 
-function normalizeEmail(value: string): string {
+export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function normalizePhone(value: string): string {
+export function normalizePhone(value: string): string {
   const digits = value.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   if (value.trim().startsWith("+")) return value.trim();
   return value.trim();
+}
+
+export class ContactDuplicateError extends Error {
+  readonly code = "DUPLICATE_CONTACT" as const;
+  constructor(readonly contactType: "phone" | "email") {
+    super("DUPLICATE_CONTACT");
+    this.name = "ContactDuplicateError";
+  }
+}
+
+function isUniqueViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === "23505") return true;
+  const msg = (error.message || "").toLowerCase();
+  return (
+    msg.includes("duplicate key") ||
+    msg.includes("unique constraint") ||
+    msg.includes("idx_rent_v3_contacts_active_normalized")
+  );
 }
 
 export async function listActiveContacts(tenantId: string) {
@@ -46,6 +65,19 @@ export async function addContactPoint(args: {
     throw new Error("INVALID_PHONE");
   }
 
+  // Soft pre-check (same tenant only). Do not probe other tenants.
+  const { data: existingActive } = await supabaseServer
+    .from("RENT_v3_tenant_contact_points")
+    .select("id")
+    .eq("tenant_id", args.tenantId)
+    .eq("contact_type", args.contactType)
+    .eq("normalized_value", normalized)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (existingActive) {
+    throw new ContactDuplicateError(args.contactType);
+  }
+
   const { data: inserted, error } = await supabaseServer
     .from("RENT_v3_tenant_contact_points")
     .insert({
@@ -64,7 +96,12 @@ export async function addContactPoint(args: {
     .select("*")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isUniqueViolation(error)) {
+      throw new ContactDuplicateError(args.contactType);
+    }
+    throw new Error(error.message);
+  }
 
   if (args.makePrimary) {
     await supabaseServer

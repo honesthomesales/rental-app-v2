@@ -7,6 +7,10 @@ import {
 import { resolvePortalAccess } from "@/lib/payments/portal-access";
 import { buildPortalAccountSummary } from "@/lib/payments/portal-account";
 import { listActiveContacts } from "@/lib/payments/contacts";
+import {
+  getCashAppDestination,
+  getZelleDestination,
+} from "@/lib/payments/destinations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -51,15 +55,14 @@ export async function GET(
       })),
       flags: getPaymentPublicFeatureFlags(),
       destinations: {
-        cashApp: process.env.EXISTING_CASH_APP_DESTINATION || null,
-        zelle: process.env.EXISTING_ZELLE_DESTINATION || null,
+        cashApp: getCashAppDestination(),
+        zelle: getZelleDestination(),
       },
     });
   } catch (error) {
     return NextResponse.json(
       {
         error: "Failed to load portal account",
-        details: error instanceof Error ? error.message : "Unknown",
       },
       { status: 500 },
     );

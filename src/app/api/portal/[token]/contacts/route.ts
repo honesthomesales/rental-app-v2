@@ -7,11 +7,18 @@ import {
 import { resolvePortalAccess } from "@/lib/payments/portal-access";
 import {
   addContactPoint,
+  ContactDuplicateError,
   inactivateContactPoint,
   listActiveContacts,
 } from "@/lib/payments/contacts";
 
 export const dynamic = "force-dynamic";
+
+function duplicateMessage(contactType: "phone" | "email") {
+  return contactType === "email"
+    ? "That email address is already on this account."
+    : "That phone number is already on this account.";
+}
 
 export async function GET(
   _request: NextRequest,
@@ -85,6 +92,12 @@ export async function POST(
     }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (error instanceof ContactDuplicateError) {
+      return NextResponse.json(
+        { error: duplicateMessage(error.contactType), code: "DUPLICATE_CONTACT" },
+        { status: 409 },
+      );
+    }
     const message = error instanceof Error ? error.message : "contact_failed";
     const status = message.includes("CANNOT_") || message.includes("INVALID_") ? 400 : 500;
     return NextResponse.json({ error: message }, { status });

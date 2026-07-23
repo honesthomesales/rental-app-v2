@@ -8,6 +8,10 @@ import { buildAccountLedger } from "@/lib/portfolio-ledger/service";
 import { getBusinessDate } from "@/lib/business-date";
 import { derivePaymentReference } from "@/lib/payments/tokens";
 import { dollarsToCents } from "@/lib/payments/money";
+import {
+  getPaymentSupportEmail,
+  getPaymentSupportPhone,
+} from "@/lib/payments/destinations";
 
 export type PortalAccountSummary = {
   businessName: string;
@@ -149,7 +153,7 @@ export async function buildPortalAccountSummary(args: {
       method: p.payment_method,
       status: p.status || "completed",
     })),
-    helpEmail: process.env.TENANT_PORTAL_SUPPORT_EMAIL || null,
-    helpPhone: process.env.TENANT_PORTAL_SUPPORT_PHONE || null,
+    helpEmail: getPaymentSupportEmail(),
+    helpPhone: getPaymentSupportPhone(),
   };
 }

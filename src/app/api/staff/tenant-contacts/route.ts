@@ -3,6 +3,7 @@ import { isAuthError, requireApiAuth } from "@/lib/auth/api-auth";
 import { supabaseServer } from "@/lib/supabase-server";
 import {
   addContactPoint,
+  ContactDuplicateError,
   inactivateContactPoint,
   listActiveContacts,
 } from "@/lib/payments/contacts";
@@ -119,6 +120,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (error instanceof ContactDuplicateError) {
+      const msg =
+        error.contactType === "email"
+          ? "That email address is already on this account."
+          : "That phone number is already on this account.";
+      return NextResponse.json({ error: msg, code: "DUPLICATE_CONTACT" }, { status: 409 });
+    }
     const message = error instanceof Error ? error.message : "contact_failed";
     const status = message.includes("CANNOT_") || message.includes("INVALID_") ? 400 : 500;
     return NextResponse.json({ error: message }, { status });

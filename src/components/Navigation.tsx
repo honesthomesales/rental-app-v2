@@ -29,7 +29,8 @@ const navigation = [
   { name: 'Properties', href: '/properties', icon: BuildingOfficeIcon },
   { name: 'Tenants', href: '/tenants', icon: UsersIcon },
   { name: 'Leases', href: '/leases', icon: DocumentTextIcon },
-  { name: 'Deals / Docs', href: '/deals-docs?view=deals', icon: ShoppingBagIcon },
+  // Compact nav label prevents horizontal menu scroll; page title remains Deals slash Docs.
+  { name: 'Deals/Docs', href: '/deals-docs?view=deals', icon: ShoppingBagIcon },
   { name: 'Payments', href: '/payments', icon: CurrencyDollarIcon },
   { name: 'Tenant Accounts', href: '/tenant-accounts?view=late', icon: ExclamationTriangleIcon },
   { name: 'Expenses', href: '/expenses', icon: ReceiptPercentIcon },
@@ -160,18 +161,13 @@ export function Navigation() {
           pathname === '/deals' ||
           pathname === '/documents' ||
           pathname === '/docs'))
-    const isTenantAccounts = item.name === 'Tenant Accounts'
     const baseClass =
       layout === 'desktop'
-        ? 'flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors'
+        ? 'flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap'
         : 'flex items-center px-3 py-2 text-base font-medium rounded-md'
     const activeClass = isActive
-      ? isTenantAccounts
-        ? 'bg-red-100 text-red-700'
-        : 'bg-blue-100 text-blue-700'
-      : isTenantAccounts
-        ? 'text-red-600 hover:bg-red-50 hover:text-red-900'
-        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+      ? 'bg-blue-100 text-blue-700'
+      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
 
     return (
       <Link
@@ -181,14 +177,8 @@ export function Navigation() {
         onClick={layout === 'mobile' ? () => setMobileMenuOpen(false) : undefined}
       >
         <item.icon
-          className={`${layout === 'desktop' ? 'mr-2' : 'mr-3'} h-5 w-5 flex-shrink-0 ${
-            isActive
-              ? isTenantAccounts
-                ? 'text-red-500'
-                : 'text-blue-500'
-              : isTenantAccounts
-                ? 'text-red-400'
-                : 'text-gray-400'
+          className={`${layout === 'desktop' ? 'mr-1.5' : 'mr-3'} h-5 w-5 flex-shrink-0 ${
+            isActive ? 'text-blue-500' : 'text-gray-400'
           }`}
         />
         {item.name}
@@ -213,7 +203,7 @@ export function Navigation() {
               <span className="ml-2 text-lg font-semibold text-gray-900">Rental App</span>
             </div>
 
-            <div className="hidden lg:flex items-center gap-2 xl:gap-4 min-w-0 max-w-[calc(100vw-11rem)] overflow-x-auto overscroll-x-contain">
+            <div className="hidden lg:flex items-center gap-1 xl:gap-2 min-w-0 flex-wrap justify-end max-w-[calc(100vw-11rem)]">
               {desktopItems}
               <span
                 className="text-xs text-gray-500 shrink-0 max-w-[14rem] truncate"

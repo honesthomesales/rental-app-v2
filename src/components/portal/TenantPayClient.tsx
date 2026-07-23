@@ -146,6 +146,37 @@ export default function TenantPayClient({ token }: { token: string }) {
     }
   }
 
+  async function inactivateContact(contactPointId: string) {
+    if (!flags?.contactSelfServiceEnabled) return;
+    if (
+      !confirm(
+        "Mark this contact inactive? It will stay in history and is not deleted.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/portal/${encodeURIComponent(token)}/contacts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "inactivate",
+          contactPointId,
+          reason: "tenant_request",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice(data.error || "Could not update contact");
+        return;
+      }
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 px-4 py-8">
@@ -190,6 +221,8 @@ export default function TenantPayClient({ token }: { token: string }) {
       note: "Requires verification before balance updates",
     },
   ];
+
+  const anyMethodEnabled = methods.some((m) => m.enabled);
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6">
@@ -277,6 +310,11 @@ export default function TenantPayClient({ token }: { token: string }) {
 
             <section>
               <h2 className="font-semibold text-gray-800">Payment method</h2>
+              {!anyMethodEnabled ? (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                  Online payment methods are being configured.
+                </p>
+              ) : (
               <ul className="mt-2 space-y-2">
                 {methods.map((m) => (
                   <li key={m.id}>
@@ -308,7 +346,8 @@ export default function TenantPayClient({ token }: { token: string }) {
                   </li>
                 ))}
               </ul>
-              {(method === "existing_cash_app" || method === "zelle") && (
+              )}
+              {anyMethodEnabled && (method === "existing_cash_app" || method === "zelle") && (
                 <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-950">
                   <p>
                     Send {formatCents(payAmount)} using{" "}
@@ -332,6 +371,8 @@ export default function TenantPayClient({ token }: { token: string }) {
               )}
             </section>
 
+            {anyMethodEnabled && (
+            <>
             <label className="flex items-start gap-2 text-xs text-gray-700">
               <input
                 type="checkbox"
@@ -357,6 +398,8 @@ export default function TenantPayClient({ token }: { token: string }) {
             >
               {busy ? "Working…" : "Continue"}
             </button>
+            </>
+            )}
 
             {notice && (
               <p className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
@@ -391,9 +434,21 @@ export default function TenantPayClient({ token }: { token: string }) {
               <li className="text-gray-500">No contacts on file yet.</li>
             )}
             {contacts.map((c) => (
-              <li key={c.id}>
-                {c.type}: {c.value}
-                {c.isPrimary ? " (primary)" : ""} · {c.verificationStatus}
+              <li key={c.id} className="flex flex-wrap items-start justify-between gap-2">
+                <span className="min-w-0 break-all">
+                  {c.type}: {c.value}
+                  {c.isPrimary ? " (primary)" : ""} · {c.verificationStatus}
+                </span>
+                {flags?.contactSelfServiceEnabled && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void inactivateContact(c.id)}
+                    className="shrink-0 text-xs text-red-700 hover:underline disabled:opacity-50"
+                  >
+                    Mark inactive
+                  </button>
+                )}
               </li>
             ))}
           </ul>

@@ -10,6 +10,7 @@ import {
 } from '@/components/communications/TextTenantModal'
 import { TenantConsentModal } from '@/components/communications/TenantConsentModal'
 import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
+import { StaffPortalLinkPanel } from '@/components/portal/StaffPortalLinkPanel'
 
 type SortField = 'name' | 'email' | 'phone' | 'is_active' | 'property' | 'lease_start_date'
 type SortDirection = 'asc' | 'desc'
@@ -485,6 +486,15 @@ export default function TenantsPage() {
                         SMS Consent
                       </button>
                       )}
+                      <StaffPortalLinkPanel
+                        tenantId={tenant.id}
+                        tenantName={
+                          tenant.full_name ||
+                          `${tenant.first_name || ''} ${tenant.last_name || ''}`.trim() ||
+                          'Tenant'
+                        }
+                        propertyId={tenant.property?.id || null}
+                      />
                       <div className="flex space-x-2">
                       <button
                         onClick={() => handleEditTenant(tenant)}

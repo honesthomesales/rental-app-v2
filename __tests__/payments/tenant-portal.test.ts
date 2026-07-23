@@ -9,7 +9,11 @@ import {
   getPaymentPublicFeatureFlags,
   isTenantPaymentPortalEnabled,
 } from "@/lib/payments/feature-flags";
-import { derivePaymentReference, hashPortalToken } from "@/lib/payments/tokens";
+import { derivePaymentReference, hashPortalToken, generatePortalToken } from "@/lib/payments/tokens";
+import {
+  isPortalProbeBlocked,
+  recordInvalidPortalProbe,
+} from "@/lib/payments/portal-rate-limit";
 
 describe("payment money helpers", () => {
   it("uses integer cents without float drift", () => {
@@ -126,9 +130,27 @@ describe("tokens", () => {
     expect(hashPortalToken("abc")).not.toBe(hashPortalToken("abd"));
   });
 
+  it("generates high-entropy raw tokens", () => {
+    const a = generatePortalToken();
+    const b = generatePortalToken();
+    expect(a.raw).not.toBe(b.raw);
+    expect(a.hash).toBe(hashPortalToken(a.raw));
+    // 32 bytes base64url ≈ 43 chars
+    expect(a.raw.length).toBeGreaterThanOrEqual(40);
+  });
+
   it("derives HHS references", () => {
     expect(derivePaymentReference("11111111-1111-1111-1111-111111111111")).toMatch(
       /^HHS-\d{4}$/,
     );
+  });
+});
+
+describe("portal rate limit", () => {
+  it("blocks after repeated invalid probes", () => {
+    const key = `test-${Date.now()}-${Math.random()}`;
+    expect(isPortalProbeBlocked(key)).toBe(false);
+    for (let i = 0; i < 30; i++) recordInvalidPortalProbe(key);
+    expect(isPortalProbeBlocked(key)).toBe(true);
   });
 });

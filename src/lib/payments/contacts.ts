@@ -114,19 +114,8 @@ export async function inactivateContactPoint(args: {
     .eq("is_active", true);
 
   const others = (activeSameType || []).filter((c) => c.id !== contact.id);
-  const hasVerifiedReplacement = others.some(
-    (c) =>
-      c.verification_status === "verified" ||
-      c.verification_status === "staff_verified",
-  );
-  const isOnly =
-    (contact.verification_status === "verified" ||
-      contact.verification_status === "staff_verified") &&
-    !hasVerifiedReplacement &&
-    others.length === 0;
-
-  if (isOnly) {
-    throw new Error("CANNOT_INACTIVATE_ONLY_VERIFIED_CONTACT");
+  if (others.length === 0) {
+    throw new Error("CANNOT_INACTIVATE_ONLY_CONTACT");
   }
 
   const { error } = await supabaseServer

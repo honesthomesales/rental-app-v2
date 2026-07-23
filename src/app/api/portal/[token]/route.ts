@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ token: string }> },
 ) {
   if (!isTenantPaymentPortalEnabled()) {
@@ -20,7 +20,11 @@ export async function GET(
   }
 
   const { token } = await context.params;
-  const access = await resolvePortalAccess(token);
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown";
+  const access = await resolvePortalAccess(token, `ip:${ip}`);
   if (!access) {
     return NextResponse.json({ error: "Invalid or expired link" }, { status: 401 });
   }

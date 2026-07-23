@@ -1,10 +1,65 @@
 -- Tenant Payment Portal, fee engine, bank reconciliation scaffolding, contact history
--- Additive only. DO NOT apply to production without backup/PITR verification and owner approval.
--- Does not alter existing RENT_payments / RENT_invoices formulas.
+-- Additive only. DO NOT apply to production without backup verification and owner approval.
+-- Does NOT alter existing RENT_payments / RENT_invoices formulas.
+-- Does NOT alter legacy RENT_v3_payment_receipts / RENT_v3_payment_receipt_items.
+-- Portal receipts use: RENT_v3_portal_payment_receipts / RENT_v3_portal_payment_receipt_items
+
+-- ---------------------------------------------------------------------------
+-- Helpers: fail if a portal table exists with an incompatible schema
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.rent_v3_portal_assert_table_ready(
+  p_table text,
+  p_required_columns text[]
+) RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  missing text;
+BEGIN
+  IF to_regclass(format('public.%I', p_table)) IS NULL THEN
+    RETURN; -- absent: caller will CREATE
+  END IF;
+
+  SELECT string_agg(req, ', ')
+  INTO missing
+  FROM unnest(p_required_columns) AS req
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+      AND c.table_name = p_table
+      AND c.column_name = req
+  );
+
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION
+      'Incompatible existing table public.% (missing columns: %). Refusing to continue.',
+      p_table, missing;
+  END IF;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Preflight: report legacy receipt tables without changing them
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  legacy_receipts boolean;
+  legacy_items boolean;
+BEGIN
+  SELECT to_regclass('public."RENT_v3_payment_receipts"') IS NOT NULL INTO legacy_receipts;
+  SELECT to_regclass('public."RENT_v3_payment_receipt_items"') IS NOT NULL INTO legacy_items;
+  RAISE NOTICE 'LEGACY_RECEIPTS_PRESENT=% LEGACY_RECEIPT_ITEMS_PRESENT=% (untouched by this migration)',
+    legacy_receipts, legacy_items;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- Portal access tokens (store hash only; raw token never persisted)
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_portal_access_tokens',
+  ARRAY['id','tenant_id','lease_id','token_hash']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_portal_access_tokens" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public."RENT_tenants"(id) ON DELETE RESTRICT,
@@ -28,6 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_rent_v3_portal_tokens_tenant
 -- ---------------------------------------------------------------------------
 -- Stable payment reference (e.g. HHS-1047)
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_tenant_payment_references',
+  ARRAY['id','tenant_id','reference_code','active']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_tenant_payment_references" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public."RENT_tenants"(id) ON DELETE RESTRICT,
@@ -42,6 +101,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_tenant_payment_references" (
 -- ---------------------------------------------------------------------------
 -- Fee policy versions
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_payment_fee_policies',
+  ARRAY['id','method','enabled','flat_cents','percent_bps','version']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_fee_policies" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   method text NOT NULL,
@@ -73,6 +136,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rent_v3_fee_policy_active
 -- ---------------------------------------------------------------------------
 -- Payment attempts
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_payment_attempts',
+  ARRAY['id','tenant_id','lease_id','method','status','rent_amount_cents','idempotency_key']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_attempts" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public."RENT_tenants"(id) ON DELETE RESTRICT,
@@ -135,6 +202,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rent_v3_attempts_provider_payment
   ON public."RENT_v3_payment_attempts" (provider, provider_payment_id)
   WHERE provider_payment_id IS NOT NULL;
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_payment_attempt_events',
+  ARRAY['id','attempt_id','to_status','source']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_attempt_events" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   attempt_id uuid NOT NULL REFERENCES public."RENT_v3_payment_attempts"(id) ON DELETE CASCADE,
@@ -151,6 +222,10 @@ CREATE INDEX IF NOT EXISTS idx_rent_v3_attempt_events_attempt
 -- ---------------------------------------------------------------------------
 -- Provider event dedupe
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_provider_events',
+  ARRAY['id','provider','provider_event_id','event_type','processing_status']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_provider_events" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider text NOT NULL,
@@ -169,9 +244,13 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_provider_events" (
 );
 
 -- ---------------------------------------------------------------------------
--- Receipts
+-- Portal receipts (SEPARATE from legacy RENT_v3_payment_receipts)
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_receipts" (
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_portal_payment_receipts',
+  ARRAY['id','receipt_number','attempt_id','tenant_id','lease_id','rent_amount_cents','total_charged_cents','method','status']
+);
+CREATE TABLE IF NOT EXISTS public."RENT_v3_portal_payment_receipts" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   receipt_number text NOT NULL,
   attempt_id uuid NOT NULL REFERENCES public."RENT_v3_payment_attempts"(id) ON DELETE RESTRICT,
@@ -189,12 +268,40 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_receipts" (
   provider_reference text NULL,
   submitted_at timestamptz NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT rent_v3_receipt_number_unique UNIQUE (receipt_number)
+  CONSTRAINT rent_v3_portal_receipt_number_unique UNIQUE (receipt_number)
 );
+
+CREATE INDEX IF NOT EXISTS idx_portal_payment_receipts_attempt
+  ON public."RENT_v3_portal_payment_receipts" (attempt_id);
+CREATE INDEX IF NOT EXISTS idx_portal_payment_receipts_tenant_created
+  ON public."RENT_v3_portal_payment_receipts" (tenant_id, created_at DESC);
+
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_portal_payment_receipt_items',
+  ARRAY['id','receipt_id','amount_applied_cents']
+);
+CREATE TABLE IF NOT EXISTS public."RENT_v3_portal_payment_receipt_items" (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  receipt_id uuid NOT NULL REFERENCES public."RENT_v3_portal_payment_receipts"(id) ON DELETE CASCADE,
+  invoice_id uuid NULL REFERENCES public."RENT_invoices"(id) ON DELETE SET NULL,
+  amount_applied_cents integer NOT NULL,
+  amount_to_rent_cents integer NOT NULL DEFAULT 0,
+  amount_to_late_fee_cents integer NOT NULL DEFAULT 0,
+  amount_to_other_cents integer NOT NULL DEFAULT 0,
+  allocation_order integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_portal_payment_receipt_items_receipt
+  ON public."RENT_v3_portal_payment_receipt_items" (receipt_id);
 
 -- ---------------------------------------------------------------------------
 -- Bank connections + imported transactions
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_bank_connections',
+  ARRAY['id','provider','encrypted_access_token','status']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_bank_connections" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider text NOT NULL DEFAULT 'plaid',
@@ -213,6 +320,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_bank_connections" (
   ))
 );
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_bank_transactions',
+  ARRAY['id','connection_id','provider_transaction_id','amount_cents','classification']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_bank_transactions" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   connection_id uuid NOT NULL REFERENCES public."RENT_v3_bank_connections"(id) ON DELETE CASCADE,
@@ -239,6 +350,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_bank_transactions" (
 CREATE INDEX IF NOT EXISTS idx_rent_v3_bank_tx_class
   ON public."RENT_v3_bank_transactions" (classification, posted_date DESC);
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_payment_match_candidates',
+  ARRAY['id','bank_transaction_id','confidence_score','status']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_match_candidates" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   bank_transaction_id uuid NOT NULL REFERENCES public."RENT_v3_bank_transactions"(id) ON DELETE CASCADE,
@@ -257,6 +372,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_payment_match_candidates" (
   ))
 );
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_confirmed_sender_mappings',
+  ARRAY['id','tenant_id','sender_name_normalized']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_confirmed_sender_mappings" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public."RENT_tenants"(id) ON DELETE RESTRICT,
@@ -267,6 +386,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_confirmed_sender_mappings" (
   CONSTRAINT rent_v3_sender_map_unique UNIQUE (tenant_id, sender_name_normalized)
 );
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_staff_exceptions',
+  ARRAY['id','kind','severity','detail']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_staff_exceptions" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   kind text NOT NULL,
@@ -282,6 +405,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_staff_exceptions" (
 -- ---------------------------------------------------------------------------
 -- Contact history (append-friendly; no hard deletes)
 -- ---------------------------------------------------------------------------
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_tenant_contact_points',
+  ARRAY['id','tenant_id','contact_type','original_value','normalized_value','is_active']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_tenant_contact_points" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public."RENT_tenants"(id) ON DELETE RESTRICT,
@@ -320,6 +447,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rent_v3_contacts_active_normalized
   ON public."RENT_v3_tenant_contact_points" (tenant_id, contact_type, normalized_value)
   WHERE is_active = true;
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_contact_verification_attempts',
+  ARRAY['id','contact_point_id','channel','status']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_contact_verification_attempts" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   contact_point_id uuid NOT NULL REFERENCES public."RENT_v3_tenant_contact_points"(id) ON DELETE CASCADE,
@@ -334,6 +465,10 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_contact_verification_attempts" (
   ))
 );
 
+SELECT public.rent_v3_portal_assert_table_ready(
+  'RENT_v3_contact_audit_events',
+  ARRAY['id','contact_point_id','tenant_id','action','actor']
+);
 CREATE TABLE IF NOT EXISTS public."RENT_v3_contact_audit_events" (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   contact_point_id uuid NOT NULL REFERENCES public."RENT_v3_tenant_contact_points"(id) ON DELETE CASCADE,
@@ -346,20 +481,20 @@ CREATE TABLE IF NOT EXISTS public."RENT_v3_contact_audit_events" (
 );
 
 -- ---------------------------------------------------------------------------
--- RLS: service_role only (app authorizes in API layer)
+-- RLS + grants: EXPLICIT portal allowlist only (never legacy receipt tables)
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
   t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY[
+  portal_tables text[] := ARRAY[
     'RENT_v3_portal_access_tokens',
     'RENT_v3_tenant_payment_references',
     'RENT_v3_payment_fee_policies',
     'RENT_v3_payment_attempts',
     'RENT_v3_payment_attempt_events',
     'RENT_v3_provider_events',
-    'RENT_v3_payment_receipts',
+    'RENT_v3_portal_payment_receipts',
+    'RENT_v3_portal_payment_receipt_items',
     'RENT_v3_bank_connections',
     'RENT_v3_bank_transactions',
     'RENT_v3_payment_match_candidates',
@@ -368,10 +503,24 @@ BEGIN
     'RENT_v3_tenant_contact_points',
     'RENT_v3_contact_verification_attempts',
     'RENT_v3_contact_audit_events'
-  ]
+  ];
+BEGIN
+  -- Guard: never touch legacy receipt tables
+  IF 'RENT_v3_payment_receipts' = ANY(portal_tables)
+     OR 'RENT_v3_payment_receipt_items' = ANY(portal_tables) THEN
+    RAISE EXCEPTION 'Portal allowlist must not include legacy receipt tables';
+  END IF;
+
+  FOREACH t IN ARRAY portal_tables
   LOOP
+    IF to_regclass(format('public.%I', t)) IS NULL THEN
+      RAISE EXCEPTION 'Expected portal table % missing before RLS/grants', t;
+    END IF;
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('REVOKE ALL ON TABLE public.%I FROM anon, authenticated', t);
     EXECUTE format('GRANT ALL ON TABLE public.%I TO service_role', t);
   END LOOP;
 END $$;
+
+-- Drop helper only if you prefer not to leave it; keep for re-apply safety.
+-- (Left in place intentionally for future portal migrations.)

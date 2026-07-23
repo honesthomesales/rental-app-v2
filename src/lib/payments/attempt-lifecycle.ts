@@ -143,7 +143,7 @@ export async function postSettledRentOnce(attemptId: string): Promise<{
 
   const receiptNumber = generateReceiptNumber();
   const { data: receipt, error: recErr } = await supabaseServer
-    .from("RENT_v3_payment_receipts")
+    .from("RENT_v3_portal_payment_receipts")
     .insert({
       receipt_number: receiptNumber,
       attempt_id: attempt.id,

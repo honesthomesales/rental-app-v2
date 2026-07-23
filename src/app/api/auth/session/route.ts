@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthError, requireApiAuth } from "@/lib/auth/api-auth";
 import { getPublicCommunicationsFeatures } from "@/lib/communications/public-features";
+import { getPaymentPublicFeatureFlags } from "@/lib/payments/feature-flags";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,9 @@ export async function GET(request: Request) {
     ok: true,
     role: auth.role,
     email: auth.appUser.email,
-    features: getPublicCommunicationsFeatures(),
+    features: {
+      ...getPublicCommunicationsFeatures(),
+      ...getPaymentPublicFeatureFlags(),
+    },
   });
 }

@@ -34,7 +34,7 @@ function TenantAccountsInner() {
   )
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto min-w-0">
+    <div className="p-4 sm:p-6 mx-auto w-full min-w-0 max-w-7xl">
       <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Tenant Accounts</h1>
         <p className="text-gray-600 mt-2 text-sm sm:text-base">

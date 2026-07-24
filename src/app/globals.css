@@ -43,17 +43,36 @@ main,
 @media (max-width: 768px) {
   .overflow-x-auto {
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
   }
 
-  table {
-    max-width: 100%;
-  }
+  /*
+   * Do NOT set table { max-width: 100% } here.
+   * That collapses wide data tables to the viewport and prevents
+   * overflow-x-auto scrollers (Last Paid, Profit) from scrolling.
+   */
 
   /* Prefer wrapping long identifiers over page-level horizontal scroll */
   .break-anywhere {
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+}
+
+/* Explicit opt-in for horizontally scrollable data tables on phones */
+.table-scroll-x {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+}
+
+.table-scroll-x > table {
+  max-width: none;
 }
 
 /* Dialogs / modals: keep within dynamic viewport on phones */

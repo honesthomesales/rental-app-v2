@@ -1162,7 +1162,7 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
   }
 
   return (
-    <div className={embedded ? 'max-w-7xl mx-auto min-w-0' : 'p-6 max-w-7xl mx-auto'}>
+    <div className={embedded ? 'w-full max-w-full min-w-0' : 'p-6 max-w-7xl mx-auto min-w-0'}>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
         {!embedded ? (
           <div>
@@ -1238,18 +1238,18 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
 
       {/* Main Table, Grid, or Monthly */}
       {viewMode === 'table' ? (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white rounded-lg shadow min-w-0 max-w-full">
           <p className="px-4 pt-3 text-xs text-gray-500 sm:hidden" data-testid="last-paid-swipe-hint">
-            Swipe to see more columns
+            Swipe sideways to see all columns
           </p>
           <div
-            className="overflow-x-auto overscroll-x-contain"
+            className="table-scroll-x overflow-x-auto overscroll-x-contain"
             tabIndex={0}
             role="region"
             aria-label="Last Paid table"
             data-testid="last-paid-table-scroller"
           >
-          <table className="min-w-[960px] w-full divide-y divide-gray-200">
+          <table className="min-w-[1100px] w-max max-w-none divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th

@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <AuthProvider>
       <div className="min-h-screen bg-gray-50">
         {!hideStaffChrome ? <Navigation /> : null}
-        <main className="flex-1 min-w-0 overflow-x-hidden pb-8">
+        <main className="app-shell-main flex-1 min-w-0 max-w-full w-full pb-8">
           {children}
         </main>
         {!hideStaffChrome ? <PWAInstaller /> : null}

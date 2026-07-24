@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate } from '@/lib/business-date'
 import { canAllocatePaymentAsOf } from '@/lib/payment-eligibility'
+import {
+  allocationGroupNote,
+  planNewestFirstAllocation,
+} from '@/lib/payments/post-allocated-payment'
 
 export async function POST(request: Request) {
   const auth = await requireApiAuth(request, { write: true })
@@ -195,58 +200,31 @@ try {
     
     // Use receivedAt if provided, otherwise current timestamp
     const paymentDate = receivedAt || new Date().toISOString()
-    
+    const paymentDateOnly = String(paymentDate).split('T')[0]
+    const paymentMethod =
+      paymentData.payment_method ||
+      paymentData.paymentMethod ||
+      'Manual Entry'
+
     const businessDate = getBusinessDate()
-    const paymentRecord: any = {
+    const baseRecord: Record<string, unknown> = {
       tenant_id: tenantId,
       lease_id: leaseId,
       property_id: finalPropertyId,
       payment_date: paymentDate,
       amount: amount,
       payment_type: paymentType,
-      payment_method: 'Manual Entry',
+      payment_method: paymentMethod,
       status: 'completed',
-      notes: memo || ''
-    }
-    
-    // Production allocation truth: RENT_payments.invoice_id + DB triggers that
-    // recalculate invoice amount_paid / balance_due. The legacy
-    // rent_apply_payment_fifo(uuid, timestamptz) function is not installed.
-    let targetInvoiceId: string | null = invoiceId || null
-    if (!targetInvoiceId) {
-      const { data: oldestUnpaid, error: oldestError } = await supabaseServer
-        .from('RENT_invoices')
-        .select('id')
-        .eq('lease_id', leaseId)
-        .in('status', ['OPEN', 'PARTIAL'])
-        .gt('balance_due', 0)
-        .order('due_date', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-
-      if (oldestError) {
-        console.error('Error selecting oldest unpaid invoice:', oldestError)
-        return NextResponse.json(
-          {
-            error: 'Failed to select invoice for payment allocation',
-            details: oldestError.message,
-          },
-          { status: 500 },
-        )
-      }
-      targetInvoiceId = oldestUnpaid?.id || null
+      notes: memo || '',
     }
 
-    if (targetInvoiceId) {
-      paymentRecord.invoice_id = targetInvoiceId
-    }
-
-    // Do not treat future-dated payments as currently allocated for balances /
-    // Last Paid until their payment_date; still record them (and link invoice).
-    if (!canAllocatePaymentAsOf(paymentRecord, businessDate)) {
+    // Future-dated: record exactly one payment with NO invoice link so the
+    // invoice-total trigger does not allocate before the effective date.
+    if (!canAllocatePaymentAsOf({ payment_date: paymentDate }, businessDate)) {
       const { data: payment, error: paymentError } = await supabaseServer
         .from('RENT_payments')
-        .insert([paymentRecord])
+        .insert([baseRecord])
         .select()
         .single()
 
@@ -254,15 +232,13 @@ try {
         console.error('Error inserting future payment:', paymentError)
         return NextResponse.json(
           { error: 'Failed to insert payment', details: paymentError.message },
-          { status: 500 }
+          { status: 500 },
         )
       }
 
       return NextResponse.json({
         payment,
-        allocations: targetInvoiceId
-          ? [{ invoice_id: targetInvoiceId, amount }]
-          : [],
+        allocations: [],
         deferredAllocation: true,
         businessDate,
         warning:
@@ -270,30 +246,119 @@ try {
       })
     }
 
-    const { data: payment, error: paymentError } = await supabaseServer
-      .from('RENT_payments')
-      .insert([paymentRecord])
-      .select()
-      .single()
+    // Newest-eligible-invoice-first for all newly posted eligible payments.
+    // Production truth remains RENT_payments.invoice_id + DB triggers; waterfall
+    // splits become one payment row per invoice leg (same logical payment).
+    const { data: openInvoices, error: invoiceLoadError } = await supabaseServer
+      .from('RENT_invoices')
+      .select(
+        'id, due_date, period_start, period_end, balance_due, amount_total, amount_paid, status',
+      )
+      .eq('lease_id', leaseId)
 
-    if (paymentError) {
-      console.error('Error inserting payment:', paymentError)
+    if (invoiceLoadError) {
+      console.error('Error loading invoices for allocation:', invoiceLoadError)
       return NextResponse.json(
-        { error: 'Failed to insert payment', details: paymentError.message },
+        {
+          error: 'Failed to load invoices for payment allocation',
+          details: invoiceLoadError.message,
+        },
         { status: 500 },
       )
     }
 
-    console.log('Payment recorded; invoice totals updated by DB trigger:', {
+    const plan = planNewestFirstAllocation({
+      paymentAmount: Number(amount),
+      paymentEffectiveDate: paymentDateOnly,
+      invoices: openInvoices || [],
+    })
+
+    // No eligible invoices: still record the payment unallocated.
+    if (plan.splits.length === 0) {
+      const { data: payment, error: paymentError } = await supabaseServer
+        .from('RENT_payments')
+        .insert([baseRecord])
+        .select()
+        .single()
+
+      if (paymentError) {
+        console.error('Error inserting unallocated payment:', paymentError)
+        return NextResponse.json(
+          { error: 'Failed to insert payment', details: paymentError.message },
+          { status: 500 },
+        )
+      }
+
+      return NextResponse.json({
+        payment,
+        allocations: [],
+        unallocatedAmount: plan.unallocatedAmount,
+      })
+    }
+
+    const groupId = randomUUID()
+    const legCount =
+      plan.splits.length + (plan.unallocatedAmount > 0.009 ? 1 : 0)
+    const rows = plan.splits.map((split, index) => ({
+      ...baseRecord,
+      amount: split.amount,
+      invoice_id: split.invoiceId,
+      notes: [
+        memo || '',
+        allocationGroupNote(groupId, index + 1, legCount),
+      ]
+        .filter(Boolean)
+        .join(' | '),
+    }))
+    if (plan.unallocatedAmount > 0.009) {
+      rows.push({
+        ...baseRecord,
+        amount: plan.unallocatedAmount,
+        notes: [
+          memo || '',
+          allocationGroupNote(groupId, legCount, legCount),
+          'unallocated_remainder',
+        ]
+          .filter(Boolean)
+          .join(' | '),
+      })
+    }
+
+    const { data: inserted, error: paymentError } = await supabaseServer
+      .from('RENT_payments')
+      .insert(rows)
+      .select()
+
+    if (paymentError || !inserted?.length) {
+      console.error('Error inserting allocated payment(s):', paymentError)
+      return NextResponse.json(
+        {
+          error: 'Failed to insert payment',
+          details: paymentError?.message || 'No rows returned',
+        },
+        { status: 500 },
+      )
+    }
+
+    const payment = inserted[0]
+    console.log('Payment recorded with newest-first allocation:', {
       paymentId: payment.id,
-      invoiceId: targetInvoiceId,
+      groupId,
+      splits: plan.splits,
     })
 
     return NextResponse.json({
       payment,
-      allocations: targetInvoiceId
-        ? [{ invoice_id: targetInvoiceId, amount, payment_id: payment.id }]
-        : [],
+      payments: inserted,
+      allocationGroupId: groupId,
+      allocations: inserted.map((row) => ({
+        invoice_id: row.invoice_id,
+        amount: row.amount,
+        payment_id: row.id,
+      })),
+      unallocatedAmount: plan.unallocatedAmount,
+      // Staff may still pass invoice_id for UI context; allocation ignores it.
+      ignoredRequestedInvoiceId: invoiceId || null,
     })
   } catch (error) {
     console.error('Error in payments API:', error)

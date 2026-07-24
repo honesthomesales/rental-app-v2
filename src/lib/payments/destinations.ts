@@ -10,7 +10,10 @@ function firstNonEmpty(
   for (const name of names) {
     const raw = env[name];
     if (raw == null) continue;
-    const value = raw.trim().replace(/^["']|["']$/g, "");
+    const value = raw
+      .replace(/\r/g, "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (value) return value;
   }
   return null;

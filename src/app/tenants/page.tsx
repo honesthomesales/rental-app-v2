@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, Suspense } from 'react'
 import { Tenant, Property } from '@/types/database'
 import { UsersIcon, PlusIcon, PhoneIcon, EnvelopeIcon, PencilIcon, TrashIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
 import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
@@ -11,11 +11,20 @@ import {
 import { TenantConsentModal } from '@/components/communications/TenantConsentModal'
 import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
 import { StaffPortalLinkPanel } from '@/components/portal/StaffPortalLinkPanel'
+import { useRecordDeepLink } from '@/hooks/useRecordDeepLink'
 
 type SortField = 'name' | 'email' | 'phone' | 'is_active' | 'property' | 'lease_start_date'
 type SortDirection = 'asc' | 'desc'
 
 export default function TenantsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-600">Loading tenants…</div>}>
+      <TenantsPageInner />
+    </Suspense>
+  )
+}
+
+function TenantsPageInner() {
   const { features } = useCommunicationsFeatures()
   const communicationsEnabled = features.tenantCommunicationsEnabled
   const [allTenants, setAllTenants] = useState<Tenant[]>([])
@@ -33,6 +42,18 @@ export default function TenantsPage() {
   useEffect(() => {
     fetchTenants()
   }, [])
+
+  useRecordDeepLink({
+    records: allTenants,
+    loading,
+    onSelect: (tenant, field) => {
+      setEditingTenant(tenant)
+      if (field) {
+        // Soft cue — existing edit modal already shows the fields.
+        console.info('Missing information field:', field)
+      }
+    },
+  })
 
   const fetchTenants = async () => {
     try {

@@ -37,12 +37,6 @@ const navigation = [
   { name: 'Profit', href: '/profit', icon: ChartBarIcon },
 ]
 
-const incomingPaymentsNav = {
-  name: 'Incoming Payments',
-  href: '/incoming-payments',
-  icon: CurrencyDollarIcon,
-}
-
 const ownerNavigationAlways = [
   { name: 'Data Health', href: '/data-health', icon: ShieldCheckIcon },
 ]
@@ -59,14 +53,12 @@ export function Navigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [communicationsEnabled, setCommunicationsEnabled] = useState(false)
-  const [portalEnabled, setPortalEnabled] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     if (auth.status !== 'authenticated') {
       setIsOwner(false)
       setCommunicationsEnabled(false)
-      setPortalEnabled(false)
       return
     }
     void (async () => {
@@ -81,7 +73,6 @@ export function Navigation() {
         setCommunicationsEnabled(
           Boolean(data.features?.tenantCommunicationsEnabled),
         )
-        setPortalEnabled(Boolean(data.features?.portalEnabled))
       } catch {
         /* ignore */
       }
@@ -133,17 +124,11 @@ export function Navigation() {
     ...ownerNavigationAlways,
   ]
 
-  const baseNavigation = portalEnabled
-    ? [
-        ...navigation.slice(0, 6),
-        incomingPaymentsNav,
-        ...navigation.slice(6),
-      ]
-    : navigation
-
+  // Incoming Payments Review stays available at /incoming-payments and Data Health
+  // when unresolved provider exceptions exist; it is not in normal navigation.
   const navItems = isOwner
-    ? [...baseNavigation, ...ownerNavigation]
-    : baseNavigation
+    ? [...navigation, ...ownerNavigation]
+    : navigation
 
   const renderNavLink = (
     item: (typeof navigation)[0],

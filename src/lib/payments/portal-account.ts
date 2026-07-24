@@ -18,9 +18,15 @@ export type PortalAccountSummary = {
   tenantName: string;
   propertyLabel: string;
   paymentReference: string;
+  /** Current balance due (same ledger engine as staff). */
   settledBalanceCents: number;
   pastDueCents: number;
   pendingCents: number;
+  /** Earliest eligible unpaid invoice due date. */
+  oldestUnpaidDueDate: string | null;
+  /** Next future scheduled due date after business date. */
+  nextUpcomingDueDate: string | null;
+  /** @deprecated Prefer oldestUnpaidDueDate / nextUpcomingDueDate */
   nextDueDate: string | null;
   openCharges: Array<{
     invoiceId: string;
@@ -49,7 +55,6 @@ export async function ensurePaymentReference(tenantId: string): Promise<string> 
   if (existing?.reference_code) return existing.reference_code;
 
   let code = derivePaymentReference(tenantId);
-  // Collision retry
   for (let i = 0; i < 5; i++) {
     const { error } = await supabaseServer
       .from("RENT_v3_tenant_payment_references")
@@ -111,12 +116,24 @@ export async function buildPortalAccountSummary(args: {
   const openCharges =
     account?.invoices
       .filter((inv) => inv.calculatedBalance > 0.009 && !inv.isFuture)
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       .map((inv) => ({
         invoiceId: inv.invoiceId,
         dueDate: inv.dueDate,
         balanceDueCents: dollarsToCents(inv.calculatedBalance),
         status: inv.collectionStatus,
       })) || [];
+
+  const oldestUnpaidDueDate =
+    account?.oldestUnpaidDueDate || openCharges[0]?.dueDate || null;
+
+  const nextUpcomingDueDate =
+    (account?.invoices || [])
+      .filter((inv) => inv.isFuture || inv.dueDate > asOf)
+      .map((inv) => inv.dueDate)
+      .filter((d) => d > asOf)
+      .sort()[0] || null;
 
   const { data: recent } = await supabaseServer
     .from("RENT_payments")
@@ -129,7 +146,13 @@ export async function buildPortalAccountSummary(args: {
     .from("RENT_v3_payment_attempts")
     .select("rent_amount_cents, status")
     .eq("lease_id", args.leaseId)
-    .in("status", ["awaiting_customer", "submitted", "processing", "pending", "awaiting_verification"]);
+    .in("status", [
+      "awaiting_customer",
+      "submitted",
+      "processing",
+      "pending",
+      "awaiting_verification",
+    ]);
 
   const pendingCents = (pendingAttempts || []).reduce(
     (sum, row) => sum + Number(row.rent_amount_cents || 0),
@@ -144,7 +167,9 @@ export async function buildPortalAccountSummary(args: {
     settledBalanceCents: dollarsToCents(account?.totalBalanceDue || 0),
     pastDueCents: dollarsToCents(account?.pastDueBalanceDue || 0),
     pendingCents,
-    nextDueDate: openCharges[0]?.dueDate || null,
+    oldestUnpaidDueDate,
+    nextUpcomingDueDate,
+    nextDueDate: nextUpcomingDueDate,
     openCharges,
     recentPayments: (recent || []).map((p) => ({
       id: p.id,
@@ -153,7 +178,7 @@ export async function buildPortalAccountSummary(args: {
       method: p.payment_method,
       status: p.status || "completed",
     })),
-    helpEmail: getPaymentSupportEmail(),
-    helpPhone: getPaymentSupportPhone(),
+    helpEmail: getPaymentSupportEmail() || "honesthomesales@gmail.com",
+    helpPhone: getPaymentSupportPhone() || "864-322-3432",
   };
 }

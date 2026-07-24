@@ -157,6 +157,41 @@ export default function PaymentsPage() {
     void fetchProperties()
   }, [auth.status])
 
+  // Missing Information deep-link: /payments?id=<paymentId|leaseId|invoiceId>
+  useEffect(() => {
+    if (loading || leases.length === 0) return
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('id') || params.get('highlight')
+    if (!id) return
+
+    const byLease = leases.find((row) => row.lease.id === id)
+    if (byLease) {
+      setSelectedLease(byLease)
+      void handleViewInvoices(byLease)
+      return
+    }
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/payments?id=${encodeURIComponent(id)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const payment = Array.isArray(data) ? data[0] : data?.payment || data
+        const leaseId = payment?.lease_id
+        if (!leaseId) return
+        const row = leases.find((l) => l.lease.id === leaseId)
+        if (!row) return
+        setSelectedLease(row)
+        setEditingPayment(payment)
+        void handleViewInvoices(row)
+      } catch {
+        /* fail safely */
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, leases])
+
   useEffect(() => {
     // intentionally no debug logging
   }, [showGenerateModal])

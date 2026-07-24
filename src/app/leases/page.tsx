@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, Suspense } from 'react'
 import { Lease, Property, Tenant } from '@/types/database'
 import { DocumentTextIcon, PlusIcon, CalendarIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 import {
@@ -19,6 +19,7 @@ import {
   type CommunicationTarget,
 } from '@/components/communications/TextTenantModal'
 import { useCommunicationsFeatures } from '@/hooks/useCommunicationsFeatures'
+import { useRecordDeepLink } from '@/hooks/useRecordDeepLink'
 
 interface LeaseWithDetails extends Lease {
   RENT_properties?: Property
@@ -29,6 +30,14 @@ type SortField = 'property' | 'tenant' | 'lease_start_date' | 'rent' | 'status'
 type SortDirection = 'asc' | 'desc'
 
 export default function LeasesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-600">Loading leases…</div>}>
+      <LeasesPageInner />
+    </Suspense>
+  )
+}
+
+function LeasesPageInner() {
   const { features } = useCommunicationsFeatures()
   const communicationsEnabled = features.tenantCommunicationsEnabled
   const [allLeases, setAllLeases] = useState<LeaseWithDetails[]>([])
@@ -73,6 +82,14 @@ export default function LeasesPage() {
     fetchProperties()
     fetchTenants()
   }, [])
+
+  useRecordDeepLink({
+    records: allLeases,
+    loading,
+    onSelect: (lease) => {
+      setEditingLease(lease)
+    },
+  })
 
   const fetchLeases = async () => {
     try {

@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, Suspense } from 'react'
 import Link from 'next/link'
 import { Property } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { useRecordDeepLink } from '@/hooks/useRecordDeepLink'
 
 type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'leaseStatus' | 'is_for_rent'
 type SortDirection = 'asc' | 'desc'
@@ -18,7 +19,14 @@ type PropertyWithLease = Property & {
 }
 
 export default function PropertiesPage() {
-  
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-600">Loading properties…</div>}>
+      <PropertiesPageInner />
+    </Suspense>
+  )
+}
+
+function PropertiesPageInner() {
   const [properties, setProperties] = useState<PropertyWithLease[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -31,6 +39,14 @@ export default function PropertiesPage() {
   useEffect(() => {
     fetchProperties()
   }, [showRetired])
+
+  useRecordDeepLink({
+    records: properties,
+    loading,
+    onSelect: (property) => {
+      setEditingProperty(property)
+    },
+  })
 
   // OPTIMIZED: Use useMemo for expensive filtering and sorting calculations
   const filteredProperties = useMemo(() => {

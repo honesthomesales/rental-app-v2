@@ -228,7 +228,7 @@ export async function scanMissingInformation(
           problem: "Missing phone number",
           affectedRecord: { type: "tenant", id, label },
           explanation: "Active tenant has no phone on file.",
-          href: `/tenants`,
+          href: `/tenants?id=${id}&field=phone`,
           blocking: false,
         }),
       );
@@ -240,7 +240,7 @@ export async function scanMissingInformation(
           problem: "Invalid phone number",
           affectedRecord: { type: "tenant", id, label },
           explanation: `Phone "${phone}" cannot be normalized to a usable US number.`,
-          href: `/tenants`,
+          href: `/tenants?id=${id}&field=phone`,
           blocking: false,
         }),
       );
@@ -254,7 +254,7 @@ export async function scanMissingInformation(
           problem: "Invalid email address",
           affectedRecord: { type: "tenant", id, label },
           explanation: `Email "${email}" is not a valid address format.`,
-          href: `/tenants`,
+          href: `/tenants?id=${id}&field=email`,
           blocking: false,
         }),
       );
@@ -269,7 +269,7 @@ export async function scanMissingInformation(
           affectedRecord: { type: "tenant", id, label },
           explanation:
             "Tenant is marked active but has no occupied/eviction lease.",
-          href: `/tenants`,
+          href: `/tenants?id=${id}`,
           blocking: false,
         }),
       );
@@ -316,7 +316,7 @@ export async function scanMissingInformation(
             }),
           },
           explanation: `Same name and phone appear on ${ids.length} tenant records.`,
-          href: `/tenants`,
+          href: `/tenants?id=${id}`,
           blocking: false,
         }),
       );
@@ -346,7 +346,7 @@ export async function scanMissingInformation(
           explanation: !name
             ? "Property name is missing."
             : "Property address is missing.",
-          href: `/properties`,
+          href: `/properties?id=${id}`,
           blocking: true,
         }),
       );
@@ -368,7 +368,7 @@ export async function scanMissingInformation(
           affectedRecord: { type: "property", id, label },
           explanation:
             "Residential property with rent value has no occupied/eviction lease.",
-          href: `/properties`,
+          href: `/properties?id=${id}`,
           blocking: false,
         }),
       );
@@ -444,7 +444,7 @@ export async function scanMissingInformation(
           problem: "Broken property relationship",
           affectedRecord: { type: "lease", id, label },
           explanation: `Lease references missing property ${lease.property_id}.`,
-          href: `/leases`,
+          href: `/leases?id=${id}`,
           blocking: true,
         }),
       );
@@ -457,7 +457,7 @@ export async function scanMissingInformation(
           problem: "Broken tenant relationship",
           affectedRecord: { type: "lease", id, label },
           explanation: `Lease references missing tenant ${lease.tenant_id}.`,
-          href: `/leases`,
+          href: `/leases?id=${id}`,
           blocking: true,
         }),
       );
@@ -470,7 +470,7 @@ export async function scanMissingInformation(
           problem: "Occupied lease missing tenant",
           affectedRecord: { type: "lease", id, label },
           explanation: "Active/occupied lease has no tenant_id.",
-          href: `/leases`,
+          href: `/leases?id=${id}`,
           blocking: true,
         }),
       );
@@ -483,7 +483,7 @@ export async function scanMissingInformation(
           problem: "Occupied lease missing property",
           affectedRecord: { type: "lease", id, label },
           explanation: "Active/occupied lease has no property_id.",
-          href: `/leases`,
+          href: `/leases?id=${id}`,
           blocking: true,
         }),
       );
@@ -502,7 +502,7 @@ export async function scanMissingInformation(
             explanation: !cadence
               ? "Active billing lease is missing rent_cadence."
               : "Active billing lease has missing or zero rent.",
-            href: `/leases`,
+            href: `/leases?id=${id}`,
             blocking: true,
           }),
         );
@@ -520,7 +520,7 @@ export async function scanMissingInformation(
             affectedRecord: { type: "lease", id, label },
             explanation:
               "Active lease has no lease_end_date (may be intentional open-ended).",
-            href: `/leases`,
+            href: `/leases?id=${id}`,
             blocking: false,
           }),
         );
@@ -532,7 +532,7 @@ export async function scanMissingInformation(
             problem: "Lease end date passed (period-to-period)",
             affectedRecord: { type: "lease", id, label },
             explanation: `Lease ended ${end}; status remains ${status}.`,
-            href: `/leases`,
+            href: `/leases?id=${id}`,
             blocking: false,
           }),
         );
@@ -544,7 +544,7 @@ export async function scanMissingInformation(
             problem: "Lease expiring soon",
             affectedRecord: { type: "lease", id, label },
             explanation: `Lease ends on ${end} (within ${SOON_EXPIRE_DAYS} days).`,
-            href: `/leases`,
+            href: `/leases?id=${id}`,
             blocking: false,
           }),
         );
@@ -560,7 +560,7 @@ export async function scanMissingInformation(
           problem: "Broken lease PDF link",
           affectedRecord: { type: "lease", id, label },
           explanation: "lease_pdf_url is present but is not a valid http(s) URL.",
-          href: `/leases`,
+          href: `/leases?id=${id}`,
           blocking: false,
         }),
       );
@@ -585,7 +585,7 @@ export async function scanMissingInformation(
         problem: "Multiple active leases on property",
         affectedRecord: { type: "property", id: propertyId, label },
         explanation: `${leaseIds.length} occupied/eviction leases share this property.`,
-        href: `/leases`,
+        href: `/leases?id=${leaseIds[0] || propertyId}`,
         blocking: false,
       }),
     );
@@ -619,7 +619,7 @@ export async function scanMissingInformation(
           problem: "Unknown payment status",
           affectedRecord: { type: "payment", id, label },
           explanation: `Payment status "${statusRaw}" is not a recognized value.`,
-          href: `/payments`,
+          href: `/payments?id=${id}`,
           blocking: false,
         }),
       );
@@ -633,7 +633,7 @@ export async function scanMissingInformation(
           problem: "Payment broken lease relationship",
           affectedRecord: { type: "payment", id, label },
           explanation: `Payment references missing lease ${payment.lease_id}.`,
-          href: `/payments`,
+          href: `/payments?id=${id}`,
           blocking: true,
         }),
       );
@@ -652,7 +652,7 @@ export async function scanMissingInformation(
               problem: "Unapplied payment amount",
               affectedRecord: { type: "payment", id, label },
               explanation: `$${unapplied.toFixed(2)} of $${amount.toFixed(2)} is not allocated.`,
-              href: `/payments`,
+              href: `/payments?id=${id}`,
               blocking: false,
             }),
           );
@@ -666,7 +666,7 @@ export async function scanMissingInformation(
             affectedRecord: { type: "payment", id, label },
             explanation:
               "Completed payment has no invoice_id and no allocation rows.",
-            href: `/payments`,
+            href: `/payments?id=${id}`,
             blocking: false,
           }),
         );

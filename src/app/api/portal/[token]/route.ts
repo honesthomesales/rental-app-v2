@@ -7,10 +7,8 @@ import {
 import { resolvePortalAccess } from "@/lib/payments/portal-access";
 import { buildPortalAccountSummary } from "@/lib/payments/portal-account";
 import { listActiveContacts } from "@/lib/payments/contacts";
-import {
-  getCashAppDestination,
-  getZelleDestination,
-} from "@/lib/payments/destinations";
+import { ensureStaffRecordedContactsFromTenant } from "@/lib/payments/ensure-staff-contacts";
+import { supabaseServer } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,6 +32,21 @@ export async function GET(
   }
 
   try {
+    const { data: tenantRow } = await supabaseServer
+      .from("RENT_tenants")
+      .select("id, phone, email")
+      .eq("id", access.tenantId)
+      .maybeSingle();
+
+    if (tenantRow) {
+      await ensureStaffRecordedContactsFromTenant({
+        tenantId: access.tenantId,
+        phone: tenantRow.phone,
+        email: tenantRow.email,
+        actor: "portal_staff_mirror",
+      }).catch(() => undefined);
+    }
+
     const [summary, contacts] = await Promise.all([
       buildPortalAccountSummary({
         tenantId: access.tenantId,
@@ -42,6 +55,8 @@ export async function GET(
       }),
       listActiveContacts(access.tenantId).catch(() => []),
     ]);
+
+    const flags = getPaymentPublicFeatureFlags();
 
     return NextResponse.json({
       summary,
@@ -53,13 +68,18 @@ export async function GET(
         isPrimary: c.is_primary,
         verificationStatus: c.verification_status,
       })),
-      flags: getPaymentPublicFeatureFlags(),
-      destinations: {
-        cashApp: getCashAppDestination(),
-        zelle: getZelleDestination(),
+      flags: {
+        portalEnabled: flags.portalEnabled,
+        contactSelfServiceEnabled: flags.contactSelfServiceEnabled,
+        achEnabled: false,
+        cardEnabled: false,
+        cashAppPayEnabled: false,
+        existingCashAppEnabled: false,
+        zelleEnabled: false,
+        feeEngineEnabled: false,
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       {
         error: "Failed to load portal account",

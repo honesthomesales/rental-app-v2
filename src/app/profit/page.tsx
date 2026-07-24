@@ -609,7 +609,7 @@ export default function ProfitPage() {
   }
 
   return (
-    <div className="p-6 min-w-0 overflow-x-hidden">
+    <div className="p-6 min-w-0">
       <div className="mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">

@@ -70,10 +70,10 @@ async function ensureOne(args: {
       contact_type: args.contactType,
       original_value: args.value,
       normalized_value: args.normalized,
-      label: "primary",
+      label: "other",
       is_active: true,
       is_primary: true,
-      verification_status: "staff_recorded",
+      verification_status: "unverified",
       source: "staff",
       created_by: args.actor,
     })

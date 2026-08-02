@@ -17,6 +17,7 @@ import {
   shouldRunProtectedQueries,
   logoutRedirectPath,
 } from '@/lib/auth/session-state'
+import { MISC_INCOME_RATE } from '@/lib/expenses/classification'
 
 interface Lease {
   id: string
@@ -1405,7 +1406,6 @@ return'<div class="s">'+l+'</div>';
 
   const handleSaveMiscIncome = async (incomeData: any) => {
     try {
-      // Ensure interest_rate is exactly 9.9999 (not rounded)
       const expenseData: any = {
         category: 'Misc Income',
         amount_owed: incomeData.amount_owed || 0,
@@ -1415,7 +1415,7 @@ return'<div class="s">'+l+'</div>';
         memo: incomeData.mail_info || '',
         address: 'N/A',
         balance: 0,
-        interest_rate: 9.9999 // Use max positive value to identify misc income (one-time expenses use -9.9999)
+        interest_rate: MISC_INCOME_RATE,
       }
       
       // Only include property_id if it's provided
@@ -1574,15 +1574,15 @@ return'<div class="s">'+l+'</div>';
 
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Header — wrap so Add Misc Income stays visible at ~390px */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
               <p className="text-gray-600">Track and manage rental payments</p>
               <p className="text-xs text-gray-400 mt-1">Version: 2.2.0</p>
-              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3" data-testid="payments-action-buttons">
               <button
                 onClick={() => {
                   try {
@@ -1598,16 +1598,18 @@ return'<div class="s">'+l+'</div>';
               >
                 Generate Forms
               </button>
+              <button
+                onClick={() => setShowMiscIncomeModal(true)}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+                type="button"
+                data-testid="add-misc-income-button"
+              >
+                <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add Misc Income</span>
+              </button>
             </div>
-            <button
-              onClick={() => setShowMiscIncomeModal(true)}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span>Add Misc Income</span>
-            </button>
           </div>
         </div>
 
@@ -3884,7 +3886,7 @@ return'<div class="s">'+l+'</div>';
                 mail_info: formData.get('mail_info') as string || undefined,
                 address: 'N/A',
                 balance: 0,
-                interest_rate: 9.9999 // Use max positive value to identify misc income (one-time expenses use -9.9999)
+                interest_rate: MISC_INCOME_RATE
               }
               
               // Only include property_id if a valid property is selected

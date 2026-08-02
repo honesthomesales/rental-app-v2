@@ -3,6 +3,11 @@ import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { resolveBusinessDate } from '@/lib/business-date'
 import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
+import {
+  MISC_INCOME_RATE,
+  ONE_TIME_EXPENSE_RATE,
+  isRecurringExpense,
+} from '@/lib/expenses/classification'
 
 export const revalidate = 60
 
@@ -106,12 +111,11 @@ try {
 
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
-      .select('amount, amount_owed, balance, interest_rate')
+      .select('amount, amount_owed, balance, interest_rate, category')
 
     if (expensesError) throw expensesError
 
-    const recurringExpenses =
-      expenses?.filter((expense) => expense.interest_rate !== -9.9999) ?? []
+    const recurringExpenses = (expenses ?? []).filter(isRecurringExpense)
 
     const totalPayments = recurringExpenses.reduce(
       (sum, expense) => sum + (Number(expense.amount_owed) || 0),
@@ -155,7 +159,7 @@ try {
         supabaseServer
           .from('RENT_expenses')
           .select('amount_owed, last_paid_date')
-          .eq('interest_rate', 9.9999)
+          .eq('interest_rate', MISC_INCOME_RATE)
           .gte('last_paid_date', rangeStart)
           .lte('last_paid_date', rangeEnd)
           .order('last_paid_date', { ascending: true })
@@ -165,7 +169,7 @@ try {
         supabaseServer
           .from('RENT_expenses')
           .select('amount_owed, last_paid_date')
-          .eq('interest_rate', -9.9999)
+          .eq('interest_rate', ONE_TIME_EXPENSE_RATE)
           .gte('last_paid_date', rangeStart)
           .lte('last_paid_date', rangeEnd)
           .order('last_paid_date', { ascending: true })

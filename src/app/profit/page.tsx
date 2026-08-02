@@ -23,6 +23,7 @@ function rollingMonthCountForView(view: ProfitViewMode): 6 | 12 | null {
 
 export default function ProfitPage() {
   const [loading, setLoading] = useState(true)
+  const [metricsError, setMetricsError] = useState<string | null>(null)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
   const [sortField, setSortField] = useState<SortField>('property')
@@ -34,7 +35,9 @@ export default function ProfitPage() {
   const rollingMonthCount = rollingMonthCountForView(viewMode)
 
   useEffect(() => {
-    fetchMonthlyMetrics()
+    const controller = new AbortController()
+    fetchMonthlyMetrics(controller.signal)
+    return () => controller.abort()
   }, [currentDate])
 
   useEffect(() => {
@@ -70,23 +73,44 @@ export default function ProfitPage() {
   // Live profit metrics come from /api/profit/metrics and /api/profit/monthly-summary.
   // Unused mock fetchProfitData removed — do not reintroduce hard-coded property rows.
 
-  const fetchMonthlyMetrics = async () => {
+  const fetchMonthlyMetrics = async (signal?: AbortSignal) => {
+    setLoading(true)
+    setMetricsError(null)
     try {
       const monthParam = currentDate.toISOString().slice(0, 7) // YYYY-MM format
-      
-      const response = await fetch(`/api/profit/metrics?month=${monthParam}`)
+
+      const response = await fetch(`/api/profit/metrics?month=${monthParam}`, {
+        cache: 'no-store',
+        signal,
+      })
       if (response.ok) {
         const data = await response.json()
+        if (signal?.aborted) return
         setMonthlyMetrics(data)
+        setMetricsError(null)
       } else {
         console.error('Failed to fetch monthly metrics:', response.status)
-        const errorData = await response.json()
-        console.error('Error details:', errorData)
+        let message = `Failed to load profit metrics (${response.status})`
+        try {
+          const errorData = await response.json()
+          console.error('Error details:', errorData)
+          if (errorData?.error) message = String(errorData.error)
+        } catch {
+          /* ignore parse errors */
+        }
+        if (signal?.aborted) return
+        setMonthlyMetrics(null)
+        setMetricsError(message)
       }
     } catch (error) {
+      if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+        return
+      }
       console.error('Error fetching monthly metrics:', error)
+      setMonthlyMetrics(null)
+      setMetricsError('Could not load profit metrics. Check your connection and try again.')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }
 
@@ -657,6 +681,22 @@ export default function ProfitPage() {
         renderRollingMonthsView(rollingMonthCount)
       ) : (
         <>
+          {metricsError && (
+            <div
+              className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+              data-testid="profit-metrics-error"
+            >
+              <p className="text-sm text-red-800">{metricsError}</p>
+              <button
+                type="button"
+                onClick={() => fetchMonthlyMetrics()}
+                className="shrink-0 rounded-md bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Monthly Metrics View */}
           {renderMetricsView()}
 
@@ -665,13 +705,87 @@ export default function ProfitPage() {
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Income and Rent Details - {formatMonth(currentDate)}</h2>
           <p className="text-sm text-gray-600 mt-1">Detailed breakdown by property for the selected month</p>
-          <p className="text-xs text-gray-500 mt-1 sm:hidden" data-testid="profit-swipe-hint">
-            Swipe sideways to see all columns
-          </p>
+        </div>
+
+        {/* Mobile property cards */}
+        <div className="md:hidden divide-y divide-gray-100" data-testid="profit-property-cards">
+          {sortedPropertyDetails && sortedPropertyDetails.length > 0 ? (
+            <>
+              <div className="px-4 py-3 bg-blue-50">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Month totals</div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-gray-500">Expected</span>
+                    <div className="font-semibold">
+                      {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.expected_rent || 0), 0))}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Collected</span>
+                    <div className="font-semibold">
+                      {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0), 0))}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Misc Income</span>
+                    <div className="font-semibold">
+                      {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.misc_income || 0), 0))}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Total Income</span>
+                    <div className="font-bold text-green-600">
+                      {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {sortedPropertyDetails.map((property: any, index: number) => (
+                <div key={property.property_id || index} className="px-4 py-3">
+                  <div className="text-sm font-medium text-gray-900">
+                    {property.property_name || 'Unknown Property'}
+                  </div>
+                  {property.property_address ? (
+                    <div className="text-xs text-gray-500 mt-0.5">{property.property_address}</div>
+                  ) : null}
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Expected</span>
+                      <div>{formatCurrency(property.expected_rent || 0)}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Collected</span>
+                      <div>{formatCurrency(property.rent_collected || 0)}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Misc Income</span>
+                      <div>{formatCurrency(property.misc_income || 0)}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Total</span>
+                      <div className="font-medium text-green-600">
+                        {formatCurrency((property.rent_collected || 0) + (property.misc_income || 0))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="px-4 py-8 text-center text-sm text-gray-500" data-testid="profit-property-empty-mobile">
+              {loading
+                ? 'Loading property details…'
+                : metricsError
+                  ? 'Property details unavailable. Use Retry above.'
+                  : monthlyMetrics
+                    ? `No property data available for ${formatMonth(currentDate)}`
+                    : 'No property data loaded.'}
+            </div>
+          )}
         </div>
 
         <div
-          className="table-scroll-x overflow-x-auto overscroll-x-contain"
+          className="hidden md:block table-scroll-x overflow-x-auto overscroll-x-contain"
           tabIndex={0}
           role="region"
           aria-label="Profit income and rent details"
@@ -796,8 +910,14 @@ export default function ProfitPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                    {monthlyMetrics ? `No property data available for ${formatMonth(currentDate)}` : 'Loading...'}
+                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500" data-testid="profit-property-empty">
+                    {loading
+                      ? 'Loading property details…'
+                      : metricsError
+                        ? 'Property details unavailable. Use Retry above.'
+                        : monthlyMetrics
+                          ? `No property data available for ${formatMonth(currentDate)}`
+                          : 'No property data loaded.'}
                   </td>
                 </tr>
               )}

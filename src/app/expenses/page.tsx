@@ -3,6 +3,12 @@
 import React, { useEffect, useState } from 'react'
 import { Expense } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
+import {
+  ONE_TIME_EXPENSE_RATE,
+  isMiscIncome,
+  isOneTimeExpense,
+  isRecurringExpense,
+} from '@/lib/expenses/classification'
 
 type SortField = 'category' | 'amount' | 'expense_date' | 'memo' | 'property_name' | 'day_of_month' | 'amount_owed' | 'last_paid_date' | 'mail_info' | 'loan_number' | 'phone_number' | 'balance' | 'interest_rate'
 type SortDirection = 'asc' | 'desc'
@@ -24,6 +30,8 @@ export default function ExpensesPage() {
   const [filteredExpenses, setFilteredExpenses] = useState<ExpenseWithProperty[]>([])
   const [oneTimeExpenses, setOneTimeExpenses] = useState<ExpenseWithProperty[]>([])
   const [filteredOneTimeExpenses, setFilteredOneTimeExpenses] = useState<ExpenseWithProperty[]>([])
+  const [miscIncomeRows, setMiscIncomeRows] = useState<ExpenseWithProperty[]>([])
+  const [filteredMiscIncome, setFilteredMiscIncome] = useState<ExpenseWithProperty[]>([])
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -80,51 +88,39 @@ export default function ExpensesPage() {
   }
 
   const filterAndSortExpenses = () => {
-    // Separate regular expenses from one-time expenses
-    // One-time expenses are identified by interest_rate === -9.9999 (max negative value for DECIMAL(5,4))
-    const regularExpenses = expenses.filter(expense => expense.interest_rate !== -9.9999)
-    const oneTime = expenses.filter(expense => expense.interest_rate === -9.9999)
-    
+    // Recurring expenses vs one-time vs Misc Income (must not mix into expense totals)
+    const regularExpenses = expenses.filter(isRecurringExpense)
+    const oneTime = expenses.filter(isOneTimeExpense)
+    const misc = expenses.filter(isMiscIncome)
+
     setOneTimeExpenses(oneTime)
+    setMiscIncomeRows(misc)
 
-    // Filter regular expenses
-    let filtered = regularExpenses.filter(expense => {
-      const searchLower = searchTerm.toLowerCase()
-      return (
-        expense.property_name?.toLowerCase().includes(searchLower) ||
-        expense.property_address?.toLowerCase().includes(searchLower) ||
-        expense.mail_info?.toLowerCase().includes(searchLower) ||
-        expense.loan_number?.toLowerCase().includes(searchLower) ||
-        expense.phone_number?.toLowerCase().includes(searchLower) ||
-        expense.category?.toLowerCase().includes(searchLower)
-      )
-    })
+    const searchLower = searchTerm.toLowerCase()
+    const matchesSearch = (expense: ExpenseWithProperty) =>
+      !searchLower ||
+      expense.property_name?.toLowerCase().includes(searchLower) ||
+      expense.property_address?.toLowerCase().includes(searchLower) ||
+      expense.mail_info?.toLowerCase().includes(searchLower) ||
+      expense.loan_number?.toLowerCase().includes(searchLower) ||
+      expense.phone_number?.toLowerCase().includes(searchLower) ||
+      expense.category?.toLowerCase().includes(searchLower)
 
-    // Filter one-time expenses
-    let filteredOneTime = oneTime.filter(expense => {
-      const searchLower = searchTerm.toLowerCase()
-      return (
-        expense.property_name?.toLowerCase().includes(searchLower) ||
-        expense.property_address?.toLowerCase().includes(searchLower) ||
-        expense.mail_info?.toLowerCase().includes(searchLower)
-      )
-    })
+    let filtered = regularExpenses.filter(matchesSearch)
+    let filteredOneTime = oneTime.filter(matchesSearch)
+    let filteredMisc = misc.filter(matchesSearch)
 
-    // Sort regular expenses
     filtered.sort((a, b) => {
       let aValue: any = a[sortField]
       let bValue: any = b[sortField]
 
-      // Handle different data types
       if (typeof aValue === 'string') {
         aValue = aValue.toLowerCase()
-        bValue = bValue.toLowerCase()
+        bValue = (bValue || '').toLowerCase()
       } else if (typeof aValue === 'number') {
-        // Numbers are already comparable
         aValue = aValue || 0
         bValue = bValue || 0
       } else {
-        // Handle undefined/null values
         aValue = aValue || ''
         bValue = bValue || ''
       }
@@ -134,8 +130,13 @@ export default function ExpensesPage() {
       return 0
     })
 
-    // Sort one-time expenses by date paid (descending)
     filteredOneTime.sort((a, b) => {
+      const aDate = a.last_paid_date || ''
+      const bDate = b.last_paid_date || ''
+      return bDate.localeCompare(aDate)
+    })
+
+    filteredMisc.sort((a, b) => {
       const aDate = a.last_paid_date || ''
       const bDate = b.last_paid_date || ''
       return bDate.localeCompare(aDate)
@@ -143,6 +144,7 @@ export default function ExpensesPage() {
 
     setFilteredExpenses(filtered)
     setFilteredOneTimeExpenses(filteredOneTime)
+    setFilteredMiscIncome(filteredMisc)
   }
 
   const handleSort = (field: SortField) => {
@@ -207,10 +209,9 @@ export default function ExpensesPage() {
       const url = editingOneTimeExpense ? '/api/expenses' : '/api/expenses'
       const method = editingOneTimeExpense ? 'PUT' : 'POST'
       
-      // Ensure interest_rate is set to -9.9999 for one-time expenses (max negative value for DECIMAL(5,4))
-      // Filter out undefined and empty string values
+      // One-time expenses use the shared sentinel (DECIMAL(5,4) max negative)
       const oneTimeData: any = {
-        interest_rate: -9.9999, // Use max negative value to identify one-time expenses
+        interest_rate: ONE_TIME_EXPENSE_RATE,
         balance: 0, // Set balance to 0 for one-time expenses
         address: 'N/A',
         category: 'One-Time Expense',
@@ -328,18 +329,24 @@ export default function ExpensesPage() {
   }
 
   const calculateSummaryTotals = () => {
+    // Only recurring expenses (Misc Income excluded from debt summary)
     const withInterest = filteredExpenses
-      .filter(e => (e.interest_rate ?? 0) > 0)
+      .filter((e) => (e.interest_rate ?? 0) > 0)
       .reduce((sum, e) => sum + (e.balance ?? 0), 0)
     const zeroInterest = filteredExpenses
-      .filter(e => (e.interest_rate ?? 0) === 0)
+      .filter((e) => (e.interest_rate ?? 0) === 0)
       .reduce((sum, e) => sum + (e.balance ?? 0), 0)
     const totals = calculateTotals()
+    const miscTotal = filteredMiscIncome.reduce(
+      (sum, e) => sum + (e.amount_owed || e.amount || 0),
+      0,
+    )
     return {
       balanceWithInterest: withInterest,
       balanceZeroInterest: zeroInterest,
       totalBalance: totals.balance,
-      totalAmountOwed: totals.amount_owed
+      totalAmountOwed: totals.amount_owed,
+      miscIncomeTotal: miscTotal,
     }
   }
 
@@ -359,31 +366,38 @@ export default function ExpensesPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
               <p className="mt-2 text-gray-600">Manage property expenses and payments</p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-4 py-3 flex items-center gap-6">
-                <div className="text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-stretch lg:items-center">
+              <div
+                className="bg-white border border-gray-200 rounded-lg shadow-sm px-4 py-3 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center sm:gap-6"
+                data-testid="expenses-summary-cards"
+              >
+                <div className="text-sm sm:border-0">
                   <span className="text-gray-500 block">Balance (interest &gt; 0)</span>
                   <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().balanceWithInterest)}</span>
                 </div>
-                <div className="text-sm border-l border-gray-200 pl-4">
+                <div className="text-sm sm:border-l sm:border-gray-200 sm:pl-4">
                   <span className="text-gray-500 block">Balance (0% interest)</span>
                   <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().balanceZeroInterest)}</span>
                 </div>
-                <div className="text-sm border-l border-gray-200 pl-4">
+                <div className="text-sm sm:border-l sm:border-gray-200 sm:pl-4">
                   <span className="text-gray-500 block">Total Balance</span>
                   <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().totalBalance)}</span>
                 </div>
-                <div className="text-sm border-l border-gray-200 pl-4">
+                <div className="text-sm sm:border-l sm:border-gray-200 sm:pl-4">
                   <span className="text-gray-500 block">Total Amount Owed</span>
                   <span className="font-semibold text-gray-900">{formatCurrency(calculateSummaryTotals().totalAmountOwed)}</span>
                 </div>
+                <div className="text-sm col-span-2 sm:col-span-1 sm:border-l sm:border-emerald-200 sm:pl-4 bg-emerald-50/60 rounded-md px-2 py-1 sm:bg-transparent sm:rounded-none sm:px-0 sm:py-0">
+                  <span className="text-emerald-700 block">Misc Income (not an expense)</span>
+                  <span className="font-semibold text-emerald-800">{formatCurrency(calculateSummaryTotals().miscIncomeTotal)}</span>
+                </div>
               </div>
-              <div className="flex space-x-3">
+              <div className="flex flex-wrap gap-3">
                 <button
                   onClick={handleAddExpense}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
@@ -617,6 +631,56 @@ export default function ExpensesPage() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Misc Income — shown separately so it is never mistaken for an expense */}
+        {filteredMiscIncome.length > 0 && (
+          <div className="mt-12" data-testid="expenses-misc-income-section">
+            <h2 className="text-2xl font-bold text-emerald-800 mb-2">Misc Income</h2>
+            <p className="text-sm text-emerald-700 mb-6">
+              Credited as income on Profit / Dashboard. Not included in expense or debt totals.
+            </p>
+            <div className="bg-emerald-50/40 border border-emerald-100 shadow-sm rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-emerald-100">
+                  <thead className="bg-emerald-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">
+                        Property
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-emerald-50">
+                    {filteredMiscIncome.map((row) => (
+                      <tr key={row.id} className="hover:bg-emerald-50/40">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {row.mail_info || row.memo || 'Misc Income'}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-emerald-700">
+                          {formatCurrency(row.amount_owed || row.amount || 0)}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(row.last_paid_date || row.expense_date)}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {row.property_name || 'Unassigned / Portfolio'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
@@ -907,7 +971,7 @@ export default function ExpensesPage() {
                 mail_info: formData.get('mail_info') as string || undefined,
                 address: 'N/A',
                 balance: 0,
-                interest_rate: -9.9999
+                interest_rate: ONE_TIME_EXPENSE_RATE
               }
               
               // Only include property_id if a valid property is selected

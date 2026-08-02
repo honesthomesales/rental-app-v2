@@ -33,9 +33,11 @@ describe('mobile table scroll CSS', () => {
   it('Last Paid and Profit use scrollable table wrappers', () => {
     expect(lastPaid).toContain('data-testid="last-paid-table-scroller"')
     expect(lastPaid).toContain('table-scroll-x')
+    expect(lastPaid).toContain('data-testid="last-paid-mobile-cards"')
     expect(lastPaid).toMatch(/min-w-\[1100px\]/)
     expect(profit).toContain('data-testid="profit-totals-table-scroller"')
     expect(profit).toContain('table-scroll-x')
+    expect(profit).toContain('data-testid="profit-property-cards"')
     expect(profit).toMatch(/min-w-\[900px\]/)
   })
 

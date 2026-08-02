@@ -3,6 +3,11 @@ import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate } from '@/lib/business-date'
 import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
+import {
+  MISC_INCOME_RATE,
+  ONE_TIME_EXPENSE_RATE,
+  isRecurringExpense,
+} from '@/lib/expenses/classification'
 
 // Cache profit metrics for 60 seconds - historical data doesn't change
 export const revalidate = 60
@@ -155,20 +160,18 @@ try {
     console.log('Total insurance:', totalInsurance)
     console.log('Total taxes:', totalTaxes)
     
-    // Total payments: match Expenses page regular-expense totals (footer "Amount Owed" column).
-    // Same rules: exclude one-time rows (interest_rate === -9.9999); sum amount_owed (not amount).
+    // Total payments: recurring expenses only (exclude one-time AND Misc Income).
+    // Misc Income must not inflate debt; it is credited separately as income.
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
-      .select('amount, amount_owed, balance, interest_rate')
+      .select('amount, amount_owed, balance, interest_rate, category')
     
     if (expensesError) {
       console.error('Error fetching expenses:', expensesError)
       throw expensesError
     }
 
-    const recurringExpenses = expenses?.filter(
-      (expense) => expense.interest_rate !== -9.9999
-    ) || []
+    const recurringExpenses = (expenses || []).filter(isRecurringExpense)
 
     const totalPayments = recurringExpenses.reduce(
       (sum, expense) => sum + (Number(expense.amount_owed) || 0),
@@ -250,7 +253,7 @@ try {
         const { data: miscIncomeByProperty, error: miscError } = await supabaseServer
           .from('RENT_expenses')
           .select('property_id, amount_owed')
-          .eq('interest_rate', 9.9999)
+          .eq('interest_rate', MISC_INCOME_RATE)
           .gte('last_paid_date', startOfMonth)
           .lte('last_paid_date', endOfMonth)
 
@@ -261,8 +264,13 @@ try {
         const paymentsByPropertyMap = collectionFacts.collectedByProperty
 
         const miscIncomeByPropertyMap = new Map<string, number>()
+        let unassignedMiscIncome = 0
         miscIncomeByProperty?.forEach((m: any) => {
-          const propId = m.property_id || 'no-property'
+          if (!m.property_id) {
+            unassignedMiscIncome += Number(m.amount_owed) || 0
+            return
+          }
+          const propId = String(m.property_id)
           miscIncomeByPropertyMap.set(
             propId,
             (miscIncomeByPropertyMap.get(propId) || 0) + (Number(m.amount_owed) || 0)
@@ -320,6 +328,18 @@ try {
           }
         })
 
+        // Portfolio-level Misc Income (no property_id) stays in totals, never assigned to a property.
+        if (unassignedMiscIncome > 0) {
+          propertyDetails.push({
+            property_id: null,
+            property_name: 'Unassigned / Portfolio',
+            property_address: 'Misc Income not tied to a property',
+            expected_rent: 0,
+            rent_collected: 0,
+            misc_income: unassignedMiscIncome,
+          })
+        }
+
         console.log('Property details built. Count:', propertyDetails.length)
       }
     } catch (error) {
@@ -330,11 +350,11 @@ try {
     console.log('Rent collected:', rentCollected)
     console.log('Expected rent:', expectedRent)
     
-    // Get one-time expenses for the month to calculate repairs, other expenses, and misc income
+    // One-time expenses for the month (repairs / other); Misc Income is separate.
     const { data: oneTimeExpenses, error: oneTimeError } = await supabaseServer
       .from('RENT_expenses')
       .select('category, amount_owed, last_paid_date, mail_info')
-      .eq('interest_rate', -9.9999) // One-time expenses are marked with -9.9999
+      .eq('interest_rate', ONE_TIME_EXPENSE_RATE)
       .gte('last_paid_date', startOfMonth)
       .lte('last_paid_date', endOfMonth)
     
@@ -344,15 +364,13 @@ try {
     
     console.log('One-time expenses found:', oneTimeExpenses?.length || 0)
     
-    // Calculate other expenses (all one-time expenses)
     const otherExpenses = oneTimeExpenses
       ?.reduce((sum, expense) => sum + (Number(expense.amount_owed) || 0), 0) || 0
     
-    // Get misc income from expenses with interest_rate = -888
     const { data: miscIncomeExpenses, error: miscIncomeError } = await supabaseServer
       .from('RENT_expenses')
       .select('amount_owed, last_paid_date')
-      .eq('interest_rate', 9.9999) // Misc income is marked with 9.9999 (one-time expenses use -9.9999)
+      .eq('interest_rate', MISC_INCOME_RATE)
       .gte('last_paid_date', startOfMonth)
       .lte('last_paid_date', endOfMonth)
     
@@ -377,63 +395,67 @@ try {
     // Collection rate as decimal (0-1) for gauge
     const collectionRate = expectedRent > 0 ? (rentCollected / expectedRent) : 0
     
-    // Calculate average profit for previous 12 months
+    // 12-month average: batched queries (not 12 sequential round-trips) so the
+    // critical metrics response does not hang / leave Profit stuck on Loading.
     let averageProfit12Months = 0
     try {
-      const profitAmounts: number[] = []
       const currentMonth = new Date(year, monthNum, 1)
-      
-      // Calculate profit for each of the previous 12 months
+      const monthWindows: Array<{ start: string; end: string }> = []
       for (let i = 1; i <= 12; i++) {
         const pastMonth = new Date(currentMonth)
         pastMonth.setMonth(pastMonth.getMonth() - i)
-        const pastMonthStr = `${pastMonth.getFullYear()}-${String(pastMonth.getMonth() + 1).padStart(2, '0')}`
-        
-        const pastStartOfMonth = `${pastMonthStr}-01`
         const pastYear = pastMonth.getFullYear()
         const pastMonthNum = pastMonth.getMonth()
-        const pastEndOfMonth = new Date(pastYear, pastMonthNum + 1, 0).toISOString().slice(0, 10)
-        
-        const pastRentCollected = await fetchRentCollectedInMonth(
-          pastStartOfMonth,
-          pastEndOfMonth
-        )
-        
-        // Fetch misc income for that month
-        const { data: pastMiscIncome } = await supabaseServer
-          .from('RENT_expenses')
-          .select('amount_owed')
-          .eq('interest_rate', 9.9999)
-          .gte('last_paid_date', pastStartOfMonth)
-          .lte('last_paid_date', pastEndOfMonth)
-        
-        const pastMiscIncomeAmount = pastMiscIncome?.reduce((sum, e) => sum + (Number(e.amount_owed) || 0), 0) || 0
-        
-        // Fetch one-time expenses for that month
-        const { data: pastOneTimeExpenses } = await supabaseServer
-          .from('RENT_expenses')
-          .select('amount_owed')
-          .eq('interest_rate', -9.9999)
-          .gte('last_paid_date', pastStartOfMonth)
-          .lte('last_paid_date', pastEndOfMonth)
-        
-        const pastOtherExpenses = pastOneTimeExpenses?.reduce((sum, e) => sum + (Number(e.amount_owed) || 0), 0) || 0
-        
-        // Calculate profit for that month (income - expenses)
-        const pastTotalIncome = pastRentCollected + pastMiscIncomeAmount
-        const pastTotalExpenses = totalInsurance + totalTaxes + totalPayments + pastOtherExpenses
-        const pastProfit = pastTotalIncome - pastTotalExpenses
-        
-        profitAmounts.push(pastProfit)
+        monthWindows.push({
+          start: `${pastYear}-${String(pastMonthNum + 1).padStart(2, '0')}-01`,
+          end: new Date(pastYear, pastMonthNum + 1, 0).toISOString().slice(0, 10),
+        })
       }
-      
-      // Calculate average
+      const rangeStart12 = monthWindows[monthWindows.length - 1].start
+      const rangeEnd12 = monthWindows[0].end
+
+      const [pastMiscAll, pastOneTimeAll, ...pastRentAmounts] = await Promise.all([
+        supabaseServer
+          .from('RENT_expenses')
+          .select('amount_owed, last_paid_date')
+          .eq('interest_rate', MISC_INCOME_RATE)
+          .gte('last_paid_date', rangeStart12)
+          .lte('last_paid_date', rangeEnd12)
+          .then((r) => r.data || []),
+        supabaseServer
+          .from('RENT_expenses')
+          .select('amount_owed, last_paid_date')
+          .eq('interest_rate', ONE_TIME_EXPENSE_RATE)
+          .gte('last_paid_date', rangeStart12)
+          .lte('last_paid_date', rangeEnd12)
+          .then((r) => r.data || []),
+        ...monthWindows.map((w) => fetchRentCollectedInMonth(w.start, w.end)),
+      ])
+
+      const sumInWindow = (
+        rows: Array<{ amount_owed?: number | null; last_paid_date?: string | null }>,
+        start: string,
+        end: string,
+      ) =>
+        rows.reduce((sum, e) => {
+          const d = String(e.last_paid_date || '')
+          if (d >= start && d <= end) return sum + (Number(e.amount_owed) || 0)
+          return sum
+        }, 0)
+
+      const profitAmounts = monthWindows.map((w, idx) => {
+        const pastRent = Number(pastRentAmounts[idx]) || 0
+        const pastMisc = sumInWindow(pastMiscAll as any[], w.start, w.end)
+        const pastOther = sumInWindow(pastOneTimeAll as any[], w.start, w.end)
+        return pastRent + pastMisc - (totalInsurance + totalTaxes + totalPayments + pastOther)
+      })
+
       if (profitAmounts.length > 0) {
         averageProfit12Months = profitAmounts.reduce((sum, p) => sum + p, 0) / profitAmounts.length
       }
     } catch (error) {
       console.error('Error calculating average profit:', error)
-      // Continue with 0 if calculation fails
+      // Continue with 0 if calculation fails — do not fail the whole metrics response
     }
     
     // Calculate potential profit if House Debt is paid (expenses with balance > 0 reduced to zero)

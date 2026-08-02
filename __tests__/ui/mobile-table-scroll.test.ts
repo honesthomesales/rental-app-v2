@@ -37,7 +37,7 @@ describe('mobile table scroll CSS', () => {
     expect(lastPaid).toMatch(/min-w-\[1100px\]/)
     expect(profit).toContain('data-testid="profit-totals-table-scroller"')
     expect(profit).toContain('table-scroll-x')
-    expect(profit).toContain('data-testid="profit-property-cards"')
+    expect(profit).not.toContain('data-testid="profit-property-cards"')
     expect(profit).toMatch(/min-w-\[900px\]/)
   })
 

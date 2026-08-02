@@ -145,7 +145,20 @@ export interface DashboardMetrics {
   occupiedProperties: number
   monthlyIncome: number
   potentialIncome: number
+  /** Empty residential rent_value total only (matches Potential Income modal). */
+  emptyPotentialIncome?: number
+  evictionPotentialIncome?: number
   totalPotentialIncome: number
+  potentialIncomeRows?: Array<{
+    propertyId: string
+    propertyName: string
+    address: string
+    tenantName?: string
+    status: 'empty' | 'eviction'
+    cadence: string
+    rent: number
+    monthlyPotential: number
+  }>
   latePayments: number
   totalOwed: number
   propertyTypeBreakdown: {
@@ -157,6 +170,8 @@ export interface DashboardMetrics {
   totalDebt?: number
   currentProfit?: number
   potentialProfit?: number
+  potentialProfitNoHouseDebt?: number
+  currentMonthMiscIncome?: number
 }
 
 // Payments grid types

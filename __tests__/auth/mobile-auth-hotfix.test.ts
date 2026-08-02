@@ -58,6 +58,20 @@ describe('mobile auth hotfix — session gating', () => {
     expect(view.message).toBe('Checking sign-in…')
   })
 
+  it('authenticated data load is data_pending, not Checking sign-in', () => {
+    const view = resolveProtectedDataView({
+      authStatus: 'authenticated',
+      loading: true,
+      httpStatus: null,
+      networkError: false,
+      itemCount: 0,
+      loadNoun: 'dashboard',
+    })
+    expect(view.kind).toBe('data_pending')
+    expect(view.message).toBe('Loading dashboard…')
+    expect(view.message).not.toContain('sign-in')
+  })
+
   it('anonymous RLS / 401 does not display No active leases found', () => {
     const view = resolveProtectedDataView({
       authStatus: 'authenticated',

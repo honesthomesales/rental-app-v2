@@ -19,6 +19,12 @@ import {
   shouldRunProtectedQueries,
   logoutRedirectPath,
 } from '@/lib/auth/session-state'
+import {
+  isEligibleEmptyPotentialProperty,
+  isPhysicallyOccupied,
+} from '@/lib/lease-status'
+
+const DASHBOARD_FETCH_TIMEOUT_MS = 25_000
 
 /**
  * Insurance + Property Tax tables and dashboard metrics API: only these property_type values.
@@ -142,6 +148,8 @@ export default function Dashboard() {
   }, [typeFilter, occupiedPropertiesTypeFilter])
 
   const fetchDashboardData = async (showRefreshing = false) => {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), DASHBOARD_FETCH_TIMEOUT_MS)
     try {
       if (showRefreshing) {
         setRefreshing(true)
@@ -160,14 +168,17 @@ export default function Dashboard() {
         fetch(`/api/dashboard/metrics?t=${timestamp}`, {
           credentials: 'include',
           cache: 'no-store',
+          signal: controller.signal,
         }),
         fetch(`/api/properties?t=${timestamp}`, {
           credentials: 'include',
           cache: 'no-store',
+          signal: controller.signal,
         }),
         fetch(`/api/leases?t=${timestamp}`, {
           credentials: 'include',
           cache: 'no-store',
+          signal: controller.signal,
         }),
       ])
 
@@ -202,65 +213,36 @@ export default function Dashboard() {
         if (data && propertiesData && leasesResponse.ok) {
           const leasesData = await leasesResponse.json()
           
-          // Get occupied property IDs from active leases
-          const occupiedPropertyIds = new Set<string>()
+          // Match dashboard metrics API: status alone (occupied OR eviction), no date-range gate
+          const physicallyOccupiedPropertyIds = new Set<string>()
+          const soldPropertyIds = new Set<string>()
           const today = new Date().toISOString().split('T')[0]
           const todayDate = new Date(today)
           
           leasesData.forEach((lease: any) => {
-            // Check if lease has tenants (status = 'occupied' or 'sold')
-            const isOccupied = lease.status === 'occupied' || lease.status === 'sold'
-            if (isOccupied && lease.property_id) {
-              const startDate = new Date(lease.lease_start_date)
-              const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
-              
-              // Lease is occupied if today is between start and end (or no end date)
-              const isWithinDateRange = todayDate >= startDate && (!endDate || todayDate <= endDate)
-              
-              // Debug for 4750 S Pine
-              const property = lease.RENT_properties
-              if (property && property.address?.toLowerCase().includes('4750') && property.address?.toLowerCase().includes('pine')) {
-                console.log('🔍 4750 S Pine lease check:', {
-                  leaseId: lease.id,
-                  status: lease.status,
-                  isOccupied,
-                  startDate: lease.lease_start_date,
-                  endDate: lease.lease_end_date,
-                  today: today,
-                  isWithinDateRange,
-                  willMarkAsOccupied: isOccupied && isWithinDateRange
-                })
-              }
-              
-              if (isWithinDateRange) {
-                occupiedPropertyIds.add(lease.property_id)
-              }
+            if (!lease.property_id) return
+            if (lease.status === 'sold') soldPropertyIds.add(lease.property_id)
+            if (isPhysicallyOccupied(lease.status)) {
+              physicallyOccupiedPropertyIds.add(lease.property_id)
             }
           })
           
-          // Filter empty properties with rent_value
-          // A property is empty if it's not in the occupiedPropertyIds set
-          const potentialProps = propertiesData.filter((property: any) => {
-            if (!isOverviewResidentialType(property.property_type)) return false
-            const isOccupied = occupiedPropertyIds.has(property.id)
-            const hasRentValue = property.rent_value && property.rent_value > 0
-            return !isOccupied && hasRentValue
-          })
-          
-          // Sort by potential income (rent_value) descending
-          potentialProps.sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
+          // Same eligibility as /api/dashboard/metrics emptyPotentialIncome
+          const potentialProps = propertiesData
+            .filter((property: any) =>
+              isEligibleEmptyPotentialProperty({
+                propertyType: property.property_type,
+                propertyStatus: property.status,
+                rentValue: property.rent_value,
+                hasPhysicallyOccupiedLease: physicallyOccupiedPropertyIds.has(property.id),
+                hasSoldLease: soldPropertyIds.has(property.id),
+              }),
+            )
+            .sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
           setPotentialIncomeProperties(potentialProps)
           
           // Calculate occupied properties for modal - show all properties with hasTenants flag
           // But filter out sold properties and "other" type to match dashboard count
-          // Get sold property IDs from leases (same logic as dashboard API)
-          const soldPropertyIds = new Set(
-            leasesData
-              ?.filter((lease: any) => lease.status === 'sold')
-              .map((lease: any) => lease.property_id)
-          )
-          
-          // Filter properties to match dashboard (exclude sold; house / doublewide / singlewide only)
           const validProperties = propertiesData.filter(
             (property: any) =>
               !soldPropertyIds.has(property.id) &&
@@ -269,7 +251,7 @@ export default function Dashboard() {
           
           const allPropsWithTenants = validProperties.map((property: any) => ({
             ...property,
-            hasTenants: occupiedPropertyIds.has(property.id)
+            hasTenants: physicallyOccupiedPropertyIds.has(property.id)
           }))
           setOccupiedProperties(allPropsWithTenants)
           
@@ -293,10 +275,14 @@ export default function Dashboard() {
       console.error('Error fetching dashboard data:', error)
       // Do not convert auth/network failures into legitimate-looking zeros.
       setMetrics(null)
-      if (error instanceof TypeError) {
+      if (
+        error instanceof TypeError ||
+        (error instanceof DOMException && error.name === 'AbortError')
+      ) {
         setMetricsNetworkError(true)
       }
     } finally {
+      window.clearTimeout(timeoutId)
       setLoading(false)
       setRefreshing(false)
     }
@@ -644,17 +630,34 @@ export default function Dashboard() {
     loadNoun: 'dashboard',
   })
 
-  if (
-    dashboardView.kind === 'auth_pending' ||
-    loading ||
-    auth.status === 'loading'
-  ) {
+  if (auth.status === 'loading' || dashboardView.kind === 'auth_pending') {
     return (
       <div className="p-6">
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
           <p className="text-gray-500 mb-4" data-testid="dashboard-auth-pending">
             Checking sign-in…
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white p-6 rounded-lg shadow">
+                <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading || dashboardView.kind === 'data_pending') {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+          <p className="text-gray-500 mb-4" data-testid="dashboard-data-pending">
+            Loading dashboard…
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[...Array(4)].map((_, i) => (
@@ -711,7 +714,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-4 sm:p-6 min-w-0 overflow-x-hidden">
+    <div className="p-4 sm:p-6 min-w-0 max-w-full">
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-3xl font-bold text-gray-900">Dashboard 1.4</h1>
@@ -779,9 +782,15 @@ export default function Dashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Potential Income</p>
-              <p className="text-2xl font-semibold text-gray-900">${metrics?.totalPotentialIncome?.toLocaleString() || 0}</p>
+              <p className="text-2xl font-semibold text-gray-900" data-testid="dashboard-empty-potential">
+                $
+                {(
+                  metrics?.emptyPotentialIncome ??
+                  potentialIncomeProperties.reduce((sum, p) => sum + (Number(p.rent_value) || 0), 0)
+                ).toLocaleString()}
+              </p>
               <p className="text-xs text-gray-500 mt-1">
-                Empty: ${metrics?.potentialIncome?.toLocaleString() || 0}
+                Empty houses total rent (matches list below)
               </p>
               <p className="text-xs text-indigo-600 mt-1 font-medium">Click to view/edit</p>
             </div>
@@ -1671,8 +1680,12 @@ export default function Dashboard() {
                             <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               Total Potential Income
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600">
-                              ${potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600" data-testid="potential-income-modal-total">
+                              $
+                              {(
+                                metrics?.emptyPotentialIncome ??
+                                potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0)
+                              ).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td></td>
                           </tr>

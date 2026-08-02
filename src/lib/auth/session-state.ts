@@ -10,6 +10,7 @@ export type AuthStatus =
 
 export type ProtectedDataIssue =
   | "auth_pending"
+  | "data_pending"
   | "sign_in_required"
   | "session_expired"
   | "access_denied"
@@ -18,6 +19,7 @@ export type ProtectedDataIssue =
 
 export type ProtectedDataView =
   | { kind: "auth_pending"; message: string }
+  | { kind: "data_pending"; message: string }
   | { kind: "sign_in_required"; message: string }
   | { kind: "session_expired"; message: string }
   | { kind: "access_denied"; message: string }
@@ -91,7 +93,14 @@ export function resolveProtectedDataView(options: {
     };
   }
 
+  // Authenticated data fetch in flight — never mislabel as "Checking sign-in…"
   if (options.loading) {
+    if (options.authStatus === "authenticated") {
+      return {
+        kind: "data_pending",
+        message: `Loading ${noun}…`,
+      };
+    }
     return { kind: "auth_pending", message: MESSAGES.auth_pending };
   }
 

@@ -53,9 +53,12 @@ describe('misc income + responsive screen markers', () => {
     expect(paymentsPage).toContain('data-testid="payments-action-buttons"')
   })
 
-  it('profit page has error/retry and mobile cards (no stuck Loading)', () => {
+  it('profit page has error/retry and scrollable monthly table on all widths', () => {
     expect(profitPage).toContain('data-testid="profit-metrics-error"')
-    expect(profitPage).toContain('data-testid="profit-property-cards"')
+    expect(profitPage).toContain('data-testid="profit-totals-table-scroller"')
+    expect(profitPage).toContain('data-testid="profit-swipe-hint"')
+    expect(profitPage).toContain('table-scroll-x')
+    expect(profitPage).not.toContain('data-testid="profit-property-cards"')
     expect(profitPage).toContain('Retry')
     expect(profitPage).not.toMatch(/monthlyMetrics \? `No property[^`]+` : 'Loading\.\.\.'/)
   })

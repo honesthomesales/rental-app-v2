@@ -20,11 +20,19 @@ import {
   logoutRedirectPath,
 } from '@/lib/auth/session-state'
 import {
-  isEligibleEmptyPotentialProperty,
   isPhysicallyOccupied,
+  selectNewestLeaseByProperty,
 } from '@/lib/lease-status'
 
 const DASHBOARD_FETCH_TIMEOUT_MS = 25_000
+
+type DashboardLeaseRow = {
+  id: string
+  property_id?: string | null
+  status?: string | null
+  created_at?: string | null
+  lease_start_date?: string | null
+}
 
 /**
  * Insurance + Property Tax tables and dashboard metrics API: only these property_type values.
@@ -102,7 +110,6 @@ export default function Dashboard() {
   const [overviewSearchTerm, setOverviewSearchTerm] = useState<string>('')
   const [showPotentialIncomeSection, setShowPotentialIncomeSection] = useState(false)
   const [showPotentialIncomeModal, setShowPotentialIncomeModal] = useState(false)
-  const [potentialIncomeProperties, setPotentialIncomeProperties] = useState<any[]>([])
   const [showOccupiedModal, setShowOccupiedModal] = useState(false)
   const [occupiedProperties, setOccupiedProperties] = useState<any[]>([])
   const [showMonthlyIncomeModal, setShowMonthlyIncomeModal] = useState(false)
@@ -120,6 +127,8 @@ export default function Dashboard() {
   const [occupiedPropertiesTypeFilter, setOccupiedPropertiesTypeFilter] = useState<string>('all')
   const [occupiedPropertiesSortField, setOccupiedPropertiesSortField] = useState<'property' | 'address' | 'type' | 'hasTenants'>('property')
   const [occupiedPropertiesSortDirection, setOccupiedPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
+
+  const potentialIncomeRows = metrics?.potentialIncomeRows || []
   
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
@@ -209,42 +218,27 @@ export default function Dashboard() {
         })
         setTaxSelectedProperties(colorStates)
         
-          // Calculate potential income properties (empty with rent_value)
-        if (data && propertiesData && leasesResponse.ok) {
+        if (propertiesData && leasesResponse.ok) {
           const leasesData = await leasesResponse.json()
-          
-          // Match dashboard metrics API: status alone (occupied OR eviction), no date-range gate
+
+          const newestLeaseByProperty = selectNewestLeaseByProperty<DashboardLeaseRow>(leasesData)
           const physicallyOccupiedPropertyIds = new Set<string>()
           const soldPropertyIds = new Set<string>()
           const today = new Date().toISOString().split('T')[0]
           const todayDate = new Date(today)
-          
-          leasesData.forEach((lease: any) => {
-            if (!lease.property_id) return
-            if (lease.status === 'sold') soldPropertyIds.add(lease.property_id)
+
+          newestLeaseByProperty.forEach((lease, propertyId) => {
+            if (lease.status === 'sold') soldPropertyIds.add(propertyId)
             if (isPhysicallyOccupied(lease.status)) {
-              physicallyOccupiedPropertyIds.add(lease.property_id)
+              physicallyOccupiedPropertyIds.add(propertyId)
             }
           })
-          
-          // Same eligibility as /api/dashboard/metrics emptyPotentialIncome
-          const potentialProps = propertiesData
-            .filter((property: any) =>
-              isEligibleEmptyPotentialProperty({
-                propertyType: property.property_type,
-                propertyStatus: property.status,
-                rentValue: property.rent_value,
-                hasPhysicallyOccupiedLease: physicallyOccupiedPropertyIds.has(property.id),
-                hasSoldLease: soldPropertyIds.has(property.id),
-              }),
-            )
-            .sort((a: any, b: any) => (b.rent_value || 0) - (a.rent_value || 0))
-          setPotentialIncomeProperties(potentialProps)
-          
+
           // Calculate occupied properties for modal - show all properties with hasTenants flag
           // But filter out sold properties and "other" type to match dashboard count
           const validProperties = propertiesData.filter(
             (property: any) =>
+              String(property.status || '').toLowerCase() !== 'sold' &&
               !soldPropertyIds.has(property.id) &&
               isOverviewResidentialType(property.property_type)
           )
@@ -266,9 +260,6 @@ export default function Dashboard() {
             return isWithinDateRange
           })
           setMonthlyIncomeLeases(incomeLeases)
-        } else if (data && propertiesData) {
-          // If leases fetch failed, still set properties but no potential income calculation
-          setPotentialIncomeProperties([])
         }
       }
     } catch (error) {
@@ -782,15 +773,14 @@ export default function Dashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Potential Income</p>
-              <p className="text-2xl font-semibold text-gray-900" data-testid="dashboard-empty-potential">
-                $
-                {(
-                  metrics?.emptyPotentialIncome ??
-                  potentialIncomeProperties.reduce((sum, p) => sum + (Number(p.rent_value) || 0), 0)
-                ).toLocaleString()}
+              <p className="text-2xl font-semibold text-gray-900" data-testid="dashboard-potential-income">
+                ${(metrics?.potentialIncome || 0).toLocaleString()}
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Empty houses total rent (matches list below)
+                Empty properties + eviction potential (matches list below)
+              </p>
+              <p className="text-xs text-gray-500 mt-1" data-testid="dashboard-potential-income-count">
+                {potentialIncomeRows.length} qualifying properties
               </p>
               <p className="text-xs text-indigo-600 mt-1 font-medium">Click to view/edit</p>
             </div>
@@ -892,9 +882,9 @@ export default function Dashboard() {
         
         {showPotentialIncomeSection && (
           <div className="mt-4">
-            {potentialIncomeProperties.length === 0 ? (
+            {potentialIncomeRows.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No empty properties with potential income found.
+                No properties with potential income found.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -904,32 +894,38 @@ export default function Dashboard() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Property
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Potential Income
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {potentialIncomeProperties.map((property) => (
-                      <tr key={property.id} className="hover:bg-gray-50">
+                    {potentialIncomeRows.map((row, index) => (
+                      <tr key={row.leaseId || `${row.status}-${row.propertyId}-${index}`} className="hover:bg-gray-50" data-testid="potential-income-list-row">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
-                          {property.address && (
-                            <div className="text-sm text-gray-500">{property.address}</div>
+                          <div className="text-sm font-medium text-gray-900">{row.propertyName || 'Unnamed Property'}</div>
+                          {row.address && (
+                            <div className="text-sm text-gray-500">{row.address}</div>
                           )}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm capitalize text-gray-600">
+                          {row.status}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-indigo-600">
-                          ${(property.rent_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {row.monthlyPotential.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                         </td>
                       </tr>
                     ))}
-                    {potentialIncomeProperties.length > 0 && (
+                    {potentialIncomeRows.length > 0 && (
                       <tr className="bg-gray-100 font-semibold">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           Total Potential Income
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600">
-                          ${potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {(metrics?.potentialIncome || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                         </td>
                       </tr>
                     )}
@@ -1497,8 +1493,8 @@ export default function Dashboard() {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Empty Properties - Potential Rent</h2>
-                <p className="text-sm text-gray-600 mt-1">Edit rent_value to update potential income</p>
+                <h2 className="text-xl font-semibold text-gray-900">Potential Income Properties</h2>
+                <p className="text-sm text-gray-600 mt-1">Edit empty-property rent_value; eviction rent is read-only</p>
               </div>
               <button
                 onClick={() => {
@@ -1512,9 +1508,9 @@ export default function Dashboard() {
             </div>
 
             <div className="px-6 py-4 overflow-y-auto flex-1">
-              {potentialIncomeProperties.length === 0 ? (
+              {potentialIncomeRows.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  No empty properties with potential income found.
+                  No properties with potential income found.
                 </div>
               ) : (
                 <>
@@ -1562,6 +1558,9 @@ export default function Dashboard() {
                           >
                             Address {emptyPropertiesSortField === 'address' && (emptyPropertiesSortDirection === 'asc' ? '↑' : '↓')}
                           </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                          </th>
                           <th 
                             className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                             onClick={() => {
@@ -1578,23 +1577,22 @@ export default function Dashboard() {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {(() => {
-                          // Sort properties
-                          const sortedProperties = [...potentialIncomeProperties].sort((a, b) => {
+                          const sortedRows = [...potentialIncomeRows].sort((a, b) => {
                             let aValue: any
                             let bValue: any
                             
                             switch (emptyPropertiesSortField) {
                               case 'property':
-                                aValue = (a.name || '').toLowerCase()
-                                bValue = (b.name || '').toLowerCase()
+                                aValue = (a.propertyName || '').toLowerCase()
+                                bValue = (b.propertyName || '').toLowerCase()
                                 break
                               case 'address':
                                 aValue = (a.address || '').toLowerCase()
                                 bValue = (b.address || '').toLowerCase()
                                 break
                               case 'rent':
-                                aValue = a.rent_value || 0
-                                bValue = b.rent_value || 0
+                                aValue = a.monthlyPotential
+                                bValue = b.monthlyPotential
                                 break
                               default:
                                 return 0
@@ -1605,36 +1603,34 @@ export default function Dashboard() {
                             return 0
                           })
                           
-                          return sortedProperties.map((property) => (
-                        <tr key={property.id} className="hover:bg-gray-50">
+                          return sortedRows.map((row, index) => (
+                        <tr key={row.leaseId || `${row.status}-${row.propertyId}-${index}`} className="hover:bg-gray-50" data-testid="potential-income-modal-row">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{property.name || 'Unnamed Property'}</div>
+                            <div className="text-sm font-medium text-gray-900">{row.propertyName || 'Unnamed Property'}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{property.address || 'N/A'}</div>
+                            <div className="text-sm text-gray-500">{row.address || 'N/A'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm capitalize text-gray-600">
+                            {row.status}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right">
-                            {editingRentValue?.propertyId === property.id ? (
+                            {row.status === 'empty' && editingRentValue?.propertyId === row.propertyId ? (
                               <input
                                 type="number"
                                 step="0.01"
                                 value={editingRentValue.value}
-                                onChange={(e) => setEditingRentValue({ propertyId: property.id, value: e.target.value })}
+                                onChange={(e) => setEditingRentValue({ propertyId: row.propertyId, value: e.target.value })}
                                 onBlur={async () => {
                                   const newValue = parseFloat(editingRentValue.value) || 0
                                   try {
-                                    const response = await fetch(`/api/properties/${property.id}`, {
+                                    const response = await fetch(`/api/properties/${row.propertyId}`, {
                                       method: 'PATCH',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ rent_value: newValue })
                                     })
                                     if (response.ok) {
-                                      // Update local state
-                                      setPotentialIncomeProperties(prev => 
-                                        prev.map(p => p.id === property.id ? { ...p, rent_value: newValue } : p)
-                                      )
-                                      // Refresh dashboard metrics
-                                      fetchDashboardData()
+                                      await fetchDashboardData(true)
                                     } else {
                                       alert('Failed to update rent value')
                                     }
@@ -1656,36 +1652,36 @@ export default function Dashboard() {
                               />
                             ) : (
                               <div 
-                                className="text-sm font-semibold text-indigo-600 cursor-pointer hover:text-indigo-800"
-                                onClick={() => setEditingRentValue({ propertyId: property.id, value: (property.rent_value || 0).toString() })}
+                                className={`text-sm font-semibold ${row.status === 'empty' ? 'text-indigo-600 cursor-pointer hover:text-indigo-800' : 'text-orange-700'}`}
+                                onClick={row.status === 'empty' ? () => setEditingRentValue({ propertyId: row.propertyId, value: row.monthlyPotential.toString() }) : undefined}
                               >
-                                ${(property.rent_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {row.monthlyPotential.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                               </div>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <button
-                              onClick={() => setEditingRentValue({ propertyId: property.id, value: (property.rent_value || 0).toString() })}
-                              className="text-blue-600 hover:text-blue-900"
-                              title="Edit rent value"
-                            >
-                              <PencilIcon className="h-4 w-4" />
-                            </button>
+                            {row.status === 'empty' ? (
+                              <button
+                                onClick={() => setEditingRentValue({ propertyId: row.propertyId, value: row.monthlyPotential.toString() })}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="Edit rent value"
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-500">Lease rent</span>
+                            )}
                           </td>
                           </tr>
                           ))
                         })()}
-                        {potentialIncomeProperties.length > 0 && (
+                        {potentialIncomeRows.length > 0 && (
                           <tr className="bg-gray-100 font-semibold">
-                            <td colSpan={2} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td colSpan={3} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               Total Potential Income
                             </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-indigo-600" data-testid="potential-income-modal-total">
-                              $
-                              {(
-                                metrics?.emptyPotentialIncome ??
-                                potentialIncomeProperties.reduce((sum, p) => sum + (p.rent_value || 0), 0)
-                              ).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {(metrics?.potentialIncome || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                             </td>
                             <td></td>
                           </tr>

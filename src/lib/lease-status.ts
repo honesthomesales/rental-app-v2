@@ -5,6 +5,13 @@
 
 export type LeaseStatus = "occupied" | "eviction" | "empty" | "sold";
 
+export interface LeaseRecencyFields {
+  id: string;
+  property_id?: string | null;
+  created_at?: string | null;
+  lease_start_date?: string | null;
+}
+
 export const LEASE_STATUS_OPTIONS: Array<{
   value: LeaseStatus;
   label: string;
@@ -23,6 +30,43 @@ export function normalizeLeaseStatus(
   if (s === "empty") return "empty";
   if (s === "sold") return "sold";
   return "occupied";
+}
+
+/**
+ * Deterministic current-lease ordering shared by Properties and Dashboard.
+ * Newest created_at wins, followed by lease_start_date and id.
+ */
+export function compareLeasesNewestFirst(
+  a: LeaseRecencyFields,
+  b: LeaseRecencyFields,
+): number {
+  const createdComparison = String(b.created_at || "").localeCompare(
+    String(a.created_at || ""),
+  );
+  if (createdComparison !== 0) return createdComparison;
+
+  const startComparison = String(b.lease_start_date || "").localeCompare(
+    String(a.lease_start_date || ""),
+  );
+  if (startComparison !== 0) return startComparison;
+
+  return String(b.id || "").localeCompare(String(a.id || ""));
+}
+
+export function selectNewestLeaseByProperty<T extends LeaseRecencyFields>(
+  leases: readonly T[],
+): Map<string, T> {
+  const newestByProperty = new Map<string, T>();
+
+  for (const lease of leases) {
+    if (!lease.property_id) continue;
+    const current = newestByProperty.get(lease.property_id);
+    if (!current || compareLeasesNewestFirst(lease, current) < 0) {
+      newestByProperty.set(lease.property_id, lease);
+    }
+  }
+
+  return newestByProperty;
 }
 
 /** Physically occupied property (Has Tenants or Eviction Process). */
@@ -127,19 +171,23 @@ export function resolveInvoiceScheduleEnd(args: {
   return end;
 }
 
-/** Empty potential: residential, not retired/sold, no occupied/eviction lease, rent_value > 1 */
+/** Empty potential: residential, not retired/sold, no lease or newest lease is empty, rent_value > 1. */
 export function isEligibleEmptyPotentialProperty(args: {
   propertyType: string | null | undefined;
   propertyStatus: string | null | undefined;
   rentValue: number | null | undefined;
-  hasPhysicallyOccupiedLease: boolean;
-  hasSoldLease: boolean;
+  hasCurrentLease: boolean;
+  currentLeaseStatus?: string | null;
 }): boolean {
   const type = String(args.propertyType || "").toLowerCase();
   if (!["house", "doublewide", "singlewide"].includes(type)) return false;
-  if (String(args.propertyStatus || "").toLowerCase() === "retired")
+  const propertyStatus = String(args.propertyStatus || "").toLowerCase();
+  if (propertyStatus === "retired" || propertyStatus === "sold") return false;
+  if (
+    args.hasCurrentLease &&
+    normalizeLeaseStatus(args.currentLeaseStatus) !== "empty"
+  ) {
     return false;
-  if (args.hasSoldLease) return false;
-  if (args.hasPhysicallyOccupiedLease) return false;
+  }
   return Number(args.rentValue || 0) > 1;
 }

@@ -1,5 +1,5 @@
 // Service Worker for Rental Management App PWA
-const CACHE_NAME = 'rental-app-v2';
+const CACHE_NAME = 'rental-app-v2-2026-08-03';
 const urlsToCache = [
   '/',
   '/payments',
@@ -21,6 +21,7 @@ self.addEventListener('install', (event) => {
         console.log('Opened cache');
         return cache.addAll(urlsToCache);
       })
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -35,6 +36,29 @@ self.addEventListener('fetch', (event) => {
         headers: { 'Content-Type': 'application/json' }
       });
     }));
+    return;
+  }
+
+  // Always prefer the deployed page while online. This prevents an installed
+  // PWA from pinning an old Dashboard bundle after a production release.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((fetchResponse) => {
+          if (fetchResponse && fetchResponse.status === 200) {
+            const responseToCache = fetchResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return fetchResponse;
+        })
+        .catch(async () => {
+          return (await caches.match(event.request)) ||
+            (await caches.match('/')) ||
+            new Response('Offline', { status: 503 });
+        })
+    );
     return;
   }
 
@@ -69,15 +93,17 @@ self.addEventListener('fetch', (event) => {
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    caches.keys()
+      .then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              console.log('Deleting old cache:', cacheName);
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      })
+      .then(() => self.clients.claim())
   );
 });

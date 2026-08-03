@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import { isEligibleEmptyPotentialProperty } from '@/lib/lease-status'
 
 describe('dashboard potential income + loading UX', () => {
   const page = fs.readFileSync(
@@ -11,47 +10,35 @@ describe('dashboard potential income + loading UX', () => {
     path.join(process.cwd(), 'src/lib/auth/session-state.ts'),
     'utf8',
   )
+  const metricsRoute = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/api/dashboard/metrics/route.ts'),
+    'utf8',
+  )
 
   it('does not show Checking sign-in while authenticated dashboard data loads', () => {
     expect(sessionState).toContain('data_pending')
     expect(page).toContain('data-testid="dashboard-data-pending"')
     expect(page).toContain('Loading dashboard…')
-    expect(page).toContain('isEligibleEmptyPotentialProperty')
+    expect(page).toContain('metrics?.potentialIncomeRows || []')
   })
 
-  it('Potential Income card uses emptyPotentialIncome (not totalPotentialIncome)', () => {
-    expect(page).toContain('data-testid="dashboard-empty-potential"')
-    expect(page).toContain('emptyPotentialIncome')
-    expect(page).toMatch(/metrics\?\.emptyPotentialIncome/)
+  it('Potential Income card uses the combined API potential total and row count', () => {
+    expect(page).toContain('data-testid="dashboard-potential-income"')
+    expect(page).toContain('data-testid="dashboard-potential-income-count"')
+    expect(page).toMatch(/metrics\?\.potentialIncome/)
+    expect(page).toContain('potentialIncomeRows.length')
   })
 
-  it('empty eligibility matches API: rent_value > 1 and no occupied/eviction lease', () => {
-    expect(
-      isEligibleEmptyPotentialProperty({
-        propertyType: 'house',
-        propertyStatus: 'active',
-        rentValue: 800,
-        hasPhysicallyOccupiedLease: false,
-        hasSoldLease: false,
-      }),
-    ).toBe(true)
-    expect(
-      isEligibleEmptyPotentialProperty({
-        propertyType: 'house',
-        propertyStatus: 'active',
-        rentValue: 1,
-        hasPhysicallyOccupiedLease: false,
-        hasSoldLease: false,
-      }),
-    ).toBe(false)
-    expect(
-      isEligibleEmptyPotentialProperty({
-        propertyType: 'house',
-        propertyStatus: 'active',
-        rentValue: 800,
-        hasPhysicallyOccupiedLease: true,
-        hasSoldLease: false,
-      }),
-    ).toBe(false)
+  it('expandable list and modal render the same combined API rows', () => {
+    expect(page).toContain('data-testid="potential-income-list-row"')
+    expect(page).toContain('data-testid="potential-income-modal-row"')
+    expect(page).toContain('data-testid="potential-income-modal-total"')
+    expect(page).not.toContain('setPotentialIncomeProperties')
+    expect(page).not.toContain("filter((row) => row.status === 'empty')")
+    expect(metricsRoute).toContain('buildEmptyPotentialSummary')
+    expect(metricsRoute).toContain('sumPotentialIncomeRows')
+    expect(metricsRoute).toContain('emptyPotentialCount')
+    expect(metricsRoute).toContain('const potentialIncomeRows = [...emptyPotentialRows, ...evictionRows]')
+    expect(metricsRoute).toContain('const potentialIncome = sumPotentialIncomeRows(potentialIncomeRows)')
   })
 })

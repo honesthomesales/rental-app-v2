@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Property } from '@/types/database'
 import { BuildingOfficeIcon, PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { useRecordDeepLink } from '@/hooks/useRecordDeepLink'
+import { selectNewestLeaseByProperty } from '@/lib/lease-status'
 
 type SortField = 'name' | 'city' | 'property_type' | 'rent_value' | 'cadence' | 'tenantName' | 'leaseStatus' | 'is_for_rent'
 type SortDirection = 'asc' | 'desc'
@@ -16,6 +17,21 @@ type PropertyWithLease = Property & {
   leaseStatus?: string | null
   leaseId?: string | null
   displayRent?: number | null
+}
+
+type PropertyLeaseRow = {
+  id: string
+  property_id?: string | null
+  status?: string | null
+  created_at?: string | null
+  lease_start_date?: string | null
+  rent_cadence?: string | null
+  rent?: number | null
+  RENT_tenants?: {
+    full_name?: string | null
+    first_name?: string | null
+    last_name?: string | null
+  } | null
 }
 
 export default function PropertiesPage() {
@@ -136,23 +152,16 @@ function PropertiesPageInner() {
       
       // Fetch lease data to get cadence and tenant info
       const leaseResponse = await fetch('/api/leases')
-      let leaseData = []
+      let leaseData: PropertyLeaseRow[] = []
       if (leaseResponse.ok) {
-        leaseData = await leaseResponse.json()
+        leaseData = (await leaseResponse.json()) as PropertyLeaseRow[]
       }
       
       // Merge property data with lease data
       // Show all lease statuses (occupied, active, sold, empty)
+      const newestLeaseByProperty = selectNewestLeaseByProperty(leaseData)
       const propertiesWithLease = data.map((property: Property) => {
-        // Prefer newest lease per property (find() alone could pick an older row depending on API order)
-        const leasesForProp = leaseData.filter((l: any) => l.property_id === property.id)
-        const anyLease =
-          leasesForProp.length === 0
-            ? undefined
-            : [...leasesForProp].sort(
-                (a, b) =>
-                  new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-              )[0]
+        const anyLease = newestLeaseByProperty.get(property.id)
         
         // Check if lease has tenants (occupied or sold) for isOccupied flag
         const isActiveLease = anyLease && (

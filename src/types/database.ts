@@ -145,11 +145,14 @@ export interface DashboardMetrics {
   occupiedProperties: number
   monthlyIncome: number
   potentialIncome: number
-  /** Empty residential rent_value total only (matches Potential Income modal). */
-  emptyPotentialIncome?: number
-  evictionPotentialIncome?: number
+  /** Empty residential rent_value total only. */
+  emptyPotentialIncome: number
+  emptyPotentialCount: number
+  evictionPotentialIncome: number
+  evictionPotentialCount: number
   totalPotentialIncome: number
-  potentialIncomeRows?: Array<{
+  potentialIncomeRows: Array<{
+    leaseId?: string
     propertyId: string
     propertyName: string
     address: string

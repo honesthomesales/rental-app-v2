@@ -63,9 +63,10 @@ describe('misc income + responsive screen markers', () => {
     expect(profitPage).not.toMatch(/monthlyMetrics \? `No property[^`]+` : 'Loading\.\.\.'/)
   })
 
-  it('Last Paid uses mobile cards without sticky tenant column on narrow screens', () => {
-    expect(lastPaid).toContain('data-testid="last-paid-mobile-cards"')
-    expect(lastPaid).toContain('hidden md:block table-scroll-x')
+  it('Last Paid uses its scrollable desktop table on narrow screens', () => {
+    expect(lastPaid).not.toContain('data-testid="last-paid-mobile-cards"')
+    expect(lastPaid).toContain('data-testid="last-paid-table-scroller"')
+    expect(lastPaid).not.toContain('hidden md:block table-scroll-x')
     expect(lastPaid).not.toContain('sticky left-0 z-10 bg-white px-4 py-3')
   })
 })

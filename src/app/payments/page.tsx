@@ -1870,17 +1870,23 @@ return'<div class="s">'+l+'</div>';
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-4 flex justify-between items-center">
-              <div>
+            <div
+              className="relative bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 sm:px-6 py-4 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center"
+              data-testid="invoice-modal-header"
+            >
+              <div className="min-w-0 pr-14 sm:pr-0">
                 <h2 className="text-2xl font-bold">{selectedLease.property?.name}</h2>
                 <p className="text-blue-100">{selectedLease.tenant?.full_name}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div
+                className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:gap-3"
+                data-testid="invoice-modal-actions"
+              >
                 <button
                   onClick={() => {
                     void reviewMissingInvoices()
                   }}
-                  className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium"
+                  className="w-full min-h-11 sm:w-auto px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium"
                   title="Preview missing invoices without saving"
                   type="button"
                 >
@@ -1895,7 +1901,7 @@ return'<div class="s">'+l+'</div>';
                     setNewInvoiceAmount(selectedLease.lease.rent?.toString() || '0')
                     setShowAddInvoiceModal(true)
                   }}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                  className="w-full min-h-11 sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                   title="Add a single invoice"
                 >
                   + Add Invoice
@@ -2295,7 +2301,7 @@ return'<div class="s">'+l+'</div>';
                       alert('Failed to show next invoice: ' + (error instanceof Error ? error.message : 'Unknown error'))
                     }
                   }}
-                  className="px-3 py-1.5 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                  className="w-full min-h-11 sm:w-auto px-3 py-1.5 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
                   type="button"
                   title="Select one invoice to correct"
                 >
@@ -2303,7 +2309,8 @@ return'<div class="s">'+l+'</div>';
                 </button>
                 <button
                   onClick={() => setShowInvoiceModal(false)}
-                  className="text-white hover:text-gray-200 transition-colors"
+                  className="absolute top-3 right-3 min-h-11 min-w-11 flex items-center justify-center text-white hover:text-gray-200 transition-colors sm:static"
+                  aria-label="Close invoice details"
                 >
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

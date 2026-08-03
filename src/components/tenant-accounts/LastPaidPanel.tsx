@@ -1239,81 +1239,8 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
       {/* Main Table, Grid, or Monthly */}
       {viewMode === 'table' ? (
         <div className="bg-white rounded-lg shadow min-w-0 max-w-full">
-          {/* Mobile cards — avoid sticky-column table at narrow widths */}
-          <div className="md:hidden divide-y divide-gray-100" data-testid="last-paid-mobile-cards">
-            {filteredAndSorted.length === 0 ? (
-              <div className="px-4 py-8 text-center text-gray-500 text-sm">No payment history found</div>
-            ) : (
-              filteredAndSorted.map((property) => {
-                const lastPaymentDate = getLastPaymentReceivedDate(property, businessDate)
-                const lastPayment = getMostRecentEligiblePayment(property, businessDate)
-                const tenantName =
-                  property.tenant_name ||
-                  lastPayment?.tenant_name ||
-                  property.payments[0]?.tenant_name ||
-                  '-'
-                const isExpanded = expandedProperty === property.property_id
-                return (
-                  <div key={property.property_id} className="px-4 py-3">
-                    <div className="text-sm font-semibold text-gray-900">{tenantName}</div>
-                    <div className="text-sm text-gray-800 mt-0.5">{property.property_name}</div>
-                    <div className="text-xs text-gray-500">{cadenceBadge(property.cadence)}</div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-gray-500 block text-xs">Most recent payment</span>
-                        {lastPaymentDate ? formatDate(lastPaymentDate) : 'Never'}
-                      </div>
-                      <div>
-                        <span className="text-gray-500 block text-xs">Payment amount</span>
-                        {lastPayment ? formatCurrency(lastPayment.amount) : '—'}
-                      </div>
-                      <div>
-                        <span className="text-gray-500 block text-xs">Method</span>
-                        {lastPayment?.payment_type || '—'}
-                      </div>
-                      <div>
-                        <span className="text-gray-500 block text-xs">Current balance</span>
-                        <span className={property.totalOwed > 0 ? 'text-red-700 font-medium' : 'text-green-700 font-medium'}>
-                          {formatCurrency(property.totalOwed)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedProperty(isExpanded ? null : property.property_id)}
-                        className="px-3 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100"
-                      >
-                        {isExpanded ? 'Hide' : 'View history'}
-                      </button>
-                      <TenantCommunicationActions
-                        phone={property.tenant_phone}
-                        size="sm"
-                        textEnabled={true}
-                        onText={() =>
-                          setCommTarget({
-                            tenantId: property.tenant_id || '',
-                            tenantName,
-                            phone: property.tenant_phone,
-                            propertyId: property.property_id,
-                            propertyLabel: property.property_name,
-                            leaseId: property.lease_id,
-                            leaseStatus: null,
-                            templateContext: {
-                              amount_due: formatCurrency(property.totalOwed),
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
-
           <div
-            className="hidden md:block table-scroll-x overflow-x-auto overscroll-x-contain"
+            className="table-scroll-x overflow-x-auto overscroll-x-contain"
             tabIndex={0}
             role="region"
             aria-label="Last Paid table"

@@ -7,8 +7,12 @@ import {
   isPhysicallyOccupied,
   countsTowardCurrentIncome,
   countsTowardEvictionPotential,
-  isEligibleEmptyPotentialProperty,
+  selectNewestLeaseByProperty,
 } from '@/lib/lease-status'
+import {
+  buildEmptyPotentialSummary,
+  sumPotentialIncomeRows,
+} from '@/lib/dashboard-potential'
 import { monthlyEquivalentRent } from '@/lib/monthly-equivalent'
 import {
   isMiscIncome,
@@ -47,7 +51,7 @@ export async function GET(request: Request) {
     // Fetch ALL leases (for sold-exclusion, occupancy sets, and eviction potential)
     const { data: allLeases, error: allLeasesError } = await supabaseServer
       .from('RENT_leases')
-      .select('id, property_id, status, rent, rent_cadence, lease_start_date, lease_end_date, tenant_id')
+      .select('id, property_id, status, rent, rent_cadence, created_at, lease_start_date, lease_end_date, tenant_id')
 
     if (allLeasesError) {
       throw new Error(`Error fetching all leases: ${allLeasesError.message}`)
@@ -71,23 +75,23 @@ export async function GET(request: Request) {
       })
     }
 
-    // Build property-level sets from leases
+    // Match Properties: one deterministic newest lease classifies each property.
+    const newestLeaseByProperty = selectNewestLeaseByProperty(allLeases || [])
     const soldPropertyIds = new Set<string>()
-    const physicallyOccupiedPropertyIds = new Set<string>()  // occupied OR eviction
-    const currentIncomePropertyIds = new Set<string>()       // occupied only
+    const physicallyOccupiedPropertyIds = new Set<string>()
 
-    ;(allLeases || []).forEach(lease => {
-      if (!lease.property_id) return
-      if (lease.status === 'sold') soldPropertyIds.add(lease.property_id)
-      if (isPhysicallyOccupied(lease.status)) physicallyOccupiedPropertyIds.add(lease.property_id)
-      if (countsTowardCurrentIncome(lease.status)) currentIncomePropertyIds.add(lease.property_id)
+    newestLeaseByProperty.forEach((lease, propertyId) => {
+      if (lease.status === 'sold') soldPropertyIds.add(propertyId)
+      if (isPhysicallyOccupied(lease.status)) physicallyOccupiedPropertyIds.add(propertyId)
     })
 
     // Valid residential properties (not sold, residential type)
     const validProperties =
       allProperties?.filter(
         property =>
-          !soldPropertyIds.has(property.id) && isOverviewResidentialType(property.property_type)
+          String(property.status || '').toLowerCase() !== 'sold' &&
+          !soldPropertyIds.has(property.id) &&
+          isOverviewResidentialType(property.property_type)
       ) || []
 
     const today = getBusinessDate()
@@ -109,40 +113,11 @@ export async function GET(request: Request) {
     })
 
     // Empty potential income — eligible empty residential properties
-    let emptyPotentialIncome = 0
-    const emptyPotentialRows: Array<{
-      propertyId: string
-      propertyName: string
-      address: string
-      status: 'empty'
-      cadence: string
-      rent: number
-      monthlyPotential: number
-    }> = []
-
-    validProperties.forEach(property => {
-      const hasSoldLease = soldPropertyIds.has(property.id)
-      const hasPhysicallyOccupied = physicallyOccupiedPropertyIds.has(property.id)
-      const eligible = isEligibleEmptyPotentialProperty({
-        propertyType: property.property_type,
-        propertyStatus: property.status,
-        rentValue: property.rent_value,
-        hasPhysicallyOccupiedLease: hasPhysicallyOccupied,
-        hasSoldLease,
-      })
-      if (!eligible) return
-      const rentVal = Number(property.rent_value || 0)
-      emptyPotentialIncome += rentVal
-      emptyPotentialRows.push({
-        propertyId: property.id,
-        propertyName: property.name || '',
-        address: property.address || '',
-        status: 'empty',
-        cadence: 'monthly',
-        rent: rentVal,
-        monthlyPotential: rentVal,
-      })
-    })
+    const {
+      rows: emptyPotentialRows,
+      count: emptyPotentialCount,
+      total: emptyPotentialIncome,
+    } = buildEmptyPotentialSummary(validProperties, allLeases || [])
 
     // Eviction rows for potentialIncomeRows
     const evictionRows = evictionLeases.map(lease => {
@@ -150,6 +125,7 @@ export async function GET(request: Request) {
       const tenantName = lease.tenant_id ? (tenantNames.get(lease.tenant_id) || '') : ''
       const monthly = monthlyEquivalentRent(lease.rent, lease.rent_cadence)
       return {
+        leaseId: lease.id,
         propertyId: lease.property_id || '',
         propertyName: property?.name || '',
         address: property?.address || '',
@@ -161,10 +137,11 @@ export async function GET(request: Request) {
       }
     })
 
-    const emptyRowsWithTenant = emptyPotentialRows.map(r => ({ ...r, tenantName: '' }))
-
-    // Total potential income
-    const totalPotentialIncome = currentMonthlyIncome + emptyPotentialIncome + evictionPotentialIncome
+    // Potential Income card/list/modal: empty property rent + eviction potential.
+    // Derive the displayed total from the exact API rows so they cannot drift.
+    const potentialIncomeRows = [...emptyPotentialRows, ...evictionRows]
+    const potentialIncome = sumPotentialIncomeRows(potentialIncomeRows)
+    const totalPotentialIncome = currentMonthlyIncome + potentialIncome
 
     // Occupied properties count = physically occupied (occupied OR eviction)
     const occupiedProperties = physicallyOccupiedPropertyIds.size
@@ -302,14 +279,14 @@ export async function GET(request: Request) {
       occupiedProperties,
       // Backward-compatible income field names
       monthlyIncome: currentMonthlyIncome,
-      potentialIncome: emptyPotentialIncome + evictionPotentialIncome,
+      potentialIncome,
       totalPotentialIncome,
       // New breakdown fields
       emptyPotentialIncome,
       evictionPotentialIncome,
-      emptyPotentialCount: emptyPotentialRows.length,
+      emptyPotentialCount,
       evictionPotentialCount: evictionLeases.length,
-      potentialIncomeRows: [...emptyRowsWithTenant, ...evictionRows],
+      potentialIncomeRows,
       latePayments,
       totalOwed,
       ledgerVersion,

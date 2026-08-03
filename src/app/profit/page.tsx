@@ -721,7 +721,7 @@ export default function ProfitPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100 select-none"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider md:sticky md:left-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100 select-none"
                   onClick={() => handleSort('property')}
                 >
                   <div className="flex items-center">
@@ -790,7 +790,7 @@ export default function ProfitPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {sortedPropertyDetails && sortedPropertyDetails.length > 0 && (
                 <tr className="bg-blue-50 font-semibold border-b-2 border-blue-200">
-                  <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-blue-50 z-10">
+                  <td className="px-6 py-4 whitespace-nowrap md:sticky md:left-0 bg-blue-50 z-10">
                     <span className="text-sm font-bold text-gray-900">TOTALS</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
@@ -810,7 +810,7 @@ export default function ProfitPage() {
               {sortedPropertyDetails && sortedPropertyDetails.length > 0 ? (
                 sortedPropertyDetails.map((property: any, index: number) => (
                   <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10">
+                    <td className="px-6 py-4 whitespace-nowrap md:sticky md:left-0 bg-white z-10">
                       <div>
                         <div className="text-sm font-medium text-gray-900">
                           {property.property_name || 'Unknown Property'}
@@ -849,7 +849,7 @@ export default function ProfitPage() {
               )}
               {sortedPropertyDetails && sortedPropertyDetails.length > 0 && (
                 <tr className="bg-gray-100 font-semibold">
-                  <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-gray-100 z-10">
+                  <td className="px-6 py-4 whitespace-nowrap md:sticky md:left-0 bg-gray-100 z-10">
                     TOTALS
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">

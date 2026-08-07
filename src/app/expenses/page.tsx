@@ -302,6 +302,26 @@ export default function ExpensesPage() {
     }
   }
 
+
+  const handleDeleteMiscIncome = async (expense: Expense) => {
+    try {
+      const response = await fetch(`/api/expenses?id=${expense.id}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('API error:', errorData)
+        throw new Error(errorData.error || 'Failed to delete misc income')
+      }
+
+      await fetchExpenses()
+    } catch (error) {
+      console.error('Error deleting misc income:', error)
+      alert('Failed to delete misc income. Please try again.')
+    }
+  }
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -664,7 +684,17 @@ export default function ExpensesPage() {
                     {filteredMiscIncome.map((row) => (
                       <tr key={row.id} className="hover:bg-emerald-50/40">
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {row.mail_info || row.memo || 'Misc Income'}
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMiscIncome(row)}
+                              className="text-red-600 hover:text-red-900 mr-2"
+                              title="Delete Misc Income"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                            <span>{row.mail_info || row.memo || 'Misc Income'}</span>
+                          </div>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-emerald-700">
                           {formatCurrency(row.amount_owed || row.amount || 0)}

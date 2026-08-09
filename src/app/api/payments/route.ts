@@ -6,7 +6,11 @@ import { getBusinessDate } from '@/lib/business-date'
 import { canAllocatePaymentAsOf } from '@/lib/payment-eligibility'
 import {
   allocationGroupNote,
+  getDeferredSelectedInvoiceId,
   planNewestFirstAllocation,
+  planSelectedInvoiceForwardAllocation,
+  withDeferredSelectedInvoiceNote,
+  withoutDeferredSelectedInvoiceNote,
 } from '@/lib/payments/post-allocated-payment'
 
 export async function POST(request: Request) {
@@ -219,12 +223,62 @@ try {
       notes: memo || '',
     }
 
+    const { data: openInvoices, error: invoiceLoadError } = await supabaseServer
+      .from('RENT_invoices')
+      .select(
+        'id, due_date, period_start, period_end, balance_due, amount_total, amount_paid, status',
+      )
+      .eq('lease_id', leaseId)
+
+    if (invoiceLoadError) {
+      console.error('Error loading invoices for allocation:', invoiceLoadError)
+      return NextResponse.json(
+        {
+          error: 'Failed to load invoices for payment allocation',
+          details: invoiceLoadError.message,
+        },
+        { status: 500 },
+      )
+    }
+
+    const selectedInvoice = invoiceId
+      ? (openInvoices || []).find(
+          (invoice) => String(invoice.id) === String(invoiceId),
+        )
+      : null
+    if (invoiceId && !selectedInvoice) {
+      return NextResponse.json(
+        { error: 'Selected invoice does not belong to this lease' },
+        { status: 400 },
+      )
+    }
+    if (
+      selectedInvoice &&
+      ['VOID', 'CANCELLED', 'CANCELED'].includes(
+        String(selectedInvoice.status || '').toUpperCase(),
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'Selected invoice is void or cancelled' },
+        { status: 400 },
+      )
+    }
+
     // Future-dated: record exactly one payment with NO invoice link so the
     // invoice-total trigger does not allocate before the effective date.
     if (!canAllocatePaymentAsOf({ payment_date: paymentDate }, businessDate)) {
+      const deferredRecord = invoiceId
+        ? {
+            ...baseRecord,
+            notes: withDeferredSelectedInvoiceNote(
+              String(baseRecord.notes || ''),
+              String(invoiceId),
+            ),
+          }
+        : baseRecord
       const { data: payment, error: paymentError } = await supabaseServer
         .from('RENT_payments')
-        .insert([baseRecord])
+        .insert([deferredRecord])
         .select()
         .single()
 
@@ -246,32 +300,22 @@ try {
       })
     }
 
-    // Newest-eligible-invoice-first for all newly posted eligible payments.
+    // Selected staff invoice first, then later due dates. Requests without an
+    // invoice selection retain the automatic newest-eligible-first fallback.
     // Production truth remains RENT_payments.invoice_id + DB triggers; waterfall
     // splits become one payment row per invoice leg (same logical payment).
-    const { data: openInvoices, error: invoiceLoadError } = await supabaseServer
-      .from('RENT_invoices')
-      .select(
-        'id, due_date, period_start, period_end, balance_due, amount_total, amount_paid, status',
-      )
-      .eq('lease_id', leaseId)
-
-    if (invoiceLoadError) {
-      console.error('Error loading invoices for allocation:', invoiceLoadError)
-      return NextResponse.json(
-        {
-          error: 'Failed to load invoices for payment allocation',
-          details: invoiceLoadError.message,
-        },
-        { status: 500 },
-      )
-    }
-
-    const plan = planNewestFirstAllocation({
-      paymentAmount: Number(amount),
-      paymentEffectiveDate: paymentDateOnly,
-      invoices: openInvoices || [],
-    })
+    const allocationStrategy = invoiceId ? 'selected_forward' : 'newest_first'
+    const plan = invoiceId
+      ? planSelectedInvoiceForwardAllocation({
+          paymentAmount: Number(amount),
+          selectedInvoiceId: String(invoiceId),
+          invoices: openInvoices || [],
+        })
+      : planNewestFirstAllocation({
+          paymentAmount: Number(amount),
+          paymentEffectiveDate: paymentDateOnly,
+          invoices: openInvoices || [],
+        })
 
     // No eligible invoices: still record the payment unallocated.
     if (plan.splits.length === 0) {
@@ -305,7 +349,7 @@ try {
       invoice_id: split.invoiceId,
       notes: [
         memo || '',
-        allocationGroupNote(groupId, index + 1, legCount),
+        allocationGroupNote(groupId, index + 1, legCount, allocationStrategy),
       ]
         .filter(Boolean)
         .join(' | '),
@@ -316,7 +360,7 @@ try {
         amount: plan.unallocatedAmount,
         notes: [
           memo || '',
-          allocationGroupNote(groupId, legCount, legCount),
+          allocationGroupNote(groupId, legCount, legCount, allocationStrategy),
           'unallocated_remainder',
         ]
           .filter(Boolean)
@@ -341,9 +385,10 @@ try {
     }
 
     const payment = inserted[0]
-    console.log('Payment recorded with newest-first allocation:', {
+    console.log('Payment recorded with allocation:', {
       paymentId: payment.id,
       groupId,
+      allocationStrategy,
       splits: plan.splits,
     })
 
@@ -351,14 +396,14 @@ try {
       payment,
       payments: inserted,
       allocationGroupId: groupId,
+      allocationStrategy,
       allocations: inserted.map((row) => ({
         invoice_id: row.invoice_id,
         amount: row.amount,
         payment_id: row.id,
       })),
       unallocatedAmount: plan.unallocatedAmount,
-      // Staff may still pass invoice_id for UI context; allocation ignores it.
-      ignoredRequestedInvoiceId: invoiceId || null,
+      requestedInvoiceId: invoiceId || null,
     })
   } catch (error) {
     console.error('Error in payments API:', error)
@@ -748,6 +793,7 @@ try {
     // Transform the data to include joined information
     const transformedPayments = (payments || []).map(payment => ({
       ...payment,
+      notes: withoutDeferredSelectedInvoiceNote(payment.notes),
       tenant_name: payment.RENT_tenants?.full_name || 
                   `${payment.RENT_tenants?.first_name || ''} ${payment.RENT_tenants?.last_name || ''}`.trim(),
       tenant_email: payment.RENT_tenants?.email,
@@ -841,7 +887,19 @@ try {
     if (body.payment_date !== undefined) updateData.payment_date = body.payment_date
     if (body.amount !== undefined) updateData.amount = body.amount
     if (body.payment_type !== undefined) updateData.payment_type = body.payment_type
-    if (body.notes !== undefined) updateData.notes = body.notes
+    if (body.notes !== undefined) {
+      const { data: existingPayment } = await supabaseServer
+        .from('RENT_payments')
+        .select('notes')
+        .eq('id', paymentId)
+        .maybeSingle()
+      const deferredInvoiceId = existingPayment
+        ? getDeferredSelectedInvoiceId(existingPayment.notes)
+        : null
+      updateData.notes = deferredInvoiceId
+        ? withDeferredSelectedInvoiceNote(String(body.notes || ''), deferredInvoiceId)
+        : body.notes
+    }
 
     console.log('Update data:', updateData)
 

@@ -5,7 +5,10 @@ import { isAuthError, requireApiAuth } from "@/lib/auth/api-auth";
 import { canAllocatePaymentAsOf } from "@/lib/payment-eligibility";
 import {
   allocationGroupNote,
+  getDeferredSelectedInvoiceId,
   planNewestFirstAllocation,
+  planSelectedInvoiceForwardAllocation,
+  withoutDeferredSelectedInvoiceNote,
 } from "@/lib/payments/post-allocated-payment";
 import { supabaseServer } from "@/lib/supabase-server";
 
@@ -128,7 +131,7 @@ export async function GET(request: NextRequest) {
         status: p.status || "completed",
         allocationStatus: p.invoice_id ? "prematurely_linked" : "unallocated",
         invoiceId: p.invoice_id,
-        reference: p.notes || null,
+        reference: withoutDeferredSelectedInvoiceNote(p.notes) || null,
       };
     });
 
@@ -207,11 +210,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const plan = planNewestFirstAllocation({
-      paymentAmount: Number(payment.amount || 0),
-      paymentEffectiveDate: toDateOnly(payment.payment_date),
-      invoices: invoices || [],
-    });
+    const selectedInvoiceId = getDeferredSelectedInvoiceId(payment.notes);
+    if (
+      selectedInvoiceId &&
+      !(invoices || []).some(
+        (invoice) => String(invoice.id) === selectedInvoiceId,
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Selected invoice no longer belongs to this lease" },
+        { status: 409 },
+      );
+    }
+
+    const allocationStrategy = selectedInvoiceId
+      ? "selected_forward"
+      : "newest_first";
+    const plan = selectedInvoiceId
+      ? planSelectedInvoiceForwardAllocation({
+          paymentAmount: Number(payment.amount || 0),
+          selectedInvoiceId,
+          invoices: invoices || [],
+        })
+      : planNewestFirstAllocation({
+          paymentAmount: Number(payment.amount || 0),
+          paymentEffectiveDate: toDateOnly(payment.payment_date),
+          invoices: invoices || [],
+        });
 
     if (plan.splits.length === 0) {
       return NextResponse.json({
@@ -222,17 +247,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Convert the single unallocated payment into newest-first legs.
+    // Convert the single deferred payment into allocation legs while retaining
+    // any amount left after the available invoice balances are filled.
     const groupId = randomUUID();
     const primary = plan.splits[0];
+    const legCount =
+      plan.splits.length + (plan.unallocatedAmount > 0.009 ? 1 : 0);
+    const originalNote = withoutDeferredSelectedInvoiceNote(payment.notes);
     const { error: updErr } = await supabaseServer
       .from("RENT_payments")
       .update({
         invoice_id: primary.invoiceId,
         amount: primary.amount,
         notes: [
-          payment.notes || "",
-          allocationGroupNote(groupId, 1, plan.splits.length),
+          originalNote,
+          allocationGroupNote(groupId, 1, legCount, allocationStrategy),
         ]
           .filter(Boolean)
           .join(" | "),
@@ -246,23 +275,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const extraRows = plan.splits.slice(1).map((split, index) => ({
-      tenant_id: payment.tenant_id,
-      lease_id: payment.lease_id,
-      property_id: payment.property_id,
-      payment_date: payment.payment_date,
-      amount: split.amount,
-      payment_type: payment.payment_type || "Rent",
-      payment_method: payment.payment_method || "Manual Entry",
-      status: payment.status || "completed",
-      invoice_id: split.invoiceId,
-      notes: [
-        payment.notes || "",
-        allocationGroupNote(groupId, index + 2, plan.splits.length),
-      ]
-        .filter(Boolean)
-        .join(" | "),
-    }));
+    const extraRows: Array<Record<string, unknown>> = plan.splits
+      .slice(1)
+      .map((split, index) => ({
+        tenant_id: payment.tenant_id,
+        lease_id: payment.lease_id,
+        property_id: payment.property_id,
+        payment_date: payment.payment_date,
+        amount: split.amount,
+        payment_type: payment.payment_type || "Rent",
+        payment_method: payment.payment_method || "Manual Entry",
+        status: payment.status || "completed",
+        invoice_id: split.invoiceId,
+        notes: [
+          originalNote,
+          allocationGroupNote(groupId, index + 2, legCount, allocationStrategy),
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      }));
+
+    if (plan.unallocatedAmount > 0.009) {
+      extraRows.push({
+        tenant_id: payment.tenant_id,
+        lease_id: payment.lease_id,
+        property_id: payment.property_id,
+        payment_date: payment.payment_date,
+        amount: plan.unallocatedAmount,
+        payment_type: payment.payment_type || "Rent",
+        payment_method: payment.payment_method || "Manual Entry",
+        status: payment.status || "completed",
+        notes: [
+          originalNote,
+          allocationGroupNote(
+            groupId,
+            legCount,
+            legCount,
+            allocationStrategy,
+          ),
+          "unallocated_remainder",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      });
+    }
 
     let extras: unknown[] = [];
     if (extraRows.length > 0) {
@@ -283,7 +339,9 @@ export async function POST(request: NextRequest) {
       ok: true,
       allocated: true,
       allocationGroupId: groupId,
+      allocationStrategy,
       splits: plan.splits,
+      unallocatedAmount: plan.unallocatedAmount,
       extras,
     });
   } catch (error) {

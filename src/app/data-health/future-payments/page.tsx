@@ -81,7 +81,9 @@ export default function FuturePaymentsReviewPage() {
       }
       setMessage(
         data.allocated
-          ? 'Payment allocated with newest-eligible-invoice-first.'
+          ? data.allocationStrategy === 'selected_forward'
+            ? 'Payment allocated to the selected invoice, then forward by due date.'
+            : 'Payment allocated with newest-eligible-invoice-first.'
           : data.alreadyAllocated
             ? 'Payment was already linked.'
             : data.reason || 'No allocation performed.',

@@ -11,6 +11,7 @@ const lease = {
   status: "occupied",
   rent: 160,
   rent_cadence: "weekly",
+  rent_due_day: 1,
   lease_start_date: "2026-01-01",
   property_name: "100 Willis Bell",
   tenant_name: "Jayne Long",
@@ -68,29 +69,91 @@ describe("portfolio ledger cross-screen consistency", () => {
       .toBe(account.totalBalanceDue);
   });
 
-  it("five grace days are not late; the sixth day is late everywhere", () => {
-    const invoices = [invoice("2026-07-01")];
+  it("five grace days are not late; the 6th calendar date is late for rent due on the 1st", () => {
+    const monthlyLease = {
+      ...lease,
+      rent_cadence: "monthly",
+      rent_due_day: 1,
+      rent: 1125,
+    };
+    const invoices = [
+      {
+        id: "august",
+        lease_id: monthlyLease.id,
+        due_date: "2026-08-01",
+        period_start: "2026-08-01",
+        period_end: "2026-08-31",
+        status: "OPEN",
+        amount_rent: 1125,
+        amount_late: 45,
+        amount_other: 0,
+        amount_total: 1170,
+      },
+    ];
     const onFifth = buildAccountLedger({
-      lease,
+      lease: monthlyLease,
       invoices,
       payments: [],
-      asOfDate: "2026-07-06",
+      asOfDate: "2026-08-05",
     });
     const onSixth = buildAccountLedger({
-      lease,
+      lease: monthlyLease,
       invoices,
       payments: [],
-      asOfDate: "2026-07-07",
+      asOfDate: "2026-08-06",
     });
-    expect(onFifth.totalBalanceDue).toBe(175);
+    expect(onFifth.totalBalanceDue).toBe(1170);
     expect(onFifth.pastDueBalanceDue).toBe(0);
     expect(onFifth.pastDueInvoiceCount).toBe(0);
     expect(onFifth.daysLate).toBeNull();
     expect(onFifth.collectionStatus).toBe("balance_due");
-    expect(onSixth.daysLate).toBe(6);
+    expect(onSixth.daysLate).toBe(5);
     expect(onSixth.collectionStatus).toBe("past_due");
     expect(onSixth.pastDueInvoiceCount).toBe(1);
-    expect(onSixth.pastDueBalanceDue).toBe(175);
+    expect(onSixth.pastDueBalanceDue).toBe(1170);
+  });
+
+  it("uses the lease due day for monthly invoice periods when stored due_date is stale", () => {
+    const crystalLease = {
+      ...lease,
+      id: "crystal-lease",
+      property_id: "166-tullyton",
+      tenant_id: "crystal-pagoada",
+      rent: 1125,
+      rent_cadence: "monthly",
+      rent_due_day: 1,
+      property_name: "166 Tullyton",
+      tenant_name: "Crystal Pagoada",
+    };
+    const invoices = [
+      {
+        id: "august-stale-due-date",
+        lease_id: crystalLease.id,
+        // Historical bad/stale value: this would have made the Aug invoice look Future.
+        due_date: "2026-08-15",
+        period_start: "2026-08-01",
+        period_end: "2026-08-31",
+        status: "OPEN",
+        amount_rent: 1125,
+        amount_late: 45,
+        amount_other: 0,
+        amount_total: 1170,
+      },
+    ];
+
+    const account = buildAccountLedger({
+      lease: crystalLease,
+      invoices,
+      payments: [],
+      asOfDate: "2026-08-10",
+    });
+
+    expect(account.invoices[0].dueDate).toBe("2026-08-01");
+    expect(account.invoices[0].isFuture).toBe(false);
+    expect(account.invoices[0].collectionStatus).toBe("past_due");
+    expect(account.totalBalanceDue).toBe(1170);
+    expect(account.pastDueBalanceDue).toBe(1170);
+    expect(account.collectionStatus).toBe("past_due");
   });
 
   it("past-due totals exclude within-grace invoices on the same account", () => {

@@ -85,9 +85,29 @@ export async function GET(request: Request) {
       rows = [...rows].sort((a, b) => b.totalOwed - a.totalOwed);
     }
 
-    const total = rows.length;
+    const leaseById = new Map(leases.map((lease) => [lease.id, lease]));
+    const rowsWithLeaseFacts = rows.map((row) => {
+      const sourceLease = leaseById.get(row.leaseId);
+      const configuredDueDay = Number(sourceLease?.rent_due_day);
+      const rentDueDay =
+        Number.isFinite(configuredDueDay) && configuredDueDay > 0
+          ? configuredDueDay
+          : null;
+
+      return {
+        ...row,
+        rentDueDay,
+        rent_due_day: rentDueDay,
+        lease: {
+          ...row.lease,
+          rent_due_day: rentDueDay,
+        },
+      };
+    });
+
+    const total = rowsWithLeaseFacts.length;
     const start = (page - 1) * pageSize;
-    const pageRows = rows.slice(start, start + pageSize);
+    const pageRows = rowsWithLeaseFacts.slice(start, start + pageSize);
 
     return NextResponse.json({
       ledgerVersion: summary.ledgerVersion,

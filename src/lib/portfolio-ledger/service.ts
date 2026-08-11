@@ -19,7 +19,7 @@ import {
   inferInvoiceCadence,
 } from "@/lib/invoice-cadence";
 
-export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v2-due-date-grace";
+export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v3-monthly-default-due-day";
 
 export function roundMoney(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -223,6 +223,17 @@ function dueDateFromMonthlyPeriodStart(
   return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
 }
 
+function resolveMonthlyDueDay(lease: LedgerLease): number {
+  const configured = Number(lease.rent_due_day);
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+  // Most legacy monthly invoices are due on the 1st unless explicitly set
+  // otherwise. Defaulting here is read-only and prevents a stale/future stored
+  // due_date from hiding a current monthly balance.
+  return 1;
+}
+
 /**
  * Ledger-facing due date.
  *
@@ -235,15 +246,12 @@ function dueDateFromMonthlyPeriodStart(
 function resolveInvoiceDueDate(lease: LedgerLease, inv: LedgerInvoice): string {
   const storedDueDate = toDateOnly(inv.due_date);
   const periodStart = inv.period_start ? toDateOnly(inv.period_start) : "";
-  const rentDueDay = Number(lease.rent_due_day);
 
-  if (
-    periodStart &&
-    Number.isFinite(rentDueDay) &&
-    rentDueDay > 0 &&
-    isMonthlyInvoice(lease, inv)
-  ) {
-    return dueDateFromMonthlyPeriodStart(periodStart, rentDueDay) || storedDueDate;
+  if (periodStart && isMonthlyInvoice(lease, inv)) {
+    return (
+      dueDateFromMonthlyPeriodStart(periodStart, resolveMonthlyDueDay(lease)) ||
+      storedDueDate
+    );
   }
 
   return storedDueDate;
@@ -583,6 +591,7 @@ export function toCollectionsSummaryRow(
       status: account.leaseStatus,
       rent: account.currentRent,
       rent_cadence: account.cadence,
+      rent_due_day: lease?.rent_due_day || null,
       property_id: account.propertyId,
       tenant_id: account.tenantId,
       lease_start_date: lease?.lease_start_date || null,

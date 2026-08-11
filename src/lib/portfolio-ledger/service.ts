@@ -19,7 +19,7 @@ import {
   inferInvoiceCadence,
 } from "@/lib/invoice-cadence";
 
-export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v1";
+export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v2-due-date-grace";
 
 export function roundMoney(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -198,13 +198,63 @@ function daysBetween(earlier: string, later: string): number {
   return Math.max(0, Math.round((b - a) / 86400000));
 }
 
+function isMonthlyInvoice(lease: LedgerLease, inv: LedgerInvoice): boolean {
+  const cadence = String(
+    inv.rent_cadence || inferInvoiceCadence(inv) || lease.rent_cadence || "",
+  ).toLowerCase();
+  return cadence.includes("month");
+}
+
+function dueDateFromMonthlyPeriodStart(
+  periodStart: string,
+  rentDueDay: number,
+): string | null {
+  const base = new Date(`${periodStart}T00:00:00Z`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const year = base.getUTCFullYear();
+  const month = base.getUTCMonth();
+  const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(
+    Math.max(1, Math.trunc(rentDueDay)),
+    lastDayOfMonth,
+  );
+
+  return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
+}
+
+/**
+ * Ledger-facing due date.
+ *
+ * Some historical monthly invoices can have a stale stored due_date after a
+ * lease due-day correction. Balances, late status, tenant portal, and text
+ * reminders must follow the lease due day for the invoice period, not a stale
+ * stored due date. This is read-only normalization; it does not mutate stored
+ * invoice rows.
+ */
+function resolveInvoiceDueDate(lease: LedgerLease, inv: LedgerInvoice): string {
+  const storedDueDate = toDateOnly(inv.due_date);
+  const periodStart = inv.period_start ? toDateOnly(inv.period_start) : "";
+  const rentDueDay = Number(lease.rent_due_day);
+
+  if (
+    periodStart &&
+    Number.isFinite(rentDueDay) &&
+    rentDueDay > 0 &&
+    isMonthlyInvoice(lease, inv)
+  ) {
+    return dueDateFromMonthlyPeriodStart(periodStart, rentDueDay) || storedDueDate;
+  }
+
+  return storedDueDate;
+}
+
 function classifyInvoice(
   inv: LedgerInvoiceDetail,
   asOf: string,
 ): InvoiceCollectionStatus {
   if (inv.storedStatus === "VOID") return "void";
   if (inv.storedStatus === "PAID") return "paid";
-  if (inv.cadenceException) return "manual_review";
   if (inv.isFuture) return "future";
   if (inv.calculatedBalance < -0.009) return "credit";
   if (inv.calculatedBalance <= 0.009) return "paid";
@@ -271,7 +321,7 @@ export function buildAccountLedger(args: {
   const invoiceDetails: LedgerInvoiceDetail[] = args.invoices
     .filter((inv) => String(inv.status || "").toUpperCase() !== "VOID")
     .map((inv) => {
-      const dueDate = toDateOnly(inv.due_date);
+      const dueDate = resolveInvoiceDueDate(lease, inv);
       const isFuture = dueDate > asOf;
       const storedRent = roundMoney(Number(inv.amount_rent) || 0);
       const storedLateFee = roundMoney(Number(inv.amount_late) || 0);

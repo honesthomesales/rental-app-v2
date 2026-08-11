@@ -33,14 +33,19 @@ export function resolveLateFeeAmount(args: {
   return roundMoney(defaultLateFeeForCadence(args.cadence));
 }
 
-/** Five full calendar days after due date are always grace days. */
+/** Five calendar days after the due date are grace days. */
 export const LATE_FEE_GRACE_DAYS = 5;
 
 export function resolveGraceDays(_graceDays?: number | null): number {
   return LATE_FEE_GRACE_DAYS;
 }
 
-/** First calendar date after which a late fee may be assessed (due + grace). */
+/**
+ * First calendar date when an invoice is late / late-fee eligible.
+ *
+ * Business rule: if rent is due on the 1st and graceDays is 5, the
+ * 1st-5th are grace days and the invoice becomes late on the 6th.
+ */
 export function lateFeeEligibleOnOrAfter(
   dueDate: string,
   graceDays: number,
@@ -48,9 +53,6 @@ export function lateFeeEligibleOnOrAfter(
   const due = String(dueDate).split("T")[0];
   const d = new Date(due + "T12:00:00");
   d.setDate(d.getDate() + Math.max(0, graceDays));
-  // Eligible after grace ends: business date must be > due+grace
-  // i.e. first assessable business date is the day after due+grace.
-  d.setDate(d.getDate() + 1);
   return d.toISOString().slice(0, 10);
 }
 

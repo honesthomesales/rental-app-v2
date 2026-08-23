@@ -202,64 +202,69 @@ export default function Dashboard() {
       setMetrics(data)
       setMetricsHttpStatus(200)
 
-      // Process properties
-      if (propertiesResponse.ok) {
-        const propertiesData = await propertiesResponse.json()
-        console.log('Properties data for dashboard:', propertiesData?.length || 0)
-        setProperties(propertiesData || [])
-        
-        // Load color states from properties (including 0 for default state)
-        const colorStates = new Map<string, number>()
-        propertiesData.forEach((property: any) => {
-          // Explicitly check for number type, including 0
-          if (typeof property.tax_color_state === 'number') {
-            colorStates.set(property.id, property.tax_color_state)
-          }
-        })
-        setTaxSelectedProperties(colorStates)
-        
-        if (propertiesData && leasesResponse.ok) {
-          const leasesData = await leasesResponse.json()
-
-          const newestLeaseByProperty = selectNewestLeaseByProperty<DashboardLeaseRow>(leasesData)
-          const soldPropertyIds = new Set<string>()
-          const today = new Date().toISOString().split('T')[0]
-          const todayDate = new Date(today)
-
-          newestLeaseByProperty.forEach((lease, propertyId) => {
-            if (lease.status === 'sold') soldPropertyIds.add(propertyId)
-          })
-
-          // Properties with Tenants modal: hasTenants = newest lease status is exactly occupied
-          // (eviction is Potential Income only; keep isPhysicallyOccupied unchanged elsewhere)
-          const validProperties = propertiesData.filter(
-            (property: any) =>
-              String(property.status || '').toLowerCase() !== 'sold' &&
-              !soldPropertyIds.has(property.id) &&
-              isOverviewResidentialType(property.property_type)
-          )
+      // Process properties / modal lists separately so a modal-only error
+      // cannot wipe an already-successful metrics payload.
+      try {
+        if (propertiesResponse.ok) {
+          const propertiesData = await propertiesResponse.json()
+          console.log('Properties data for dashboard:', propertiesData?.length || 0)
+          setProperties(propertiesData || [])
           
-          const allPropsWithTenants = validProperties.map((property: any) => {
-            const newest = newestLeaseByProperty.get(property.id)
-            return {
-              ...property,
-              hasTenants: countsTowardCurrentIncome(newest?.status),
+          // Load color states from properties (including 0 for default state)
+          const colorStates = new Map<string, number>()
+          propertiesData.forEach((property: any) => {
+            // Explicitly check for number type, including 0
+            if (typeof property.tax_color_state === 'number') {
+              colorStates.set(property.id, property.tax_color_state)
             }
           })
-          setOccupiedProperties(allPropsWithTenants)
+          setTaxSelectedProperties(colorStates)
           
-          // Calculate monthly income leases (leases with tenants with rent info)
-          // Only include 'occupied' status (exclude 'sold' for money calculations)
-          const incomeLeases = leasesData.filter((lease: any) => {
-            const isOccupied = lease.status === 'occupied'
-            if (!isOccupied || !lease.property_id) return false
-            const startDate = new Date(lease.lease_start_date)
-            const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
-            const isWithinDateRange = todayDate >= startDate && (!endDate || todayDate <= endDate)
-            return isWithinDateRange
-          })
-          setMonthlyIncomeLeases(incomeLeases)
+          if (propertiesData && leasesResponse.ok) {
+            const leasesData = await leasesResponse.json()
+
+            const newestLeaseByProperty = selectNewestLeaseByProperty<DashboardLeaseRow>(leasesData)
+            const soldPropertyIds = new Set<string>()
+            const today = new Date().toISOString().split('T')[0]
+            const todayDate = new Date(today)
+
+            newestLeaseByProperty.forEach((lease, propertyId) => {
+              if (lease.status === 'sold') soldPropertyIds.add(propertyId)
+            })
+
+            // Properties with Tenants modal: hasTenants = newest lease status is exactly occupied
+            // (eviction is Potential Income only; keep isPhysicallyOccupied unchanged elsewhere)
+            const validProperties = propertiesData.filter(
+              (property: any) =>
+                String(property.status || '').toLowerCase() !== 'sold' &&
+                !soldPropertyIds.has(property.id) &&
+                isOverviewResidentialType(property.property_type)
+            )
+            
+            const allPropsWithTenants = validProperties.map((property: any) => {
+              const newest = newestLeaseByProperty.get(property.id)
+              return {
+                ...property,
+                hasTenants: countsTowardCurrentIncome(newest?.status),
+              }
+            })
+            setOccupiedProperties(allPropsWithTenants)
+            
+            // Calculate monthly income leases (leases with tenants with rent info)
+            // Only include 'occupied' status (exclude 'sold' for money calculations)
+            const incomeLeases = leasesData.filter((lease: any) => {
+              const isOccupied = lease.status === 'occupied'
+              if (!isOccupied || !lease.property_id) return false
+              const startDate = new Date(lease.lease_start_date)
+              const endDate = lease.lease_end_date ? new Date(lease.lease_end_date) : null
+              const isWithinDateRange = todayDate >= startDate && (!endDate || todayDate <= endDate)
+              return isWithinDateRange
+            })
+            setMonthlyIncomeLeases(incomeLeases)
+          }
         }
+      } catch (modalError) {
+        console.error('Error building dashboard modal data:', modalError)
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)

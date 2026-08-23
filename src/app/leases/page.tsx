@@ -450,7 +450,6 @@ function LeasesPageInner() {
       <div className="mb-6 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Leases</h1>
-          <p className="text-gray-600 mt-2">Manage your rental leases</p>
         </div>
         <button
           onClick={handleAddLease}
@@ -459,15 +458,6 @@ function LeasesPageInner() {
           <PlusIcon className="h-5 w-5 mr-2" />
           Add Lease
         </button>
-      </div>
-
-      {/* Debug Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-        <div className="text-sm text-blue-800">
-          <strong>Debug Info:</strong> Showing {filteredLeases.length} of {allLeases.length} leases
-          <br />
-          <strong>Filters:</strong> Search: "{filters.search}", Status: {filters.status}
-        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -649,11 +639,13 @@ function LeasesPageInner() {
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex flex-col gap-2">
+                  <td className="px-3 py-3 whitespace-nowrap text-sm font-medium">
+                    <div className="inline-flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
                       <TenantCommunicationActions
                         phone={lease.RENT_tenants?.phone}
                         textEnabled={true}
+                        label="Text"
+                        size="xs"
                         onText={() =>
                           setCommTarget({
                             tenantId: lease.tenant_id || lease.RENT_tenants?.id || '',
@@ -675,22 +667,20 @@ function LeasesPageInner() {
                           })
                         }
                       />
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleEditLease(lease)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Edit Lease"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteLease(lease)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete Lease"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleEditLease(lease)}
+                        className="p-1 text-blue-600 hover:text-blue-900"
+                        title="Edit Lease"
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteLease(lease)}
+                        className="p-1 text-red-600 hover:text-red-900"
+                        title="Delete Lease"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>

@@ -20,7 +20,7 @@ import {
   logoutRedirectPath,
 } from '@/lib/auth/session-state'
 import {
-  isPhysicallyOccupied,
+  countsTowardCurrentIncome,
   selectNewestLeaseByProperty,
 } from '@/lib/lease-status'
 
@@ -222,20 +222,14 @@ export default function Dashboard() {
           const leasesData = await leasesResponse.json()
 
           const newestLeaseByProperty = selectNewestLeaseByProperty<DashboardLeaseRow>(leasesData)
-          const physicallyOccupiedPropertyIds = new Set<string>()
           const soldPropertyIds = new Set<string>()
-          const today = new Date().toISOString().split('T')[0]
-          const todayDate = new Date(today)
 
           newestLeaseByProperty.forEach((lease, propertyId) => {
             if (lease.status === 'sold') soldPropertyIds.add(propertyId)
-            if (isPhysicallyOccupied(lease.status)) {
-              physicallyOccupiedPropertyIds.add(propertyId)
-            }
           })
 
-          // Calculate occupied properties for modal - show all properties with hasTenants flag
-          // But filter out sold properties and "other" type to match dashboard count
+          // Properties with Tenants modal: hasTenants = newest lease status is exactly occupied
+          // (eviction is Potential Income only; keep isPhysicallyOccupied unchanged elsewhere)
           const validProperties = propertiesData.filter(
             (property: any) =>
               String(property.status || '').toLowerCase() !== 'sold' &&
@@ -243,10 +237,13 @@ export default function Dashboard() {
               isOverviewResidentialType(property.property_type)
           )
           
-          const allPropsWithTenants = validProperties.map((property: any) => ({
-            ...property,
-            hasTenants: physicallyOccupiedPropertyIds.has(property.id)
-          }))
+          const allPropsWithTenants = validProperties.map((property: any) => {
+            const newest = newestLeaseByProperty.get(property.id)
+            return {
+              ...property,
+              hasTenants: countsTowardCurrentIncome(newest?.status),
+            }
+          })
           setOccupiedProperties(allPropsWithTenants)
           
           // Calculate monthly income leases (leases with tenants with rent info)
@@ -776,9 +773,6 @@ export default function Dashboard() {
               <p className="text-2xl font-semibold text-gray-900" data-testid="dashboard-potential-income">
                 ${(metrics?.potentialIncome || 0).toLocaleString()}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Empty properties + eviction potential (matches list below)
-              </p>
               <p className="text-xs text-gray-500 mt-1" data-testid="dashboard-potential-income-count">
                 {potentialIncomeRows.length} qualifying properties
               </p>
@@ -808,7 +802,7 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-                  <span className="text-gray-600">Potential with No House Debt:</span>{' '}
+                  <span className="text-gray-600">Full / No Debt:</span>{' '}
                   <span className={metrics?.potentialProfitNoHouseDebt && metrics.potentialProfitNoHouseDebt >= 0 ? 'text-green-600' : 'text-red-600'}>
                     {formatWholeDollarDisplay(metrics?.potentialProfitNoHouseDebt)}
                   </span>

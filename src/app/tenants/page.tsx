@@ -289,11 +289,9 @@ function TenantsPageInner() {
     <div className="p-6">
       <div className="mb-6 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tenants</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your tenants {searchTerm && `(${tenants.length} of ${allTenants.length})`}
-            {!searchTerm && `(${allTenants.length})`}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Tenants ({searchTerm ? `${tenants.length} of ${allTenants.length}` : allTenants.length})
+          </h1>
         </div>
         <button
           onClick={handleAddTenant}

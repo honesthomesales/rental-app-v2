@@ -676,7 +676,15 @@ return'<div class="s">'+l+'</div>';
       
       
       const paymentsArray = Array.isArray(data) ? data : []
-      
+
+      paymentsArray.sort((a: any, b: any) => {
+        const dateCmp = String(b.payment_date || '').localeCompare(String(a.payment_date || ''))
+        if (dateCmp !== 0) return dateCmp
+        const createdCmp = String(b.created_at || '').localeCompare(String(a.created_at || ''))
+        if (createdCmp !== 0) return createdCmp
+        return String(b.id || '').localeCompare(String(a.id || ''))
+      })
+
       if (paymentsArray.length === 0) {
         console.warn('No payments found for invoice:', invoice.id, 'This might indicate a query issue.')
       }
@@ -1579,7 +1587,6 @@ return'<div class="s">'+l+'</div>';
           <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
-              <p className="text-gray-600">Track and manage rental payments</p>
               <p className="text-xs text-gray-400 mt-1">Version: 2.2.0</p>
             </div>
             <div className="flex flex-wrap items-center gap-3" data-testid="payments-action-buttons">
@@ -1808,11 +1815,13 @@ return'<div class="s">'+l+'</div>';
                           ${row.totalOwed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-center">
-                        <div className="flex flex-col items-center gap-2">
+                      <td className="px-2 py-2 text-center align-middle">
+                        <div className="inline-flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
                           <TenantCommunicationActions
                             phone={row.tenant?.phone}
                             textEnabled={true}
+                            label="Text"
+                            size="xs"
                             onText={() =>
                               setCommTarget({
                                 tenantId: row.tenant?.id || row.lease.tenant_id,
@@ -1832,10 +1841,9 @@ return'<div class="s">'+l+'</div>';
                               })
                             }
                           />
-                          <div className="flex justify-center space-x-2">
                           <button
                             onClick={() => handleViewInvoices(row)}
-                            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                            className="px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors shadow-sm"
                           >
                             Detail
                           </button>
@@ -1843,17 +1851,16 @@ return'<div class="s">'+l+'</div>';
                             <button
                               onClick={() => handleGenerateLateNoticeForLease(row)}
                               disabled={generatingNotice === row.lease.id}
-                              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm ${
+                              className={`px-2 py-1 text-xs font-medium rounded-md transition-colors shadow-sm ${
                                 generatingNotice === row.lease.id
                                   ? 'bg-gray-400 text-white cursor-not-allowed'
                                   : 'bg-purple-600 text-white hover:bg-purple-700'
                               }`}
                               title="Generate 7-Day Late Notice with Intent to Evict"
                             >
-                              {generatingNotice === row.lease.id ? 'Generating...' : 'Generate Notice'}
+                              {generatingNotice === row.lease.id ? '…' : 'Evict'}
                             </button>
                           )}
-                          </div>
                         </div>
                       </td>
                     </tr>

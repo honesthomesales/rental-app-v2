@@ -78,11 +78,9 @@ export async function GET(request: Request) {
     // Match Properties: one deterministic newest lease classifies each property.
     const newestLeaseByProperty = selectNewestLeaseByProperty(allLeases || [])
     const soldPropertyIds = new Set<string>()
-    const physicallyOccupiedPropertyIds = new Set<string>()
 
     newestLeaseByProperty.forEach((lease, propertyId) => {
       if (lease.status === 'sold') soldPropertyIds.add(propertyId)
-      if (isPhysicallyOccupied(lease.status)) physicallyOccupiedPropertyIds.add(propertyId)
     })
 
     // Valid residential properties (not sold, residential type)
@@ -143,8 +141,12 @@ export async function GET(request: Request) {
     const potentialIncome = sumPotentialIncomeRows(potentialIncomeRows)
     const totalPotentialIncome = currentMonthlyIncome + potentialIncome
 
-    // Occupied properties count = physically occupied (occupied OR eviction)
-    const occupiedProperties = physicallyOccupiedPropertyIds.size
+    // Properties with Tenants count = newest lease status is exactly occupied
+    // (eviction stays in Potential Income; do not change isPhysicallyOccupied elsewhere)
+    let occupiedProperties = 0
+    newestLeaseByProperty.forEach((lease) => {
+      if (countsTowardCurrentIncome(lease.status)) occupiedProperties += 1
+    })
 
     // Late payments and total owed — portfolio ledger (Payments baseline)
     let latePayments = 0

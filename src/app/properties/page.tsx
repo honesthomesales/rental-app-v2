@@ -399,8 +399,9 @@ function PropertiesPageInner() {
     <div className="p-6">
       <div className="mb-6 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Properties</h1>
-          <p className="text-gray-600 mt-2">Manage your rental properties ({filteredProperties.length} of {properties.length})</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Properties ({filteredProperties.length} of {properties.length})
+          </h1>
         </div>
         <div className="flex items-center space-x-3">
           <label className="flex items-center space-x-2 cursor-pointer">
@@ -433,19 +434,6 @@ function PropertiesPageInner() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
-        </div>
-      </div>
-
-      {/* Info Banner */}
-      <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-        <div className="flex items-center">
-          <svg className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-sm text-blue-800">
-            <span className="font-medium">Note:</span> Insurance premiums and property taxes are managed on the{' '}
-            <Link href="/" className="font-semibold underline hover:text-blue-900">Dashboard</Link> page.
-          </p>
         </div>
       </div>
 

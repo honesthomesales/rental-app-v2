@@ -89,15 +89,6 @@ export function Navigation() {
     }
   }
 
-  const authStatusLabel =
-    auth.status === 'authenticated' && auth.email
-      ? `Signed in as ${auth.email}`
-      : auth.status === 'session_error'
-        ? 'Session expired'
-        : auth.status === 'loading'
-          ? 'Checking sign-in…'
-          : 'Sign in required'
-
   const authAction =
     auth.status === 'authenticated' ? (
       <button
@@ -190,13 +181,6 @@ export function Navigation() {
 
             <div className="hidden lg:flex items-center gap-1 xl:gap-2 min-w-0 flex-wrap justify-end max-w-[calc(100vw-11rem)]">
               {desktopItems}
-              <span
-                className="text-xs text-gray-500 shrink-0 max-w-[14rem] truncate"
-                title={authStatusLabel}
-                data-testid="auth-status-label"
-              >
-                {authStatusLabel}
-              </span>
               {authAction}
             </div>
 
@@ -220,9 +204,6 @@ export function Navigation() {
           <div className="lg:hidden border-t border-gray-200 bg-white">
             <div className="px-2 pt-2 pb-3 space-y-1">
               {mobileItems}
-              <div className="px-3 py-2 text-sm text-gray-500" data-testid="auth-status-label-mobile">
-                {authStatusLabel}
-              </div>
               {auth.status === 'authenticated' ? (
                 <button
                   type="button"

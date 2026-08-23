@@ -247,11 +247,9 @@ export default function DealsPanel() {
     <div className="p-6">
       <div className="mb-6 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your property deals {searchTerm && `(${deals.length} of ${allDeals.length})`}
-            {!searchTerm && `(${allDeals.length})`}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Deals ({searchTerm ? `${deals.length} of ${allDeals.length}` : allDeals.length})
+          </h1>
         </div>
         <button
           onClick={handleAddDeal}

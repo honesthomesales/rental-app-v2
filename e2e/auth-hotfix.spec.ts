@@ -105,10 +105,9 @@ test.describe('authenticated flows (optional credentials)', () => {
     await page.waitForURL((url) => !url.pathname.includes('/login'), {
       timeout: 60_000,
     })
-    await expect(page.getByTestId('auth-status-label')).toContainText(
-      /Signed in as/i,
-      { timeout: 30_000 },
-    )
+    await expect(page.getByTestId('sign-out-button')).toBeVisible({
+      timeout: 30_000,
+    })
     await page.goto('/payments')
     await expect(page.getByText('No active leases found')).toHaveCount(0)
     await expect(page.getByTestId('payments-auth-required')).toHaveCount(0)

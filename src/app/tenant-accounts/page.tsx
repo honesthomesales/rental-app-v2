@@ -37,9 +37,6 @@ function TenantAccountsInner() {
     <div className="p-4 sm:p-6 mx-auto w-full min-w-0 max-w-7xl">
       <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Tenant Accounts</h1>
-        <p className="text-gray-600 mt-2 text-sm sm:text-base">
-          Late balances and most recent eligible payments in one place
-        </p>
         <div
           className="mt-4 inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5"
           role="group"

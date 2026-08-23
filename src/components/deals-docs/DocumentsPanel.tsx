@@ -95,10 +95,13 @@ export default function DocumentsPanel() {
     <div className="p-6">
       <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
-          <p className="text-gray-600 mt-2">
-            Scan, upload, and manage documents in a simple inbox.
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Documents
+            <span className="font-normal text-gray-600">
+              {' '}
+              — Scan, upload, and manage documents in a simple inbox.
+            </span>
+          </h1>
         </div>
       </div>
 

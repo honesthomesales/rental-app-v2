@@ -223,6 +223,8 @@ export default function Dashboard() {
 
           const newestLeaseByProperty = selectNewestLeaseByProperty<DashboardLeaseRow>(leasesData)
           const soldPropertyIds = new Set<string>()
+          const today = new Date().toISOString().split('T')[0]
+          const todayDate = new Date(today)
 
           newestLeaseByProperty.forEach((lease, propertyId) => {
             if (lease.status === 'sold') soldPropertyIds.add(propertyId)

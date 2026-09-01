@@ -12,20 +12,21 @@ describe('PWA production cache refresh', () => {
   )
 
   it('activates a versioned cache immediately and removes older caches', () => {
-    expect(serviceWorker).toContain("CACHE_NAME = 'rental-app-v2-2026-08-31'")
+    expect(serviceWorker).toContain("CACHE_NAME = 'rental-app-v2-2026-08-31-mobile-auth'")
     expect(serviceWorker).toContain('self.skipWaiting()')
     expect(serviceWorker).toContain('self.clients.claim()')
     expect(serviceWorker).toContain('caches.delete(cacheName)')
   })
 
   it('uses the network first for page navigations while retaining offline fallback', () => {
-    expect(serviceWorker).toContain("event.request.mode === 'navigate'")
+    expect(serviceWorker).toContain("event.request.mode !== 'navigate'")
     expect(serviceWorker).toContain('fetch(event.request)')
-    expect(serviceWorker).toContain("caches.match('/')")
+    expect(serviceWorker).toContain("cached.match('/')")
   })
 
-  it('does not cache Next.js bundles (prevents stale auth JS on PWAs)', () => {
-    expect(serviceWorker).toContain("event.request.url.includes('/_next/')")
+  it('does not intercept API routes or Next.js bundles', () => {
+    expect(serviceWorker).toContain("url.includes('/api/')")
+    expect(serviceWorker).toContain("url.includes('/_next/')")
   })
 
   it('bypasses the HTTP cache when checking for an updated worker', () => {

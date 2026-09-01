@@ -1,113 +1,58 @@
 // Service Worker for Rental Management App PWA
-const CACHE_NAME = 'rental-app-v2-2026-08-31';
-const urlsToCache = [
-  '/',
-  '/payments',
-  '/properties',
-  '/leases',
-  '/tenants',
-  '/late-tenants',
-  '/profit',
-  '/manifest.json',
-  '/icon-192.svg',
-  '/icon-512.svg'
-];
+const CACHE_NAME = 'rental-app-v2-2026-08-31-mobile-auth';
 
-// Install event - cache resources
+// Install: activate immediately; do not pre-cache app shells (stale auth bundles).
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
-      })
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
-// Fetch event - serve from cache when offline
+// Only intercept navigations for offline fallback. Never touch APIs or JS bundles.
 self.addEventListener('fetch', (event) => {
-  // Skip caching for API routes, Next.js bundles, and non-GET requests.
+  if (event.request.method !== 'GET') return;
+
+  const url = event.request.url;
   if (
-    event.request.url.includes('/api/') ||
-    event.request.url.includes('/_next/') ||
-    event.request.method !== 'GET'
+    url.includes('/api/') ||
+    url.includes('/_next/') ||
+    url.includes('/auth/')
   ) {
-    event.respondWith(fetch(event.request).catch(() => {
-      // Return a basic error response for API failures
-      return new Response(JSON.stringify({ error: 'Network error' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }));
     return;
   }
 
-  // Always prefer the deployed page while online. This prevents an installed
-  // PWA from pinning an old Dashboard bundle after a production release.
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((fetchResponse) => {
-          if (fetchResponse && fetchResponse.status === 200) {
-            const responseToCache = fetchResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return fetchResponse;
-        })
-        .catch(async () => {
-          return (await caches.match(event.request)) ||
-            (await caches.match('/')) ||
-            new Response('Offline', { status: 503 });
-        })
-    );
-    return;
-  }
+  if (event.request.mode !== 'navigate') return;
 
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Return cached version or fetch from network
-        if (response) {
-          return response;
-        }
-        return fetch(event.request).then((fetchResponse) => {
-          // Only cache successful responses
-          if (fetchResponse && fetchResponse.status === 200) {
-            const responseToCache = fetchResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return fetchResponse;
-        }).catch((error) => {
-          console.error('Fetch failed:', error);
-          // Return a basic error page for navigation failures
-          if (event.request.mode === 'navigate') {
-            return caches.match('/') || new Response('Offline', { status: 503 });
-          }
-          throw error;
-        });
-      })
+    fetch(event.request).catch(async () => {
+      const cached = await caches.open(CACHE_NAME);
+      return (
+        (await cached.match(event.request)) ||
+        (await cached.match('/')) ||
+        new Response('Offline', { status: 503 })
+      );
+    }),
   );
 });
 
-// Activate event - clean up old caches
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((cacheNames) => {
-        return Promise.all(
+    caches
+      .keys()
+      .then((cacheNames) =>
+        Promise.all(
           cacheNames.map((cacheName) => {
             if (cacheName !== CACHE_NAME) {
-              console.log('Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
-          })
-        );
-      })
-      .then(() => self.clients.claim())
+            return undefined;
+          }),
+        ),
+      )
+      .then(() => self.clients.claim()),
   );
 });

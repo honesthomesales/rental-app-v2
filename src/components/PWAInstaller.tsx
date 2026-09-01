@@ -7,16 +7,13 @@ export default function PWAInstaller() {
     let isRefreshingForServiceWorker = false;
     const hadServiceWorkerController = Boolean(navigator.serviceWorker?.controller);
 
-    // Global error handlers for better mobile error handling
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error, event.message, event.filename, event.lineno);
-      // Prevent default error handling that might crash the app
       event.preventDefault();
     };
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('Unhandled promise rejection:', event.reason);
-      // Prevent default error handling
       event.preventDefault();
     };
 
@@ -29,33 +26,42 @@ export default function PWAInstaller() {
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
 
-    // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener(
         'controllerchange',
         handleServiceWorkerControllerChange,
       );
 
-      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
-        .then((registration) => {
+      navigator.serviceWorker
+        .register('/sw.js', { updateViaCache: 'none' })
+        .then(async (registration) => {
           console.log('SW registered: ', registration);
-          return registration.update();
+          await registration.update();
+
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+
+          registration.addEventListener('updatefound', () => {
+            const worker = registration.installing;
+            if (!worker) return;
+            worker.addEventListener('statechange', () => {
+              if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                worker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
         })
         .catch((registrationError) => {
           console.log('SW registration failed: ', registrationError);
         });
     }
 
-    // Handle PWA install prompt
-    let deferredPrompt: any;
-    
+    let deferredPrompt: Event | null = null;
+
     window.addEventListener('beforeinstallprompt', (e) => {
-      // Prevent Chrome 67 and earlier from automatically showing the prompt
       e.preventDefault();
-      // Stash the event so it can be triggered later
       deferredPrompt = e;
-      
-      // Show install button or notification
       console.log('PWA install prompt available');
     });
 
@@ -64,7 +70,6 @@ export default function PWAInstaller() {
       deferredPrompt = null;
     });
 
-    // Cleanup
     return () => {
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
@@ -75,5 +80,5 @@ export default function PWAInstaller() {
     };
   }, []);
 
-  return null; // This component doesn't render anything
+  return null;
 }

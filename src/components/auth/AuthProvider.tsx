@@ -28,8 +28,27 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Never leave the UI stuck on "Checking sign-in…" (common on mobile PWAs). */
-const AUTH_INIT_TIMEOUT_MS = 12_000;
+const GET_SESSION_TIMEOUT_MS = 8_000;
+
+async function readBrowserSession(
+  hint?: Session | null,
+): Promise<Session | null> {
+  if (hint !== undefined) return hint;
+
+  const supabase = createBrowserSupabaseClient();
+  const result = await Promise.race([
+    supabase.auth.getSession(),
+    new Promise<never>((_, reject) => {
+      window.setTimeout(
+        () => reject(new Error("getSession timed out")),
+        GET_SESSION_TIMEOUT_MS,
+      );
+    }),
+  ]);
+
+  if (result.error) throw result.error;
+  return result.data.session;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
@@ -40,13 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback(async (hint?: Session | null) => {
     const generation = ++applyGeneration.current;
     try {
-      const supabase = createBrowserSupabaseClient();
-      let session = hint;
-      if (session === undefined) {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        session = data.session;
-      }
+      const session = await readBrowserSession(hint);
 
       if (generation !== applyGeneration.current) return;
 
@@ -58,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       let activeSession = session;
+      const supabase = createBrowserSupabaseClient();
       const expiresAtMs = session.expires_at
         ? session.expires_at * 1000
         : null;
@@ -103,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus("authenticated");
     } catch {
       if (generation !== applyGeneration.current) return;
-      setStatus("session_error");
+      setStatus("unauthenticated");
       setEmail(null);
       setRole(null);
     }
@@ -114,30 +128,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   useEffect(() => {
+    // iOS PWA often never fires INITIAL_SESSION — always resolve on mount too.
+    void applySession();
+
     const supabase = createBrowserSupabaseClient();
-    let cancelled = false;
-
-    const timeoutId = window.setTimeout(() => {
-      if (cancelled) return;
-      void (async () => {
-        try {
-          await supabase.auth.signOut();
-        } catch {
-          /* ignore */
-        }
-        if (cancelled) return;
-        setStatus("unauthenticated");
-        setEmail(null);
-        setRole(null);
-      })();
-    }, AUTH_INIT_TIMEOUT_MS);
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      window.clearTimeout(timeoutId);
+      if (event === "INITIAL_SESSION") return;
       window.setTimeout(() => {
-        if (cancelled) return;
         if (event === "SIGNED_OUT") {
           setStatus("unauthenticated");
           setEmail(null);
@@ -149,8 +148,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, [applySession]);

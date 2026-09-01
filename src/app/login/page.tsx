@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/auth/browser-client";
-import { fetchAppSession } from "@/lib/auth/session-fetch";
+import { establishAppSession, fetchAppSession } from "@/lib/auth/session-fetch";
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -25,6 +25,12 @@ function LoginForm() {
       });
       if (signError || !data.session) {
         setError("Invalid email or password");
+        return;
+      }
+
+      const established = await establishAppSession(data.session);
+      if (!established.ok) {
+        setError("Unable to save sign-in session");
         return;
       }
 

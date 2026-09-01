@@ -28,26 +28,14 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const GET_SESSION_TIMEOUT_MS = 8_000;
-
 async function readBrowserSession(
   hint?: Session | null,
 ): Promise<Session | null> {
   if (hint !== undefined) return hint;
-
   const supabase = createBrowserSupabaseClient();
-  const result = await Promise.race([
-    supabase.auth.getSession(),
-    new Promise<never>((_, reject) => {
-      window.setTimeout(
-        () => reject(new Error("getSession timed out")),
-        GET_SESSION_TIMEOUT_MS,
-      );
-    }),
-  ]);
-
-  if (result.error) throw result.error;
-  return result.data.session;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -59,33 +47,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback(async (hint?: Session | null) => {
     const generation = ++applyGeneration.current;
     try {
-      const session = await readBrowserSession(hint);
+      let session: Session | null = null;
+      try {
+        session = await readBrowserSession(hint);
+      } catch {
+        session = hint ?? null;
+      }
 
       if (generation !== applyGeneration.current) return;
 
-      if (!session) {
-        setStatus("unauthenticated");
-        setEmail(null);
-        setRole(null);
-        return;
-      }
-
       let activeSession = session;
-      const supabase = createBrowserSupabaseClient();
-      const expiresAtMs = session.expires_at
-        ? session.expires_at * 1000
-        : null;
-      if (expiresAtMs && Date.now() >= expiresAtMs - 30_000) {
-        const { data: refreshed, error: refreshError } =
-          await supabase.auth.refreshSession();
-        if (!refreshError && refreshed.session) {
-          activeSession = refreshed.session;
+      if (session) {
+        const supabase = createBrowserSupabaseClient();
+        const expiresAtMs = session.expires_at
+          ? session.expires_at * 1000
+          : null;
+        if (expiresAtMs && Date.now() >= expiresAtMs - 30_000) {
+          const { data: refreshed, error: refreshError } =
+            await supabase.auth.refreshSession();
+          if (!refreshError && refreshed.session) {
+            activeSession = refreshed.session;
+          }
         }
       }
 
       if (generation !== applyGeneration.current) return;
 
-      const res = await fetchAppSession(activeSession.access_token);
+      // Cookie-only check works after /api/auth/establish even when client storage lags.
+      const res = await fetchAppSession(activeSession?.access_token);
 
       if (generation !== applyGeneration.current) return;
 
@@ -112,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email?: string | null;
         role?: string | null;
       };
-      setEmail(data.email ?? activeSession.user.email ?? null);
+      setEmail(data.email ?? activeSession?.user.email ?? null);
       setRole(data.role ?? null);
       setStatus("authenticated");
     } catch {
@@ -128,7 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   useEffect(() => {
-    // iOS PWA often never fires INITIAL_SESSION — always resolve on mount too.
     void applySession();
 
     const supabase = createBrowserSupabaseClient();

@@ -88,15 +88,15 @@ describe("portfolio ledger parity with Payments baseline", () => {
     expect(account.ledgerVersion).toBe(PORTFOLIO_LEDGER_VERSION);
   });
 
-  it("excludes future payment from current balance and last paid", () => {
+  it("posted future payment reduces current balance; last paid stays eligible-only", () => {
     const account = buildAccountLedger({
       lease,
       invoices,
       payments,
       asOfDate: asOf,
     });
-    // past: 140-40=100; current: 160 (future pay ignored); future scheduled separate
-    expect(account.totalBalanceDue).toBe(260);
+    // past: 140-40=100; current: 160-160=0 (future-dated post counts); future invoice separate
+    expect(account.totalBalanceDue).toBe(100);
     expect(account.lastEligiblePositivePaymentDate).toBe("2026-07-11");
     expect(account.futureScheduledCharges).toBe(160);
   });

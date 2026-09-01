@@ -179,7 +179,7 @@ describe("portfolio ledger cross-screen consistency", () => {
     expect(dashboard.pastDueBalanceDue).toBe(175);
   });
 
-  it("future payments affect neither balance nor Last Paid early", () => {
+  it("posted future payments reduce balance; Last Paid stays business-date only", () => {
     const invoices = [invoice("2026-07-01")];
     const account = buildAccountLedger({
       lease,
@@ -196,11 +196,9 @@ describe("portfolio ledger cross-screen consistency", () => {
       ],
       asOfDate: "2026-07-07",
     });
-    expect(account.totalBalanceDue).toBe(175);
+    expect(account.totalBalanceDue).toBe(0);
     expect(account.lastEligiblePositivePaymentDate).toBeNull();
-    expect(account.futureOrIneligiblePayments.map((p) => p.paymentId)).toEqual([
-      "future",
-    ]);
+    expect(account.eligiblePayments.map((p) => p.paymentId)).toEqual(["future"]);
   });
 
   it("failed/reversed payments are excluded and no payment is counted twice", () => {
@@ -273,8 +271,8 @@ describe("portfolio ledger cross-screen consistency", () => {
       monthEnd: "2026-07-31",
       asOfDate: "2026-07-17",
     });
-    // Only the July 2 collection counts; June cash stays in June; future stays out.
-    expect(facts.totalCollected).toBe(160);
+    // July 2 + future July 20 both count in July profit month view.
+    expect(facts.totalCollected).toBe(175);
     expect(facts.collectedByProperty.get(lease.property_id)).toBe(160);
   });
 });

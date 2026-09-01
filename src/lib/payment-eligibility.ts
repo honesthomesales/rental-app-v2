@@ -116,6 +116,25 @@ export function assertFuturePaymentInvariants(args: {
 }
 
 /**
+ * Most recent payment_date among completed positive payments (any date).
+ * Used when staff-entered future-dated payments should display as posted.
+ */
+export function getMostRecentPostedPaymentDate(
+  payments: PaymentDateFields[],
+): string | null {
+  let best: string | null = null;
+  for (const p of payments) {
+    const d = toDateOnly(p.payment_date);
+    if (!d) continue;
+    const amt = money(p.amount);
+    if (amt <= 0) continue;
+    if (String(p.status || "completed").toLowerCase() !== "completed") continue;
+    if (!best || d > best) best = d;
+  }
+  return best;
+}
+
+/**
  * Most recent payment_date among business-date-eligible completed payments.
  * Future-dated completed payments never become Last Paid / Most Recent.
  */

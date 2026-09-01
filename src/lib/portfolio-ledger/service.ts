@@ -301,7 +301,7 @@ export function buildAccountLedger(args: {
   );
 
   const paidByInvoice = new Map<string, number>();
-  for (const p of eligible) {
+  for (const p of completedPositive) {
     if (!p.invoice_id) continue;
     paidByInvoice.set(
       p.invoice_id,
@@ -455,7 +455,9 @@ export function buildAccountLedger(args: {
     const completed =
       String(p.status || "completed").toLowerCase() === "completed";
     const eligibleFlag =
-      completed && amount > 0 && isPaymentEligibleAsOf(p, asOf);
+      completed &&
+      amount > 0 &&
+      (Boolean(p.invoice_id) || isPaymentEligibleAsOf(p, asOf));
     let allocated = 0;
     let unallocated = 0;
     if (eligibleFlag && p.invoice_id) {
@@ -710,8 +712,8 @@ export function buildDueMonthCollectionFacts(args: {
 
 /**
  * Profit attribution: cash collected in the calendar month.
- * Uses payment_date (not invoice due_date). Future-dated payments stay
- * ineligible until their payment_date <= asOfDate.
+ * Uses payment_date (not invoice due_date). Posted payments count in the
+ * month of payment_date, including future-dated staff entries.
  */
 export function buildCollectedMonthCollectionFacts(args: {
   payments: Array<
@@ -729,17 +731,13 @@ export function buildCollectedMonthCollectionFacts(args: {
   collectedByProperty: Map<string, number>;
   eligiblePayments: Array<LedgerPayment & { property_id?: string | null }>;
 } {
-  const recognitionEnd =
-    args.monthEnd < args.asOfDate ? args.monthEnd : args.asOfDate;
-
   const eligiblePayments = args.payments.filter((payment) => {
     const pd = toDateOnly(payment.payment_date);
     return (
       String(payment.status || "completed").toLowerCase() === "completed" &&
       Number(payment.amount) > 0 &&
-      isPaymentEligibleAsOf(payment, args.asOfDate) &&
       pd >= args.monthStart &&
-      pd <= recognitionEnd
+      pd <= args.monthEnd
     );
   });
 

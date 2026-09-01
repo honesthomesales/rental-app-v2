@@ -383,9 +383,18 @@ return'<div class="s">'+l+'</div>';
     setInvoices([])
 
     try {
-      // One account request supplies stored invoices plus eligible payment facts.
-      // This is the active path; it replaces per-invoice payment requests.
       if (leaseRow.lease.id) {
+        // Ensure scheduled future invoices exist (new leases may have none yet).
+        try {
+          await fetch('/api/invoices/generate-missing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ leaseId: leaseRow.lease.id }),
+          })
+        } catch (scheduleError) {
+          console.warn('Could not ensure future invoices before opening payments')
+        }
+
         const accountResponse = await fetch(
           `/api/leases/${leaseRow.lease.id}/account`,
           { cache: 'no-store' },

@@ -107,7 +107,40 @@ export async function POST(request: Request) {
       return NextResponse.json(insertedLease);
     }
 
-    return NextResponse.json(fullLease || insertedLease);
+    const leaseForResponse = fullLease || insertedLease;
+
+    if (isActiveBillingLease(leaseForResponse.status)) {
+      const businessDate = getBusinessDate();
+      const scheduleStart =
+        String(leaseForResponse.lease_start_date || businessDate).split("T")[0] <
+        businessDate
+          ? businessDate
+          : String(leaseForResponse.lease_start_date || businessDate).split(
+              "T",
+            )[0];
+      try {
+        await generateMissingFutureInvoicesOnly({
+          lease: {
+            id: leaseForResponse.id,
+            property_id: leaseForResponse.property_id,
+            tenant_id: leaseForResponse.tenant_id,
+            rent: Number(leaseForResponse.rent) || 0,
+            rent_cadence: leaseForResponse.rent_cadence,
+            rent_due_day: leaseForResponse.rent_due_day,
+            lease_end_date: leaseForResponse.lease_end_date,
+            status: leaseForResponse.status,
+          },
+          scheduleStart,
+        });
+      } catch (scheduleError) {
+        console.error(
+          "Invoice schedule failed after lease create:",
+          scheduleError,
+        );
+      }
+    }
+
+    return NextResponse.json(leaseForResponse);
   } catch (error) {
     console.error("Error in lease creation API:", error);
     return NextResponse.json(

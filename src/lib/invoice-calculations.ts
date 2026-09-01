@@ -4,11 +4,8 @@
  * This ensures both pages always calculate unpaid invoices identically.
  * DO NOT MODIFY THIS FILE without updating both consumers.
  *
- * Future-dated payments (payment_date > businessDate) are excluded from
- * amount-paid / balance math. They are never deleted or modified.
+ * Future-dated payments count toward invoice paid amounts when posted to an invoice.
  */
-
-import { partitionPaymentsByAsOf } from "@/lib/payment-eligibility";
 
 export interface Invoice {
   id: string
@@ -81,20 +78,21 @@ export function calculateUnpaidInvoices(
     return true
   })
 
-  // Step 2: Exclude future-dated payments, then group by invoice_id
-  const businessDate = actualToday
-  const eligiblePayments = businessDate
-    ? partitionPaymentsByAsOf(payments, businessDate).eligible
-    : payments
+  // Step 2: Group posted payments by invoice_id (includes future-dated entries).
+  const postedPayments = payments.filter((payment: Payment) => {
+    if (!payment.invoice_id) return false
+    const amt = parseFloat(String(payment.amount)) || 0
+    if (amt <= 0) return false
+    const status = String(payment.status || 'completed').toLowerCase()
+    return status === 'completed'
+  })
 
   const paymentsByInvoice = new Map<string, Payment[]>()
-  eligiblePayments.forEach((payment: Payment) => {
-    if (payment.invoice_id) {
-      if (!paymentsByInvoice.has(payment.invoice_id)) {
-        paymentsByInvoice.set(payment.invoice_id, [])
-      }
-      paymentsByInvoice.get(payment.invoice_id)!.push(payment)
+  postedPayments.forEach((payment: Payment) => {
+    if (!paymentsByInvoice.has(payment.invoice_id!)) {
+      paymentsByInvoice.set(payment.invoice_id!, [])
     }
+    paymentsByInvoice.get(payment.invoice_id!)!.push(payment)
   })
 
   // Step 3: Recalculate balance_due using actual payment totals (Payments page lines 552-567)

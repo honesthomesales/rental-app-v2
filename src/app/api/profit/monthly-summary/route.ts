@@ -77,7 +77,7 @@ try {
     const lastMonth = monthKeys[monthKeys.length - 1]
     const [ly, lm] = lastMonth.split('-').map(Number)
     const rangeEnd = endOfMonthIso(ly, lm - 1)
-    const paymentRangeEnd = rangeEnd < businessDate ? rangeEnd : businessDate
+    const paymentRangeEnd = rangeEnd
 
     const { data: properties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')

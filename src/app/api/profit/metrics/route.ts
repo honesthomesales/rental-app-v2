@@ -193,9 +193,8 @@ try {
     const propertyDetails: any[] = []
 
     try {
-      const asOf = incomeAsOfDate(endOfMonth)
       const [monthRentPayments, leasesResult] = await Promise.all([
-        fetchPaymentsCollectedBetween(startOfMonth, asOf),
+        fetchPaymentsCollectedBetween(startOfMonth, endOfMonth),
         supabaseServer
           .from('RENT_leases')
           .select('id, property_id, rent, rent_cadence, lease_start_date, lease_end_date, status'),
@@ -212,7 +211,7 @@ try {
         leasePropertyById: leaseToPropertyMap,
         monthStart: startOfMonth,
         monthEnd: endOfMonth,
-        asOfDate: asOf,
+        asOfDate: incomeAsOfDate(endOfMonth),
       })
       const eligibleMonthPayments = collectionFacts.eligiblePayments
       rentCollected = collectionFacts.totalCollected

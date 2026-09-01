@@ -7,7 +7,7 @@ import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownload
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { getBusinessDate } from '@/lib/business-date'
-import { getMostRecentEligiblePaymentDate } from '@/lib/payment-eligibility'
+import { getMostRecentPostedPaymentDate } from '@/lib/payment-eligibility'
 import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
 import {
   TextTenantModal,
@@ -67,7 +67,7 @@ function getEntryLastPaidDate(
   const ownDate = payment.payment_date?.trim()
     ? String(payment.payment_date).split('T')[0]
     : null
-  if (amt > 0 && ownDate && ownDate <= businessDate) {
+  if (amt > 0 && ownDate) {
     return ownDate
   }
 
@@ -75,7 +75,7 @@ function getEntryLastPaidDate(
   if (!invoiceId) return null
 
   const linked = allPayments.filter((p) => p.invoice?.id === invoiceId)
-  return getMostRecentEligiblePaymentDate(linked, businessDate)
+  return getMostRecentPostedPaymentDate(linked)
 }
 
 function lastPaidSortKey(
@@ -101,33 +101,33 @@ type SortField = 'property' | 'tenant' | 'cadence' | 'lastPaid' | 'totalOwed' | 
 type SortDirection = 'asc' | 'desc'
 type MonthlySortField = 'property' | 'cadence' | 'dayDue' | 'thisMonth' | 'lastMonth' | 'twoMonthsAgo'
 
-/** Max eligible payment_date (amount > 0, linked to an invoice). Future-dated never win. */
+/** Max posted payment_date (amount > 0, linked to an invoice). */
 function getLastPaymentReceivedDate(
   prop: PropertyPayments,
-  businessDate: string,
+  _businessDate: string,
 ): string {
   return (
     prop.lastPaidDate ||
-    getMostRecentEligiblePaymentDate(prop.payments, businessDate) ||
+    getMostRecentPostedPaymentDate(prop.payments) ||
     ''
   )
 }
 
-/** Most recent eligible settled payment row (amount + method for Last Paid columns). */
+/** Most recent posted settled payment row (amount + method for Last Paid columns). */
 function getMostRecentEligiblePayment(
   prop: PropertyPayments,
-  businessDate: string,
+  _businessDate: string,
 ): PaymentEntry | null {
-  const eligible = prop.payments.filter((p) => {
+  const posted = prop.payments.filter((p) => {
     const amt = parseFloat(String(p.amount)) || 0
     const d = String(p.payment_date || '').split('T')[0]
-    return amt > 0 && d && d <= businessDate
+    return amt > 0 && d
   })
-  if (eligible.length === 0) return null
-  eligible.sort((a, b) =>
+  if (posted.length === 0) return null
+  posted.sort((a, b) =>
     String(b.payment_date || '').localeCompare(String(a.payment_date || '')),
   )
-  return eligible[0]
+  return posted[0]
 }
 
 /** Sort detail rows by Last Paid (most recent payment first); unpaid rows after paid. */
@@ -277,23 +277,20 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
               const paymentsData = await paymentsResponse.json()
               if (Array.isArray(paymentsData) && paymentsData.length > 0) {
                 const linkedPayments = paymentsData.filter((p: any) => p.invoice_id === invoice.id)
-                const eligibleLinked = linkedPayments.filter((p: any) => {
+                const postedLinked = linkedPayments.filter((p: any) => {
                   const d = String(p.payment_date || '').split('T')[0]
-                  return d && d <= businessDate
+                  return d
                 })
-                const actualPaid = eligibleLinked.reduce(
+                const actualPaid = postedLinked.reduce(
                   (sum: number, p: any) => sum + (parseFloat(p.amount) || 0),
                   0,
                 )
                 paymentTotalsMap.set(invoice.id, actualPaid)
                 
-                if (eligibleLinked.length > 0) {
-                  const lastEligible = getMostRecentEligiblePaymentDate(
-                    eligibleLinked,
-                    businessDate,
-                  )
-                  if (lastEligible) {
-                    paidDatesMap.set(invoice.id, lastEligible)
+                if (postedLinked.length > 0) {
+                  const lastPosted = getMostRecentPostedPaymentDate(postedLinked)
+                  if (lastPosted) {
+                    paidDatesMap.set(invoice.id, lastPosted)
                   }
                 }
               }

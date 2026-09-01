@@ -1,11 +1,11 @@
 "use client";
 
 import { FormEvent, Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/auth/browser-client";
+import { fetchAppSession } from "@/lib/auth/session-fetch";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
   const [email, setEmail] = useState("");
@@ -28,11 +28,7 @@ function LoginForm() {
         return;
       }
 
-      const gate = await fetch("/api/auth/session", {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      });
+      const gate = await fetchAppSession(data.session.access_token);
       if (gate.status === 403) {
         await supabase.auth.signOut();
         setError("Access denied");
@@ -45,8 +41,9 @@ function LoginForm() {
 
       const dest =
         nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/";
-      router.replace(dest);
-      router.refresh();
+      // Full navigation keeps mobile/PWA cookies and auth state in sync.
+      window.location.href = dest;
+      return;
     } catch {
       setError("Unable to sign in");
     } finally {

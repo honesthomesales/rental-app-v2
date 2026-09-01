@@ -6,11 +6,12 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { createBrowserSupabaseClient } from "@/lib/auth/browser-client";
+import { fetchAppSession } from "@/lib/auth/session-fetch";
 import {
   type AuthStatus,
   logoutRedirectPath,
@@ -26,132 +27,110 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Last-resort guard so auth never stays on loading forever. */
-const AUTH_REFRESH_TIMEOUT_MS = 30_000;
+async function resolveSession(
+  supabase: ReturnType<typeof createBrowserSupabaseClient>,
+  hint?: Session | null,
+): Promise<Session | null> {
+  if (hint !== undefined) return hint;
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
+  if (error) throw error;
+  return session;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [email, setEmail] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const refreshInFlight = useRef<Promise<void> | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (refreshInFlight.current) {
-      return refreshInFlight.current;
-    }
+  const applySession = useCallback(async (hint?: Session | null) => {
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const session = await resolveSession(supabase, hint);
 
-    const run = (async () => {
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          (async () => {
-            const supabase = createBrowserSupabaseClient();
-            const {
-              data: { session },
-              error: sessionError,
-            } = await supabase.auth.getSession();
+      if (!session) {
+        setStatus("unauthenticated");
+        setEmail(null);
+        setRole(null);
+        return;
+      }
 
-            if (sessionError) {
-              setStatus("session_error");
-              setEmail(null);
-              setRole(null);
-              return;
-            }
+      let activeSession = session;
+      const expiresAtMs = session.expires_at
+        ? session.expires_at * 1000
+        : null;
+      if (expiresAtMs && Date.now() >= expiresAtMs - 30_000) {
+        const { data: refreshed, error: refreshError } =
+          await supabase.auth.refreshSession();
+        if (!refreshError && refreshed.session) {
+          activeSession = refreshed.session;
+        }
+      }
 
-            if (!session) {
-              setStatus("unauthenticated");
-              setEmail(null);
-              setRole(null);
-              return;
-            }
+      const res = await fetchAppSession(activeSession.access_token);
 
-            let activeSession = session;
-            const expiresAtMs = session.expires_at
-              ? session.expires_at * 1000
-              : null;
-            if (expiresAtMs && Date.now() >= expiresAtMs - 30_000) {
-              const { data: refreshed, error: refreshError } =
-                await supabase.auth.refreshSession();
-              if (!refreshError && refreshed.session) {
-                activeSession = refreshed.session;
-              }
-            }
-
-            const res = await fetch("/api/auth/session", {
-              method: "GET",
-              credentials: "include",
-              cache: "no-store",
-            });
-
-            if (res.status === 401) {
-              setStatus("unauthenticated");
-              setEmail(null);
-              setRole(null);
-              return;
-            }
-            if (res.status === 403) {
-              setStatus("session_error");
-              setEmail(null);
-              setRole(null);
-              return;
-            }
-            if (!res.ok) {
-              setStatus("session_error");
-              setEmail(null);
-              setRole(null);
-              return;
-            }
-
-            const data = (await res.json()) as {
-              email?: string | null;
-              role?: string | null;
-            };
-            setEmail(data.email ?? activeSession.user.email ?? null);
-            setRole(data.role ?? null);
-            setStatus("authenticated");
-          })(),
-          new Promise<void>((_, reject) => {
-            timeoutId = setTimeout(
-              () => reject(new Error("Auth refresh timed out")),
-              AUTH_REFRESH_TIMEOUT_MS,
-            );
-          }),
-        ]);
-      } catch {
+      if (res.status === 401) {
+        setStatus("unauthenticated");
+        setEmail(null);
+        setRole(null);
+        return;
+      }
+      if (res.status === 403) {
         setStatus("session_error");
         setEmail(null);
         setRole(null);
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-        if (refreshInFlight.current === run) {
-          refreshInFlight.current = null;
-        }
+        return;
       }
-    })();
+      if (!res.ok) {
+        setStatus("session_error");
+        setEmail(null);
+        setRole(null);
+        return;
+      }
 
-    refreshInFlight.current = run;
-    return run;
+      const data = (await res.json()) as {
+        email?: string | null;
+        role?: string | null;
+      };
+      setEmail(data.email ?? activeSession.user.email ?? null);
+      setRole(data.role ?? null);
+      setStatus("authenticated");
+    } catch {
+      setStatus("session_error");
+      setEmail(null);
+      setRole(null);
+    }
   }, []);
 
+  const refresh = useCallback(async () => {
+    await applySession();
+  }, [applySession]);
+
   useEffect(() => {
-    void refresh();
+    void applySession();
     const supabase = createBrowserSupabaseClient();
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "INITIAL_SESSION") return;
-      // Defer to avoid Supabase auth deadlocks when calling getSession inside this callback.
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Defer so we never call getSession inside the Supabase auth callback.
       window.setTimeout(() => {
-        void refresh();
+        if (event === "SIGNED_OUT") {
+          setStatus("unauthenticated");
+          setEmail(null);
+          setRole(null);
+          return;
+        }
+        void applySession(session);
       }, 0);
     });
     return () => {
       subscription.unsubscribe();
     };
-  }, [refresh]);
+  }, [applySession]);
 
   const signOut = useCallback(async () => {
-    refreshInFlight.current = null;
     try {
       const supabase = createBrowserSupabaseClient();
       const { error: clientError } = await supabase.auth.signOut();

@@ -93,11 +93,12 @@ export async function GET(request: Request) {
   if (isAuthError(auth)) return auth
 try {
     const { searchParams } = new URL(request.url)
-    let month = searchParams.get('month') || new Date().toISOString().slice(0, 7) // YYYY-MM format
+    const defaultMonth = getBusinessDate().slice(0, 7)
+    let month = searchParams.get('month') || defaultMonth
     
-    // If no month specified, use current month
+    // If no month specified, use current business month (America/New_York)
     if (!searchParams.get('month')) {
-      month = new Date().toISOString().slice(0, 7)
+      month = defaultMonth
     }
     
     console.log('Fetching profit metrics for month:', month)

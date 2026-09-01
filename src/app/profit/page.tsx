@@ -1,7 +1,15 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { StarIcon } from '@heroicons/react/24/solid'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { fetchAuthenticated } from '@/lib/auth/authenticated-fetch'
+import {
+  logoutRedirectPath,
+  resolveProtectedDataView,
+  shouldRunProtectedQueries,
+} from '@/lib/auth/session-state'
+import { parseMonthInputValue, toBusinessMonthKey } from '@/lib/date-month'
 
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
 type SortDirection = 'asc' | 'desc'
@@ -22,9 +30,13 @@ function rollingMonthCountForView(view: ProfitViewMode): 6 | 12 | null {
 }
 
 export default function ProfitPage() {
+  const auth = useAuth()
   const [loading, setLoading] = useState(true)
   const [metricsError, setMetricsError] = useState<string | null>(null)
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const [currentDate, setCurrentDate] = useState(() => {
+    const [year, month] = toBusinessMonthKey().split('-').map(Number)
+    return new Date(year, month - 1, 1)
+  })
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
   const [sortField, setSortField] = useState<SortField>('property')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -34,59 +46,13 @@ export default function ProfitPage() {
   const [rollingMonthReferenceMonth, setRollingMonthReferenceMonth] = useState<string | null>(null)
   const rollingMonthCount = rollingMonthCountForView(viewMode)
 
-  useEffect(() => {
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 30_000)
-    fetchMonthlyMetrics(controller.signal).finally(() => {
-      window.clearTimeout(timeoutId)
-    })
-    return () => {
-      window.clearTimeout(timeoutId)
-      controller.abort()
-    }
-  }, [currentDate])
-
-  useEffect(() => {
-    if (!rollingMonthCount) return
-
-    let cancelled = false
-    const load = async () => {
-      setRollingMonthLoading(true)
-      setRollingMonthRows([])
-      try {
-        const response = await fetch(
-          `/api/profit/monthly-summary?months=${rollingMonthCount}`,
-          { cache: 'no-store' }
-        )
-        if (!response.ok) return
-        const data = await response.json()
-        if (!cancelled && data?.months) {
-          setRollingMonthRows(data.months)
-          setRollingMonthReferenceMonth(data.referenceMonth ?? null)
-        }
-      } catch (e) {
-        console.error(`Error fetching ${rollingMonthCount}-month profit summary:`, e)
-      } finally {
-        if (!cancelled) setRollingMonthLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [rollingMonthCount])
-
-  // Live profit metrics come from /api/profit/metrics and /api/profit/monthly-summary.
-  // Unused mock fetchProfitData removed — do not reintroduce hard-coded property rows.
-
-  const fetchMonthlyMetrics = async (signal?: AbortSignal) => {
+  const fetchMonthlyMetrics = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setMetricsError(null)
     try {
-      const monthParam = currentDate.toISOString().slice(0, 7) // YYYY-MM format
+      const monthParam = toBusinessMonthKey(currentDate)
 
-      const response = await fetch(`/api/profit/metrics?month=${monthParam}`, {
-        cache: 'no-store',
+      const response = await fetchAuthenticated(`/api/profit/metrics?month=${monthParam}`, {
         signal,
       })
       if (response.ok) {
@@ -118,7 +84,57 @@ export default function ProfitPage() {
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }
+  }, [currentDate])
+
+  useEffect(() => {
+    if (!shouldRunProtectedQueries(auth.status)) {
+      if (auth.status !== 'loading') {
+        setLoading(false)
+        setMonthlyMetrics(null)
+      }
+      return
+    }
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 30_000)
+    void fetchMonthlyMetrics(controller.signal).finally(() => {
+      window.clearTimeout(timeoutId)
+    })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [auth.status, fetchMonthlyMetrics])
+
+  useEffect(() => {
+    if (!shouldRunProtectedQueries(auth.status)) return
+    if (!rollingMonthCount) return
+
+    let cancelled = false
+    const load = async () => {
+      setRollingMonthLoading(true)
+      setRollingMonthRows([])
+      try {
+        const response = await fetchAuthenticated(
+          `/api/profit/monthly-summary?months=${rollingMonthCount}`,
+        )
+        if (!response.ok) return
+        const data = await response.json()
+        if (!cancelled && data?.months) {
+          setRollingMonthRows(data.months)
+          setRollingMonthReferenceMonth(data.referenceMonth ?? null)
+        }
+      } catch (e) {
+        console.error(`Error fetching ${rollingMonthCount}-month profit summary:`, e)
+      } finally {
+        if (!cancelled) setRollingMonthLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [auth.status, rollingMonthCount])
 
   const formatCurrency = (amount: number) => {
     return `$${Math.round(amount).toLocaleString()}`
@@ -215,7 +231,7 @@ export default function ProfitPage() {
 
   const renderRollingMonthsView = (monthCount: 6 | 12) => {
     const refMonth =
-      rollingMonthReferenceMonth ?? new Date().toISOString().slice(0, 7)
+      rollingMonthReferenceMonth ?? toBusinessMonthKey()
     const periodLabel = monthCount === 12 ? '12 months' : '6 months'
     const skeletonCount = monthCount
     const gridClass =
@@ -351,10 +367,10 @@ export default function ProfitPage() {
             </button>
             <input
               type="month"
-              value={currentDate.toISOString().slice(0, 7)}
+              value={toBusinessMonthKey(currentDate)}
               onChange={(e) => {
                 if (e.target.value) {
-                  setCurrentDate(new Date(e.target.value + '-01'))
+                  setCurrentDate(parseMonthInputValue(e.target.value))
                 }
               }}
               className="text-xl font-semibold text-gray-900 border-none bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
@@ -616,6 +632,44 @@ export default function ProfitPage() {
       </button>
     </div>
   )
+
+  const profitView = resolveProtectedDataView({
+    authStatus: auth.status,
+    loading: loading && viewMode === 'detail',
+    httpStatus: metricsError ? 500 : monthlyMetrics ? 200 : null,
+    networkError: false,
+    itemCount: monthlyMetrics ? 1 : 0,
+    emptyMessage: 'Unable to load profit data',
+    loadNoun: 'profit',
+  })
+
+  if (auth.status === 'loading') {
+    return (
+      <div className="p-6">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+        </div>
+        <p className="text-gray-500" data-testid="profit-auth-pending">Checking sign-in…</p>
+      </div>
+    )
+  }
+
+  if (
+    profitView.kind === 'sign_in_required' ||
+    profitView.kind === 'session_expired'
+  ) {
+    return (
+      <div className="p-6 text-center space-y-3" data-testid="profit-auth-required">
+        <p className="text-gray-700 font-medium">{profitView.message}</p>
+        <a
+          href={logoutRedirectPath()}
+          className="inline-block px-4 py-2 bg-slate-900 text-white rounded-md text-sm"
+        >
+          Sign In
+        </a>
+      </div>
+    )
+  }
 
   if (loading && viewMode === 'detail') {
     return (

@@ -273,6 +273,6 @@ describe("portfolio ledger cross-screen consistency", () => {
     });
     // July 2 + future July 20 both count in July profit month view.
     expect(facts.totalCollected).toBe(175);
-    expect(facts.collectedByProperty.get(lease.property_id)).toBe(160);
+    expect(facts.collectedByProperty.get(lease.property_id)).toBe(175);
   });
 });

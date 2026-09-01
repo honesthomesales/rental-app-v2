@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { supabaseServer } from '@/lib/supabase-server'
-import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'import {
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
+import { parsePaymentUuid } from '@/lib/payments/payment-id'
+import {
   allocationGroupNote,
   getDeferredSelectedInvoiceId,
   planNewestFirstAllocation,
@@ -785,13 +787,19 @@ export async function DELETE(request: Request) {
   const auth = await requireApiAuth(request, { write: true })
   if (isAuthError(auth)) return auth
 try {
-    const body = await request.json()
-    const paymentId = typeof body?.id === 'string' ? body.id.trim() : ''
+    const { searchParams } = new URL(request.url)
+    let paymentId = parsePaymentUuid(searchParams.get('id'))
 
-    const uuidPattern =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!paymentId) {
+      try {
+        const body = await request.json()
+        paymentId = parsePaymentUuid(body?.id)
+      } catch {
+        paymentId = null
+      }
+    }
 
-    if (!paymentId || !uuidPattern.test(paymentId)) {
+    if (!paymentId) {
       return NextResponse.json(
         { error: 'A valid payment UUID is required' },
         { status: 400 },
@@ -851,7 +859,7 @@ export async function PUT(request: Request) {
   if (isAuthError(auth)) return auth
 try {
     const { searchParams } = new URL(request.url)
-    const paymentId = searchParams.get('id')
+    const paymentId = parsePaymentUuid(searchParams.get('id'))
     const body = await request.json()
     
     if (!paymentId) {

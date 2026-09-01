@@ -12,7 +12,7 @@ describe('PWA production cache refresh', () => {
   )
 
   it('activates a versioned cache immediately and removes older caches', () => {
-    expect(serviceWorker).toContain("CACHE_NAME = 'rental-app-v2-2026-08-31-auth2'")
+    expect(serviceWorker).toContain("CACHE_NAME = 'rental-app-v2-2026-08-31-profit'")
     expect(serviceWorker).toContain('self.skipWaiting()')
     expect(serviceWorker).toContain('self.clients.claim()')
     expect(serviceWorker).toContain('caches.delete(cacheName)')

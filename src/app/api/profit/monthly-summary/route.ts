@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { resolveBusinessDate } from '@/lib/business-date'
+import { monthBounds } from '@/lib/date-month'
 import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
 import {
   MISC_INCOME_RATE,
@@ -9,14 +10,16 @@ import {
   isRecurringExpense,
 } from '@/lib/expenses/classification'
 
-export const revalidate = 60
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 function monthKeyFromDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 function endOfMonthIso(year: number, monthIndex0: number): string {
-  return new Date(year, monthIndex0 + 1, 0).toISOString().slice(0, 10)
+  const monthKey = `${year}-${String(monthIndex0 + 1).padStart(2, '0')}`
+  return monthBounds(monthKey).end
 }
 
 /** Last N calendar months, oldest → newest (for stacked display). */
@@ -232,11 +235,18 @@ try {
       }
     })
 
-    return NextResponse.json({
-      months,
-      monthCount,
-      referenceMonth: monthKeyFromDate(reference),
-    })
+    return NextResponse.json(
+      {
+        months,
+        monthCount,
+        referenceMonth: monthKeyFromDate(reference),
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store, must-revalidate',
+        },
+      },
+    )
   } catch (error) {
     console.error('Error in profit monthly-summary API:', error)
     return NextResponse.json(

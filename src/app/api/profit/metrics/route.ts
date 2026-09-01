@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate } from '@/lib/business-date'
+import { profitCollectionQueryRange } from '@/lib/date-month'
 import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
 import {
   MISC_INCOME_RATE,
@@ -9,8 +10,9 @@ import {
   isRecurringExpense,
 } from '@/lib/expenses/classification'
 
-// Cache profit metrics for 60 seconds - historical data doesn't change
-export const revalidate = 60
+// Never cache authenticated profit responses (PWA must match desktop live data).
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 const SUPABASE_PAGE_SIZE = 1000
 
@@ -103,11 +105,10 @@ try {
     
     console.log('Fetching profit metrics for month:', month)
     
-    // Get start and end of month
-    const startOfMonth = `${month}-01`
+    // Get start and end of month (full calendar month — includes future-dated payments).
+    const { start: startOfMonth, end: endOfMonth } = profitCollectionQueryRange(month)
     const year = parseInt(month.split('-')[0])
     const monthNum = parseInt(month.split('-')[1]) - 1 // JavaScript months are 0-indexed
-    const endOfMonth = new Date(year, monthNum + 1, 0).toISOString().slice(0, 10)
     
     console.log('Date range:', startOfMonth, 'to', endOfMonth)
     
@@ -501,7 +502,11 @@ try {
     console.log('Calculated metrics:', JSON.stringify(metrics, null, 2))
     console.log('Property details in response:', metrics.propertyDetails?.length || 0)
     
-    return NextResponse.json(metrics)
+    return NextResponse.json(metrics, {
+      headers: {
+        'Cache-Control': 'private, no-store, must-revalidate',
+      },
+    })
   } catch (error) {
     console.error('Error in profit metrics API:', error)
     return NextResponse.json(

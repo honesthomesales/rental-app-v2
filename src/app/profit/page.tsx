@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { StarIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { fetchAuthenticated } from '@/lib/auth/authenticated-fetch'
@@ -9,7 +9,11 @@ import {
   resolveProtectedDataView,
   shouldRunProtectedQueries,
 } from '@/lib/auth/session-state'
-import { parseMonthInputValue, toBusinessMonthKey } from '@/lib/date-month'
+import {
+  formatMonthKeyLabel,
+  shiftMonthKey,
+  toBusinessMonthKey,
+} from '@/lib/date-month'
 
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
 type SortDirection = 'asc' | 'desc'
@@ -33,10 +37,9 @@ export default function ProfitPage() {
   const auth = useAuth()
   const [loading, setLoading] = useState(true)
   const [metricsError, setMetricsError] = useState<string | null>(null)
-  const [currentDate, setCurrentDate] = useState(() => {
-    const [year, month] = toBusinessMonthKey().split('-').map(Number)
-    return new Date(year, month - 1, 1)
-  })
+  const [selectedMonth, setSelectedMonth] = useState(() => toBusinessMonthKey())
+  const selectedMonthRef = useRef(selectedMonth)
+  selectedMonthRef.current = selectedMonth
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
   const [sortField, setSortField] = useState<SortField>('property')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -47,17 +50,18 @@ export default function ProfitPage() {
   const rollingMonthCount = rollingMonthCountForView(viewMode)
 
   const fetchMonthlyMetrics = useCallback(async (signal?: AbortSignal) => {
+    const requestMonth = selectedMonth
     setLoading(true)
     setMetricsError(null)
     try {
-      const monthParam = toBusinessMonthKey(currentDate)
-
-      const response = await fetchAuthenticated(`/api/profit/metrics?month=${monthParam}`, {
-        signal,
-      })
+      const response = await fetchAuthenticated(
+        `/api/profit/metrics?month=${encodeURIComponent(requestMonth)}`,
+        { signal },
+      )
       if (response.ok) {
         const data = await response.json()
         if (signal?.aborted) return
+        if (requestMonth !== selectedMonthRef.current) return
         setMonthlyMetrics(data)
         setMetricsError(null)
       } else {
@@ -71,6 +75,7 @@ export default function ProfitPage() {
           /* ignore parse errors */
         }
         if (signal?.aborted) return
+        if (requestMonth !== selectedMonthRef.current) return
         setMonthlyMetrics(null)
         setMetricsError(message)
       }
@@ -79,12 +84,13 @@ export default function ProfitPage() {
         return
       }
       console.error('Error fetching monthly metrics:', error)
+      if (requestMonth !== selectedMonthRef.current) return
       setMonthlyMetrics(null)
       setMetricsError('Could not load profit metrics. Check your connection and try again.')
     } finally {
-      if (!signal?.aborted) setLoading(false)
+      if (!signal?.aborted && requestMonth === selectedMonthRef.current) setLoading(false)
     }
-  }, [currentDate])
+  }, [selectedMonth])
 
   useEffect(() => {
     if (!shouldRunProtectedQueries(auth.status)) {
@@ -164,20 +170,10 @@ export default function ProfitPage() {
     return { currentProfit, potentialProfit }
   }, [rollingMonthsSortedDesc])
 
-  const formatMonth = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  }
-
   const navigateMonth = (direction: 'prev' | 'next') => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev)
-      if (direction === 'prev') {
-        newDate.setMonth(prev.getMonth() - 1)
-      } else {
-        newDate.setMonth(prev.getMonth() + 1)
-      }
-      return newDate
-    })
+    setSelectedMonth((prev) =>
+      shiftMonthKey(prev, direction === 'prev' ? -1 : 1),
+    )
   }
 
   const handleSort = (field: SortField) => {
@@ -367,10 +363,10 @@ export default function ProfitPage() {
             </button>
             <input
               type="month"
-              value={toBusinessMonthKey(currentDate)}
+              value={selectedMonth}
               onChange={(e) => {
                 if (e.target.value) {
-                  setCurrentDate(parseMonthInputValue(e.target.value))
+                  setSelectedMonth(e.target.value)
                 }
               }}
               className="text-xl font-semibold text-gray-900 border-none bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
@@ -763,7 +759,7 @@ export default function ProfitPage() {
           {/* Detailed Income and Rent by Property */}
           <div className="bg-white rounded-lg shadow min-w-0 max-w-full mt-8">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Income and Rent Details - {formatMonth(currentDate)}</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Income and Rent Details - {formatMonthKeyLabel(selectedMonth)}</h2>
           <p className="text-sm text-gray-600 mt-1">Detailed breakdown by property for the selected month</p>
           <p className="text-xs text-gray-500 mt-1 sm:hidden" data-testid="profit-swipe-hint">
             Swipe sideways to see all columns · tap headers to sort
@@ -902,7 +898,7 @@ export default function ProfitPage() {
                       : metricsError
                         ? 'Property details unavailable. Use Retry above.'
                         : monthlyMetrics
-                          ? `No property data available for ${formatMonth(currentDate)}`
+                          ? `No property data available for ${formatMonthKeyLabel(selectedMonth)}`
                           : 'No property data loaded.'}
                   </td>
                 </tr>

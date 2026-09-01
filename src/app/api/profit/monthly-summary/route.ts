@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
-import { resolveBusinessDate } from '@/lib/business-date'
 import { monthBounds } from '@/lib/date-month'
-import { buildCollectedMonthCollectionFacts } from '@/lib/portfolio-ledger/service'
+import { fetchProfitRentCollectedByMonthKeys } from '@/lib/profit/rent-collected'
 import {
   MISC_INCOME_RATE,
   ONE_TIME_EXPENSE_RATE,
@@ -72,7 +71,6 @@ try {
     const asOfParam = searchParams.get('asOf')
     const monthsParam = searchParams.get('months')
     const monthCount = monthsParam === '12' ? 12 : 6
-    const businessDate = resolveBusinessDate(asOfParam)
     const reference = asOfParam ? new Date(asOfParam + 'T12:00:00') : new Date()
 
     const monthKeys = getMonthKeys(reference, monthCount)
@@ -80,7 +78,6 @@ try {
     const lastMonth = monthKeys[monthKeys.length - 1]
     const [ly, lm] = lastMonth.split('-').map(Number)
     const rangeEnd = endOfMonthIso(ly, lm - 1)
-    const paymentRangeEnd = rangeEnd
 
     const { data: properties, error: propertiesError } = await supabaseServer
       .from('RENT_properties')
@@ -139,25 +136,8 @@ try {
       }
     }
 
-    // Cash collected by payment_date (not invoice due month).
-    const [payments, miscExpenses, oneTimeExpenses] = await Promise.all([
-      fetchAllPages<{
-        id: string
-        lease_id: string
-        property_id: string | null
-        invoice_id: string | null
-        amount: number
-        payment_date: string
-        status: string | null
-      }>((from, to) =>
-        supabaseServer
-          .from('RENT_payments')
-          .select('id, lease_id, property_id, invoice_id, amount, payment_date, status')
-          .gte('payment_date', rangeStart)
-          .lte('payment_date', paymentRangeEnd)
-          .order('payment_date', { ascending: true })
-          .range(from, to),
-      ),
+    const [rentByMonth, miscExpenses, oneTimeExpenses] = await Promise.all([
+      fetchProfitRentCollectedByMonthKeys({ monthKeys, leasePropertyById }),
       fetchAllPages<{ amount_owed: number | null; last_paid_date: string }>((from, to) =>
         supabaseServer
           .from('RENT_expenses')
@@ -180,35 +160,12 @@ try {
       ),
     ])
 
-    const rentByMonth = new Map<string, number>()
     const miscByMonth = new Map<string, number>()
     const otherByMonth = new Map<string, number>()
 
     const addToMonth = (map: Map<string, number>, dateStr: string, amount: number) => {
       const key = dateStr.slice(0, 7)
       map.set(key, (map.get(key) || 0) + amount)
-    }
-
-    for (const month of monthKeys) {
-      const facts = buildCollectedMonthCollectionFacts({
-        payments: payments.map((payment) => ({
-          id: String(payment.id),
-          lease_id: String(payment.lease_id || ''),
-          property_id: payment.property_id,
-          invoice_id: payment.invoice_id ? String(payment.invoice_id) : null,
-          amount: Number(payment.amount) || 0,
-          payment_date: String(payment.payment_date || ''),
-          status: payment.status,
-        })),
-        leasePropertyById,
-        monthStart: `${month}-01`,
-        monthEnd: endOfMonthIso(
-          Number(month.slice(0, 4)),
-          Number(month.slice(5, 7)) - 1,
-        ),
-        asOfDate: businessDate,
-      })
-      rentByMonth.set(month, facts.totalCollected)
     }
 
     miscExpenses.forEach((e) => {

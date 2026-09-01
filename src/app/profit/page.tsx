@@ -38,8 +38,7 @@ export default function ProfitPage() {
   const [loading, setLoading] = useState(true)
   const [metricsError, setMetricsError] = useState<string | null>(null)
   const [selectedMonth, setSelectedMonth] = useState(() => toBusinessMonthKey())
-  const selectedMonthRef = useRef(selectedMonth)
-  selectedMonthRef.current = selectedMonth
+  const fetchGenerationRef = useRef(0)
   const [monthlyMetrics, setMonthlyMetrics] = useState<any>(null)
   const [sortField, setSortField] = useState<SortField>('property')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -49,19 +48,24 @@ export default function ProfitPage() {
   const [rollingMonthReferenceMonth, setRollingMonthReferenceMonth] = useState<string | null>(null)
   const rollingMonthCount = rollingMonthCountForView(viewMode)
 
-  const fetchMonthlyMetrics = useCallback(async (signal?: AbortSignal) => {
+  const fetchMonthlyMetrics = useCallback(async () => {
     const requestMonth = selectedMonth
+    const generation = ++fetchGenerationRef.current
     setLoading(true)
     setMetricsError(null)
     try {
       const response = await fetchAuthenticated(
         `/api/profit/metrics?month=${encodeURIComponent(requestMonth)}`,
-        { signal },
       )
+      if (generation !== fetchGenerationRef.current) return
       if (response.ok) {
         const data = await response.json()
-        if (signal?.aborted) return
-        if (requestMonth !== selectedMonthRef.current) return
+        if (generation !== fetchGenerationRef.current) return
+        if (data?.month && data.month !== requestMonth) {
+          console.warn(
+            `Profit metrics month mismatch: requested ${requestMonth}, got ${data.month}`,
+          )
+        }
         setMonthlyMetrics(data)
         setMetricsError(null)
       } else {
@@ -74,22 +78,22 @@ export default function ProfitPage() {
         } catch {
           /* ignore parse errors */
         }
-        if (signal?.aborted) return
-        if (requestMonth !== selectedMonthRef.current) return
+        if (generation !== fetchGenerationRef.current) return
         setMonthlyMetrics(null)
         setMetricsError(message)
       }
     } catch (error) {
-      if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
-        return
-      }
       console.error('Error fetching monthly metrics:', error)
-      if (requestMonth !== selectedMonthRef.current) return
+      if (generation !== fetchGenerationRef.current) return
       setMonthlyMetrics(null)
       setMetricsError('Could not load profit metrics. Check your connection and try again.')
     } finally {
-      if (!signal?.aborted && requestMonth === selectedMonthRef.current) setLoading(false)
+      if (generation === fetchGenerationRef.current) setLoading(false)
     }
+  }, [selectedMonth])
+
+  useEffect(() => {
+    setMonthlyMetrics(null)
   }, [selectedMonth])
 
   useEffect(() => {
@@ -101,15 +105,7 @@ export default function ProfitPage() {
       return
     }
 
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 30_000)
-    void fetchMonthlyMetrics(controller.signal).finally(() => {
-      window.clearTimeout(timeoutId)
-    })
-    return () => {
-      window.clearTimeout(timeoutId)
-      controller.abort()
-    }
+    void fetchMonthlyMetrics()
   }, [auth.status, fetchMonthlyMetrics])
 
   useEffect(() => {
@@ -643,7 +639,7 @@ export default function ProfitPage() {
     return (
       <div className="p-6">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.3</h1>
         </div>
         <p className="text-gray-500" data-testid="profit-auth-pending">Checking sign-in…</p>
       </div>
@@ -671,7 +667,7 @@ export default function ProfitPage() {
     return (
       <div className="p-6">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.3</h1>
           {viewToggle}
         </div>
         <div className="animate-pulse">
@@ -693,7 +689,7 @@ export default function ProfitPage() {
       <div className="mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-            <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.2</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Profit Analysis v2.3</h1>
             {viewToggle}
           </div>
           <div className="flex flex-wrap items-end justify-end gap-8 ml-auto">

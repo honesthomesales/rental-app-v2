@@ -625,7 +625,7 @@ export default function Dashboard() {
     loadNoun: 'dashboard',
   })
 
-  if (auth.status === 'loading' || dashboardView.kind === 'auth_pending') {
+  if (auth.status === 'loading') {
     return (
       <div className="p-6">
         <div className="animate-pulse">

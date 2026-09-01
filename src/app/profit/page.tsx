@@ -36,8 +36,14 @@ export default function ProfitPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchMonthlyMetrics(controller.signal)
-    return () => controller.abort()
+    const timeoutId = window.setTimeout(() => controller.abort(), 30_000)
+    fetchMonthlyMetrics(controller.signal).finally(() => {
+      window.clearTimeout(timeoutId)
+    })
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
   }, [currentDate])
 
   useEffect(() => {

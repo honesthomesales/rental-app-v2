@@ -51,12 +51,6 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (isPublicPath(pathname)) {
-    if (pathname.startsWith("/login") && user) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/";
-      url.search = "";
-      return NextResponse.redirect(url);
-    }
     return response;
   }
 

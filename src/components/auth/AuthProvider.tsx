@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -27,28 +28,27 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function resolveSession(
-  supabase: ReturnType<typeof createBrowserSupabaseClient>,
-  hint?: Session | null,
-): Promise<Session | null> {
-  if (hint !== undefined) return hint;
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
-  if (error) throw error;
-  return session;
-}
+/** Never leave the UI stuck on "Checking sign-in…" (common on mobile PWAs). */
+const AUTH_INIT_TIMEOUT_MS = 12_000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [email, setEmail] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const applyGeneration = useRef(0);
 
   const applySession = useCallback(async (hint?: Session | null) => {
+    const generation = ++applyGeneration.current;
     try {
       const supabase = createBrowserSupabaseClient();
-      const session = await resolveSession(supabase, hint);
+      let session = hint;
+      if (session === undefined) {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        session = data.session;
+      }
+
+      if (generation !== applyGeneration.current) return;
 
       if (!session) {
         setStatus("unauthenticated");
@@ -69,7 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      if (generation !== applyGeneration.current) return;
+
       const res = await fetchAppSession(activeSession.access_token);
+
+      if (generation !== applyGeneration.current) return;
 
       if (res.status === 401) {
         setStatus("unauthenticated");
@@ -98,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole(data.role ?? null);
       setStatus("authenticated");
     } catch {
+      if (generation !== applyGeneration.current) return;
       setStatus("session_error");
       setEmail(null);
       setRole(null);
@@ -109,13 +114,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   useEffect(() => {
-    void applySession();
     const supabase = createBrowserSupabaseClient();
+    let cancelled = false;
+
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      void (async () => {
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          /* ignore */
+        }
+        if (cancelled) return;
+        setStatus("unauthenticated");
+        setEmail(null);
+        setRole(null);
+      })();
+    }, AUTH_INIT_TIMEOUT_MS);
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      // Defer so we never call getSession inside the Supabase auth callback.
+      window.clearTimeout(timeoutId);
       window.setTimeout(() => {
+        if (cancelled) return;
         if (event === "SIGNED_OUT") {
           setStatus("unauthenticated");
           setEmail(null);
@@ -125,12 +147,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         void applySession(session);
       }, 0);
     });
+
     return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, [applySession]);
 
   const signOut = useCallback(async () => {
+    applyGeneration.current += 1;
     try {
       const supabase = createBrowserSupabaseClient();
       const { error: clientError } = await supabase.auth.signOut();

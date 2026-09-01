@@ -12,7 +12,7 @@ describe('PWA production cache refresh', () => {
   )
 
   it('activates a versioned cache immediately and removes older caches', () => {
-    expect(serviceWorker).toContain("CACHE_NAME = 'rental-app-v2-2026-08-03'")
+    expect(serviceWorker).toContain("CACHE_NAME = 'rental-app-v2-2026-08-31'")
     expect(serviceWorker).toContain('self.skipWaiting()')
     expect(serviceWorker).toContain('self.clients.claim()')
     expect(serviceWorker).toContain('caches.delete(cacheName)')
@@ -22,6 +22,10 @@ describe('PWA production cache refresh', () => {
     expect(serviceWorker).toContain("event.request.mode === 'navigate'")
     expect(serviceWorker).toContain('fetch(event.request)')
     expect(serviceWorker).toContain("caches.match('/')")
+  })
+
+  it('does not cache Next.js bundles (prevents stale auth JS on PWAs)', () => {
+    expect(serviceWorker).toContain("event.request.url.includes('/_next/')")
   })
 
   it('bypasses the HTTP cache when checking for an updated worker', () => {

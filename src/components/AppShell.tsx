@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="app-shell-main flex-1 min-w-0 max-w-full w-full pb-8">
           {children}
         </main>
-        {!hideStaffChrome ? <PWAInstaller /> : null}
+        <PWAInstaller />
       </div>
     </AuthProvider>
   );

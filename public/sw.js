@@ -1,5 +1,5 @@
 // Service Worker for Rental Management App PWA
-const CACHE_NAME = 'rental-app-v2-2026-08-03';
+const CACHE_NAME = 'rental-app-v2-2026-08-31';
 const urlsToCache = [
   '/',
   '/payments',
@@ -27,8 +27,12 @@ self.addEventListener('install', (event) => {
 
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', (event) => {
-  // Skip caching for API routes and non-GET requests
-  if (event.request.url.includes('/api/') || event.request.method !== 'GET') {
+  // Skip caching for API routes, Next.js bundles, and non-GET requests.
+  if (
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('/_next/') ||
+    event.request.method !== 'GET'
+  ) {
     event.respondWith(fetch(event.request).catch(() => {
       // Return a basic error response for API failures
       return new Response(JSON.stringify({ error: 'Network error' }), {

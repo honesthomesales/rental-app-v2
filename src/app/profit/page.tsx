@@ -14,6 +14,7 @@ import {
   shiftMonthKey,
   toBusinessMonthKey,
 } from '@/lib/date-month'
+import { RentCollectedDetailModal } from '@/components/profit/RentCollectedDetailModal'
 
 type SortField = 'property' | 'expected_rent' | 'rent_collected' | 'misc_income' | 'total_income'
 type SortDirection = 'asc' | 'desc'
@@ -46,6 +47,11 @@ export default function ProfitPage() {
   const [rollingMonthRows, setRollingMonthRows] = useState<RollingMonthRow[]>([])
   const [rollingMonthLoading, setRollingMonthLoading] = useState(false)
   const [rollingMonthReferenceMonth, setRollingMonthReferenceMonth] = useState<string | null>(null)
+  const [rentDetailProperty, setRentDetailProperty] = useState<{
+    propertyId: string
+    propertyName: string
+    propertyAddress?: string
+  } | null>(null)
   const rollingMonthCount = rollingMonthCountForView(viewMode)
 
   const fetchMonthlyMetrics = useCallback(async () => {
@@ -769,7 +775,7 @@ export default function ProfitPage() {
           aria-label="Profit income and rent details"
           data-testid="profit-totals-table-scroller"
         >
-          <table className="min-w-[900px] w-max max-w-none divide-y divide-gray-200">
+          <table className="min-w-[980px] w-max max-w-none divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th 
@@ -837,6 +843,9 @@ export default function ProfitPage() {
                     )}
                   </div>
                 </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Detail
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -857,11 +866,12 @@ export default function ProfitPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-lg font-bold text-green-600">
                     {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
                   </td>
+                  <td className="px-4 py-4" />
                 </tr>
               )}
               {sortedPropertyDetails && sortedPropertyDetails.length > 0 ? (
                 sortedPropertyDetails.map((property: any, index: number) => (
-                  <tr key={index} className="hover:bg-gray-50">
+                  <tr key={property.property_id || `row-${index}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap md:sticky md:left-0 bg-white z-10">
                       <div>
                         <div className="text-sm font-medium text-gray-900">
@@ -884,11 +894,31 @@ export default function ProfitPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
                       {formatCurrency((property.rent_collected || 0) + (property.misc_income || 0))}
                     </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      {property.property_id && (property.rent_collected || 0) > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRentDetailProperty({
+                              propertyId: property.property_id,
+                              propertyName: property.property_name || 'Property',
+                              propertyAddress: property.property_address,
+                            })
+                          }
+                          className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors min-h-9"
+                          data-testid={`profit-rent-detail-${property.property_id}`}
+                        >
+                          Detail
+                        </button>
+                      ) : (
+                        <span className="text-gray-300 text-sm">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500" data-testid="profit-property-empty">
+                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500" data-testid="profit-property-empty">
                     {loading
                       ? 'Loading property details…'
                       : metricsError
@@ -916,12 +946,22 @@ export default function ProfitPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
                     {formatCurrency(sortedPropertyDetails.reduce((sum: number, p: any) => sum + (p.rent_collected || 0) + (p.misc_income || 0), 0))}
                   </td>
+                  <td className="px-4 py-4" />
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      <RentCollectedDetailModal
+        open={rentDetailProperty != null}
+        onClose={() => setRentDetailProperty(null)}
+        month={selectedMonth}
+        propertyId={rentDetailProperty?.propertyId ?? null}
+        propertyName={rentDetailProperty?.propertyName ?? ''}
+        propertyAddress={rentDetailProperty?.propertyAddress}
+      />
         </>
       )}
     </div>

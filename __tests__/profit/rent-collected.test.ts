@@ -1,5 +1,6 @@
 import {
   mergeProfitPayments,
+  resolveProfitPaymentPropertyId,
   selectProfitPaymentsForMonth,
 } from "@/lib/profit/rent-collected";
 
@@ -51,5 +52,24 @@ describe("profit rent collected attribution", () => {
     };
     const merged = mergeProfitPayments([payment], [payment]);
     expect(merged).toHaveLength(1);
+  });
+
+  it("resolves property from invoice when payment.property_id is missing", () => {
+    const invoiceMeta = new Map([
+      ["inv-sep", { due_date: "2026-09-01", property_id: "prop-99" }],
+    ]);
+    const propertyId = resolveProfitPaymentPropertyId(
+      {
+        id: "p1",
+        lease_id: "",
+        invoice_id: "inv-sep",
+        payment_date: "2026-08-28",
+        amount: 400,
+        status: "completed",
+      },
+      new Map(),
+      invoiceMeta,
+    );
+    expect(propertyId).toBe("prop-99");
   });
 });

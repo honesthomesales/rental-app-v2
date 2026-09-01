@@ -65,7 +65,7 @@ describe('mobile table scroll CSS', () => {
     expect(profit).toContain('data-testid="profit-totals-table-scroller"')
     expect(profit).toContain('table-scroll-x')
     expect(profit).not.toContain('data-testid="profit-property-cards"')
-    expect(profit).toMatch(/min-w-\[900px\]/)
+    expect(profit).toMatch(/min-w-\[980px\]/)
     for (const header of [
       'Property',
       'Expected Rent',

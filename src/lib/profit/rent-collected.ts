@@ -108,7 +108,7 @@ export async function fetchProfitMonthPayments(
   monthStart: string,
   monthEnd: string,
 ): Promise<ProfitPaymentRow[]> {
-  const invoiceDueDateById = await fetchInvoiceDueDatesInRange(
+  const invoiceDueDateById = await fetchInvoiceMetaInRange(
     monthStart,
     monthEnd,
   );
@@ -183,16 +183,21 @@ export function selectProfitPaymentsForMonth(
   return [...selected.values()];
 }
 
-export async function fetchInvoiceDueDatesInRange(
+export type ProfitInvoiceMeta = {
+  due_date: string;
+  property_id: string | null;
+};
+
+export async function fetchInvoiceMetaInRange(
   rangeStart: string,
   rangeEnd: string,
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+): Promise<Map<string, ProfitInvoiceMeta>> {
+  const map = new Map<string, ProfitInvoiceMeta>();
   let from = 0;
   for (;;) {
     const { data, error } = await supabaseServer
       .from("RENT_invoices")
-      .select("id, due_date")
+      .select("id, due_date, property_id")
       .gte("due_date", rangeStart)
       .lte("due_date", rangeEnd)
       .order("due_date", { ascending: true })
@@ -202,13 +207,61 @@ export async function fetchInvoiceDueDatesInRange(
     const chunk = data || [];
     for (const row of chunk) {
       if (row.id && row.due_date) {
-        map.set(String(row.id), String(row.due_date));
+        map.set(String(row.id), {
+          due_date: String(row.due_date),
+          property_id: row.property_id ? String(row.property_id) : null,
+        });
       }
     }
     if (chunk.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
   }
   return map;
+}
+
+export async function fetchInvoiceDueDatesInRange(
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<Map<string, string>> {
+  const meta = await fetchInvoiceMetaInRange(rangeStart, rangeEnd);
+  const map = new Map<string, string>();
+  for (const [id, row] of meta) {
+    map.set(id, row.due_date);
+  }
+  return map;
+}
+
+export function resolveProfitPaymentPropertyId(
+  payment: ProfitPaymentRow,
+  leasePropertyById: Map<string, string>,
+  invoiceMetaById: Map<string, ProfitInvoiceMeta>,
+): string | null {
+  if (payment.property_id) return String(payment.property_id);
+  if (payment.lease_id) {
+    const fromLease = leasePropertyById.get(payment.lease_id);
+    if (fromLease) return fromLease;
+  }
+  if (payment.invoice_id) {
+    const fromInvoice = invoiceMetaById.get(payment.invoice_id)?.property_id;
+    if (fromInvoice) return fromInvoice;
+  }
+  return null;
+}
+
+export function filterEligiblePaymentsForProperty(
+  payments: ProfitPaymentRow[],
+  propertyId: string,
+  leasePropertyById: Map<string, string>,
+  invoiceMetaById: Map<string, ProfitInvoiceMeta>,
+): ProfitPaymentRow[] {
+  return payments.filter(
+    (payment) =>
+      resolveProfitPaymentPropertyId(
+        payment,
+        leasePropertyById,
+        invoiceMetaById,
+      ) === propertyId,
+  );
 }
 
 export async function fetchProfitRentCollectedByMonthKeys(args: {

@@ -15,7 +15,10 @@ export function establishAppSession(session: Session): Promise<Response> {
 }
 
 /** Verify app access; Bearer works when SSR cookies are not synced yet (common on mobile). */
-export function fetchAppSession(accessToken?: string | null): Promise<Response> {
+export function fetchAppSession(
+  accessToken?: string | null,
+  timeoutMs = 10_000,
+): Promise<Response> {
   const headers: Record<string, string> = {
     "Cache-Control": "no-cache, no-store, must-revalidate",
     Pragma: "no-cache",
@@ -23,10 +26,17 @@ export function fetchAppSession(accessToken?: string | null): Promise<Response> 
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
   return fetch("/api/auth/session", {
     method: "GET",
     headers,
     credentials: "include",
     cache: "no-store",
+    signal: controller.signal,
+  }).finally(() => {
+    window.clearTimeout(timeoutId);
   });
 }

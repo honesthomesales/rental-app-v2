@@ -1,16 +1,23 @@
-import { NextResponse } from "next/server";
-import { createSupabaseServerAuthClient } from "@/lib/auth/api-auth";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createRouteHandlerSupabase,
+  jsonWithSupabaseCookies,
+} from "@/lib/auth/route-handler-client";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createSupabaseServerAuthClient();
+    const { supabase, cookieResponse } = createRouteHandlerSupabase(request);
     const { error } = await supabase.auth.signOut();
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return jsonWithSupabaseCookies(
+        { error: error.message },
+        cookieResponse(),
+        { status: 500 },
+      );
     }
-    return NextResponse.json({ ok: true });
+    return jsonWithSupabaseCookies({ ok: true }, cookieResponse());
   } catch (err) {
     return NextResponse.json(
       {

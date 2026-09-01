@@ -1,10 +1,13 @@
-import { NextResponse } from "next/server";
-import { createSupabaseServerAuthClient } from "@/lib/auth/api-auth";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createRouteHandlerSupabase,
+  jsonWithSupabaseCookies,
+} from "@/lib/auth/route-handler-client";
 
 export const dynamic = "force-dynamic";
 
 /** Write Supabase session cookies after client sign-in (required on Android/PWA). */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       access_token?: string;
@@ -16,19 +19,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing session tokens" }, { status: 400 });
     }
 
-    const supabase = await createSupabaseServerAuthClient();
+    const { supabase, cookieResponse } = createRouteHandlerSupabase(request);
     const { error } = await supabase.auth.setSession({
       access_token,
       refresh_token,
     });
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return jsonWithSupabaseCookies(
+        { error: error.message },
+        cookieResponse(),
+        { status: 400 },
+      );
     }
 
-    return NextResponse.json({ ok: true });
+    return jsonWithSupabaseCookies({ ok: true }, cookieResponse());
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Could not establish session" },
+      {
+        error:
+          err instanceof Error ? err.message : "Could not establish session",
+      },
       { status: 500 },
     );
   }

@@ -11,6 +11,13 @@ import {
   type ReactNode,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
+import {
+  AUTH_INIT_SAFETY_MS,
+  GET_SESSION_TIMEOUT_MS,
+  pickEmail,
+  resolveSessionApiResult,
+  shouldTryClientSessionAfterCookieCheck,
+} from "@/lib/auth/auth-init";
 import { createBrowserSupabaseClient } from "@/lib/auth/browser-client";
 import { fetchAppSession } from "@/lib/auth/session-fetch";
 import {
@@ -28,14 +35,23 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function readBrowserSession(
-  hint?: Session | null,
-): Promise<Session | null> {
-  if (hint !== undefined) return hint;
+async function readClientSessionWithTimeout(): Promise<Session | null> {
   const supabase = createBrowserSupabaseClient();
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
+  try {
+    const result = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(
+          () => reject(new Error("getSession timed out")),
+          GET_SESSION_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    if (result.error) return null;
+    return result.data.session;
+  } catch {
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -44,98 +60,157 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
   const applyGeneration = useRef(0);
 
-  const applySession = useCallback(async (hint?: Session | null) => {
-    const generation = ++applyGeneration.current;
-    try {
-      let session: Session | null = null;
-      try {
-        session = await readBrowserSession(hint);
-      } catch {
-        session = hint ?? null;
-      }
-
-      if (generation !== applyGeneration.current) return;
-
-      let activeSession = session;
-      if (session) {
-        const supabase = createBrowserSupabaseClient();
-        const expiresAtMs = session.expires_at
-          ? session.expires_at * 1000
-          : null;
-        if (expiresAtMs && Date.now() >= expiresAtMs - 30_000) {
-          const { data: refreshed, error: refreshError } =
-            await supabase.auth.refreshSession();
-          if (!refreshError && refreshed.session) {
-            activeSession = refreshed.session;
-          }
-        }
-      }
-
-      if (generation !== applyGeneration.current) return;
-
-      // Cookie-only check works after /api/auth/establish even when client storage lags.
-      const res = await fetchAppSession(activeSession?.access_token);
-
-      if (generation !== applyGeneration.current) return;
-
-      if (res.status === 401) {
-        setStatus("unauthenticated");
-        setEmail(null);
-        setRole(null);
+  const applyResolved = useCallback(
+    (
+      result: ReturnType<typeof resolveSessionApiResult>,
+      session?: Session | null,
+    ) => {
+      if (result.kind === "authenticated") {
+        setEmail(pickEmail(result.email, session));
+        setRole(result.role);
+        setStatus("authenticated");
         return;
       }
-      if (res.status === 403) {
+      if (result.kind === "session_error") {
+        setEmail(null);
+        setRole(null);
         setStatus("session_error");
-        setEmail(null);
-        setRole(null);
         return;
       }
-      if (!res.ok) {
-        setStatus("session_error");
-        setEmail(null);
-        setRole(null);
-        return;
-      }
-
-      const data = (await res.json()) as {
-        email?: string | null;
-        role?: string | null;
-      };
-      setEmail(data.email ?? activeSession?.user.email ?? null);
-      setRole(data.role ?? null);
-      setStatus("authenticated");
-    } catch {
-      if (generation !== applyGeneration.current) return;
-      setStatus("unauthenticated");
       setEmail(null);
       setRole(null);
-    }
-  }, []);
+      setStatus("unauthenticated");
+    },
+    [],
+  );
+
+  const verifyAccess = useCallback(
+    async (
+      generation: number,
+      accessToken?: string | null,
+      session?: Session | null,
+    ) => {
+      const res = await fetchAppSession(accessToken);
+      if (generation !== applyGeneration.current) return;
+
+      let data: { email?: string | null; role?: string | null } | undefined;
+      if (res.ok) {
+        data = (await res.json()) as {
+          email?: string | null;
+          role?: string | null;
+        };
+      }
+
+      applyResolved(resolveSessionApiResult(res.status, data), session);
+    },
+    [applyResolved],
+  );
+
+  const applySession = useCallback(
+    async (hint?: Session | null) => {
+      const generation = ++applyGeneration.current;
+
+      try {
+        if (hint !== undefined) {
+          if (!hint) {
+            applyResolved({ kind: "unauthenticated" });
+            return;
+          }
+          await verifyAccess(generation, hint.access_token, hint);
+          return;
+        }
+
+        const cookieRes = await fetchAppSession(null);
+        if (generation !== applyGeneration.current) return;
+
+        if (cookieRes.ok) {
+          const data = (await cookieRes.json()) as {
+            email?: string | null;
+            role?: string | null;
+          };
+          applyResolved(resolveSessionApiResult(cookieRes.status, data));
+          return;
+        }
+
+        if (!shouldTryClientSessionAfterCookieCheck(cookieRes.status)) {
+          applyResolved(resolveSessionApiResult(cookieRes.status));
+          return;
+        }
+
+        const clientSession = await readClientSessionWithTimeout();
+        if (generation !== applyGeneration.current) return;
+
+        if (!clientSession) {
+          applyResolved({ kind: "unauthenticated" });
+          return;
+        }
+
+        await verifyAccess(generation, clientSession.access_token, clientSession);
+      } catch {
+        if (generation !== applyGeneration.current) return;
+        applyResolved({ kind: "unauthenticated" });
+      }
+    },
+    [applyResolved, verifyAccess],
+  );
 
   const refresh = useCallback(async () => {
     await applySession();
   }, [applySession]);
 
   useEffect(() => {
-    void applySession();
+    let resolved = false;
+    const finish = () => {
+      resolved = true;
+    };
+
+    const safetyTimer = window.setTimeout(() => {
+      if (resolved) return;
+      applyGeneration.current += 1;
+      setStatus("unauthenticated");
+      setEmail(null);
+      setRole(null);
+    }, AUTH_INIT_SAFETY_MS);
+
+    const run = async () => {
+      try {
+        await applySession();
+      } finally {
+        finish();
+        window.clearTimeout(safetyTimer);
+      }
+    };
+
+    void run();
 
     const supabase = createBrowserSupabaseClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "INITIAL_SESSION") return;
       window.setTimeout(() => {
         if (event === "SIGNED_OUT") {
+          finish();
+          window.clearTimeout(safetyTimer);
           setStatus("unauthenticated");
           setEmail(null);
           setRole(null);
           return;
         }
-        void applySession(session);
+        if (
+          event === "INITIAL_SESSION" ||
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED"
+        ) {
+          void applySession(session).finally(() => {
+            finish();
+            window.clearTimeout(safetyTimer);
+          });
+        }
       }, 0);
     });
 
     return () => {
+      window.clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, [applySession]);

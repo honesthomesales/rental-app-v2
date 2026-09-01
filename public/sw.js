@@ -1,5 +1,5 @@
 // Service Worker for Rental Management App PWA
-const CACHE_NAME = 'rental-app-v2-2026-08-31-mobile-auth';
+const CACHE_NAME = 'rental-app-v2-2026-08-31-auth2';
 
 // Install: activate immediately; do not pre-cache app shells (stale auth bundles).
 self.addEventListener('install', (event) => {

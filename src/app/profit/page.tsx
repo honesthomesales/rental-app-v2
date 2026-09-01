@@ -961,6 +961,7 @@ export default function ProfitPage() {
         propertyId={rentDetailProperty?.propertyId ?? null}
         propertyName={rentDetailProperty?.propertyName ?? ''}
         propertyAddress={rentDetailProperty?.propertyAddress}
+        onDataChanged={fetchMonthlyMetrics}
       />
         </>
       )}

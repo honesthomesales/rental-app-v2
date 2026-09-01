@@ -41,10 +41,12 @@ export type ProfitRentCollectedDetailRow = {
   paymentDateLabel: string;
   amount: number;
   tenantName: string | null;
+  invoiceId: string | null;
   invoiceDueDate: string | null;
   invoiceDueDateLabel: string | null;
   paymentType: string | null;
   paymentMethod: string | null;
+  notes: string | null;
   attribution: "invoice_due_month" | "payment_date";
   attributionLabel: string;
 };
@@ -110,18 +112,20 @@ export async function GET(request: Request) {
       {
         payment_type?: string | null;
         payment_method?: string | null;
+        notes?: string | null;
       }
     >();
 
     if (paymentIds.length > 0) {
       const { data: paymentRows } = await supabaseServer
         .from("RENT_payments")
-        .select("id, payment_type, payment_method")
+        .select("id, payment_type, payment_method, notes")
         .in("id", paymentIds);
       for (const row of paymentRows || []) {
         enrichedById.set(String(row.id), {
           payment_type: row.payment_type,
           payment_method: row.payment_method,
+          notes: row.notes,
         });
       }
     }
@@ -201,7 +205,11 @@ function toDetailRow(
   tenantNameById: Map<string, string>,
   enrichedById: Map<
     string,
-    { payment_type?: string | null; payment_method?: string | null }
+    {
+      payment_type?: string | null;
+      payment_method?: string | null;
+      notes?: string | null;
+    }
   >,
   monthStart: string,
   monthEnd: string,
@@ -228,12 +236,14 @@ function toDetailRow(
     tenantName: payment.tenant_id
       ? tenantNameById.get(payment.tenant_id) || null
       : null,
+    invoiceId: payment.invoice_id || null,
     invoiceDueDate,
     invoiceDueDateLabel: invoiceDueDate
       ? formatDateLabel(invoiceDueDate)
       : null,
     paymentType: enriched?.payment_type || null,
     paymentMethod: enriched?.payment_method || null,
+    notes: enriched?.notes || null,
     attribution,
     attributionLabel:
       attribution === "invoice_due_month" && invoiceDueDate

@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { supabaseServer } from '@/lib/supabase-server'
-import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
-import {
+import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'import {
   allocationGroupNote,
   getDeferredSelectedInvoiceId,
   planNewestFirstAllocation,
@@ -787,16 +786,37 @@ export async function DELETE(request: Request) {
   if (isAuthError(auth)) return auth
 try {
     const body = await request.json()
-    const paymentId = body.id
-    
-    if (!paymentId) {
+    const paymentId = typeof body?.id === 'string' ? body.id.trim() : ''
+
+    const uuidPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+    if (!paymentId || !uuidPattern.test(paymentId)) {
       return NextResponse.json(
-        { error: 'Payment ID is required' },
-        { status: 400 }
+        { error: 'A valid payment UUID is required' },
+        { status: 400 },
       )
     }
 
     console.log('Deleting payment:', paymentId)
+
+    const { data: existing, error: lookupError } = await supabaseServer
+      .from('RENT_payments')
+      .select('id')
+      .eq('id', paymentId)
+      .maybeSingle()
+
+    if (lookupError) {
+      console.error('Payment lookup error:', lookupError)
+      return NextResponse.json(
+        { error: 'Failed to verify payment', details: lookupError.message },
+        { status: 500 },
+      )
+    }
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+    }
 
     // Delete payment from database
     const { error: deleteError } = await supabaseServer

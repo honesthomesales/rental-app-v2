@@ -423,19 +423,38 @@ return'<div class="s">'+l+'</div>';
         const totals = new Map<string, number>()
         const paidDates = new Map<string, string | null>()
         for (const invoice of accountInvoices) {
-          totals.set(invoice.id, Number(invoice.amount_paid) || 0)
+          totals.set(invoice.id, 0)
           paidDates.set(invoice.id, null)
         }
-        for (const payment of account.eligiblePayments || []) {
+        // Payments page honors the entered payment_date even when it is in the future.
+        for (const payment of account.payments || []) {
           if (!payment.invoiceId) continue
+          if (String(payment.status || 'completed').toLowerCase() !== 'completed') continue
+          const amount = Number(payment.amount) || 0
+          if (amount <= 0) continue
+          totals.set(
+            payment.invoiceId,
+            (totals.get(payment.invoiceId) || 0) + amount,
+          )
           const currentDate = paidDates.get(payment.invoiceId)
           if (!currentDate || payment.paymentDate > currentDate) {
             paidDates.set(payment.invoiceId, payment.paymentDate)
           }
         }
+        const displayInvoices = accountInvoices.map((invoice: Invoice) => {
+          const paid = totals.get(invoice.id) ?? (Number(invoice.amount_paid) || 0)
+          const total = Number(invoice.amount_total) || 0
+          const balance = Math.max(0, total - paid)
+          return {
+            ...invoice,
+            amount_paid: paid,
+            balance_due: balance,
+            status: balance <= 0.009 ? 'PAID' : invoice.status,
+          }
+        })
         setInvoicePaymentTotals(totals)
         setInvoicePaidDates(paidDates)
-        setInvoices(accountInvoices)
+        setInvoices(displayInvoices)
         setLoadingInvoices(false)
         return
       }

@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
-import { getBusinessDate } from '@/lib/business-date'
-import { canAllocatePaymentAsOf } from '@/lib/payment-eligibility'
 import {
   allocationGroupNote,
   getDeferredSelectedInvoiceId,
@@ -210,7 +208,6 @@ try {
       paymentData.paymentMethod ||
       'Manual Entry'
 
-    const businessDate = getBusinessDate()
     const baseRecord: Record<string, unknown> = {
       tenant_id: tenantId,
       lease_id: leaseId,
@@ -262,42 +259,6 @@ try {
         { error: 'Selected invoice is void or cancelled' },
         { status: 400 },
       )
-    }
-
-    // Future-dated: record exactly one payment with NO invoice link so the
-    // invoice-total trigger does not allocate before the effective date.
-    if (!canAllocatePaymentAsOf({ payment_date: paymentDate }, businessDate)) {
-      const deferredRecord = invoiceId
-        ? {
-            ...baseRecord,
-            notes: withDeferredSelectedInvoiceNote(
-              String(baseRecord.notes || ''),
-              String(invoiceId),
-            ),
-          }
-        : baseRecord
-      const { data: payment, error: paymentError } = await supabaseServer
-        .from('RENT_payments')
-        .insert([deferredRecord])
-        .select()
-        .single()
-
-      if (paymentError) {
-        console.error('Error inserting future payment:', paymentError)
-        return NextResponse.json(
-          { error: 'Failed to insert payment', details: paymentError.message },
-          { status: 500 },
-        )
-      }
-
-      return NextResponse.json({
-        payment,
-        allocations: [],
-        deferredAllocation: true,
-        businessDate,
-        warning:
-          'Payment recorded but not eligible for balances yet — payment_date is after the business date.',
-      })
     }
 
     // Selected staff invoice first, then later due dates. Requests without an

@@ -855,6 +855,70 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Properties Neither Occupied nor Qualifying */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6" data-testid="neither-occupied-nor-qualifying">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Properties Neither Occupied nor Qualifying{' '}
+          <span className="text-gray-500 font-medium" data-testid="neither-occupied-nor-qualifying-count">
+            ({metrics?.neitherOccupiedNorQualifyingCount ?? 0})
+          </span>
+        </h2>
+
+        {(metrics?.neitherOccupiedNorQualifyingRows || []).length === 0 ? (
+          <p className="text-sm text-gray-500" data-testid="neither-occupied-nor-qualifying-empty">
+            All properties are occupied or qualifying for potential income.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Address
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Current lease status
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Saved Rent Value
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Reason not qualifying
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {(metrics?.neitherOccupiedNorQualifyingRows || []).map((row) => (
+                  <tr
+                    key={row.propertyId}
+                    className="hover:bg-gray-50"
+                    data-testid="neither-occupied-nor-qualifying-row"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {row.address}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {row.currentLeaseStatus}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                      {row.savedRentValue == null
+                        ? '—'
+                        : row.savedRentValue.toLocaleString('en-US', {
+                            style: 'currency',
+                            currency: 'USD',
+                          })}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {row.reasonNotQualifying}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Potential Income Properties */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex justify-between items-center mb-4">

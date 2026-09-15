@@ -1,5 +1,7 @@
 import {
   buildEmptyPotentialSummary,
+  buildNeitherOccupiedNorQualifyingSummary,
+  explainEmptyPotentialIneligibility,
   sumEmptyPotentialRows,
   sumPotentialIncomeRows,
   type EmptyPotentialLease,
@@ -88,5 +90,158 @@ describe('Dashboard empty potential income', () => {
 
     expect(newest.get('start-tie')?.id).toBe('start-new')
     expect(newest.get('id-tie')?.id).toBe('lease-z')
+  })
+})
+
+describe('Properties neither occupied nor qualifying', () => {
+  const totalProperties: EmptyPotentialProperty[] = [
+    {
+      id: 'occ-a',
+      name: 'Occupied A',
+      address: '100 Occupied St',
+      property_type: 'house',
+      status: 'active',
+      rent_value: 900,
+    },
+    {
+      id: 'empty-ok',
+      name: 'Empty OK',
+      address: '200 Empty Ave',
+      property_type: 'house',
+      status: 'active',
+      rent_value: 1100,
+    },
+    {
+      id: 'evict-b',
+      name: 'Eviction B',
+      address: '300 Evict Rd',
+      property_type: 'doublewide',
+      status: 'active',
+      rent_value: 800,
+    },
+    {
+      id: 'no-rent',
+      name: 'No Rent Name',
+      address: '',
+      property_type: 'singlewide',
+      status: 'active',
+      rent_value: null,
+    },
+    {
+      id: 'rent-one',
+      name: 'Dollar One',
+      address: '50 Low Rent Ln',
+      property_type: 'house',
+      status: 'active',
+      rent_value: 1,
+    },
+    {
+      id: 'empty-zero',
+      name: 'Zero Rent',
+      address: '10 Zero Ct',
+      property_type: 'house',
+      status: 'active',
+      rent_value: 0,
+    },
+  ]
+
+  const leases: EmptyPotentialLease[] = [
+    {
+      id: 'l-occ',
+      property_id: 'occ-a',
+      status: 'occupied',
+      created_at: '2026-02-01',
+      lease_start_date: '2026-02-01',
+    },
+    {
+      id: 'l-empty',
+      property_id: 'empty-ok',
+      status: 'empty',
+      created_at: '2026-02-01',
+      lease_start_date: '2026-02-01',
+    },
+    {
+      id: 'l-evict',
+      property_id: 'evict-b',
+      status: 'eviction',
+      created_at: '2026-02-01',
+      lease_start_date: '2026-02-01',
+    },
+    {
+      id: 'l-zero',
+      property_id: 'empty-zero',
+      status: 'empty',
+      created_at: '2026-02-01',
+      lease_start_date: '2026-02-01',
+    },
+  ]
+
+  it('lists only Total Properties that are neither occupied nor in Potential Income', () => {
+    const empty = buildEmptyPotentialSummary(totalProperties, leases)
+    const potentialPropertyIds = [
+      ...empty.rows.map((r) => r.propertyId),
+      'evict-b',
+    ]
+
+    const summary = buildNeitherOccupiedNorQualifyingSummary(
+      totalProperties,
+      leases,
+      potentialPropertyIds,
+    )
+
+    expect(summary.rows.map((r) => r.propertyId)).toEqual([
+      'empty-zero',
+      'rent-one',
+      'no-rent',
+    ])
+    expect(summary.count).toBe(3)
+
+    for (const row of summary.rows) {
+      expect(totalProperties.some((p) => p.id === row.propertyId)).toBe(true)
+      expect(potentialPropertyIds).not.toContain(row.propertyId)
+    }
+  })
+
+  it('uses property name when address is missing and explains failed conditions', () => {
+    const empty = buildEmptyPotentialSummary(totalProperties, leases)
+    const summary = buildNeitherOccupiedNorQualifyingSummary(
+      totalProperties,
+      leases,
+      [...empty.rows.map((r) => r.propertyId), 'evict-b'],
+    )
+
+    const noRent = summary.rows.find((r) => r.propertyId === 'no-rent')
+    expect(noRent?.address).toBe('No Rent Name')
+    expect(noRent?.currentLeaseStatus).toBe('No lease')
+    expect(noRent?.reasonNotQualifying).toBe('Missing Rent Value')
+
+    const rentOne = summary.rows.find((r) => r.propertyId === 'rent-one')
+    expect(rentOne?.reasonNotQualifying).toBe('Rent Value of $1 or less')
+    expect(rentOne?.savedRentValue).toBe(1)
+
+    const zero = summary.rows.find((r) => r.propertyId === 'empty-zero')
+    expect(zero?.currentLeaseStatus).toBe('Empty')
+    expect(zero?.reasonNotQualifying).toBe('Missing Rent Value')
+  })
+
+  it('explainEmptyPotentialIneligibility reports the first failing rule', () => {
+    expect(
+      explainEmptyPotentialIneligibility({
+        propertyType: 'house',
+        propertyStatus: 'active',
+        rentValue: null,
+        hasCurrentLease: false,
+      }),
+    ).toBe('Missing Rent Value')
+
+    expect(
+      explainEmptyPotentialIneligibility({
+        propertyType: 'house',
+        propertyStatus: 'active',
+        rentValue: 1,
+        hasCurrentLease: true,
+        currentLeaseStatus: 'empty',
+      }),
+    ).toBe('Rent Value of $1 or less')
   })
 })

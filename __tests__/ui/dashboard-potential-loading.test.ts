@@ -40,5 +40,21 @@ describe('dashboard potential income + loading UX', () => {
     expect(metricsRoute).toContain('emptyPotentialCount')
     expect(metricsRoute).toContain('const potentialIncomeRows = [...emptyPotentialRows, ...evictionRows]')
     expect(metricsRoute).toContain('const potentialIncome = sumPotentialIncomeRows(potentialIncomeRows)')
+    expect(metricsRoute).toContain('buildNeitherOccupiedNorQualifyingSummary')
+    expect(metricsRoute).toContain('neitherOccupiedNorQualifyingRows')
+  })
+
+  it('renders Properties Neither Occupied nor Qualifying beneath Type Breakdown', () => {
+    expect(page).toContain('data-testid="neither-occupied-nor-qualifying"')
+    expect(page).toContain('Properties Neither Occupied nor Qualifying')
+    expect(page).toContain(
+      'All properties are occupied or qualifying for potential income.',
+    )
+    const typeBreakdownIdx = page.indexOf('Type Breakdown')
+    const neitherIdx = page.indexOf('Properties Neither Occupied nor Qualifying')
+    const potentialIdx = page.indexOf('Potential Income Properties')
+    expect(typeBreakdownIdx).toBeGreaterThan(-1)
+    expect(neitherIdx).toBeGreaterThan(typeBreakdownIdx)
+    expect(potentialIdx).toBeGreaterThan(neitherIdx)
   })
 })

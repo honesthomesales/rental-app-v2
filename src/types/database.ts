@@ -162,6 +162,15 @@ export interface DashboardMetrics {
     rent: number
     monthlyPotential: number
   }>
+  /** Total Properties that are neither occupied nor in Potential Income. */
+  neitherOccupiedNorQualifyingCount: number
+  neitherOccupiedNorQualifyingRows: Array<{
+    propertyId: string
+    address: string
+    currentLeaseStatus: string
+    savedRentValue: number | null
+    reasonNotQualifying: string
+  }>
   latePayments: number
   totalOwed: number
   propertyTypeBreakdown: {

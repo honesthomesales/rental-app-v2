@@ -11,6 +11,7 @@ import {
 } from '@/lib/lease-status'
 import {
   buildEmptyPotentialSummary,
+  buildNeitherOccupiedNorQualifyingSummary,
   sumPotentialIncomeRows,
 } from '@/lib/dashboard-potential'
 import { monthlyEquivalentRent } from '@/lib/monthly-equivalent'
@@ -140,6 +141,16 @@ export async function GET(request: Request) {
     const potentialIncomeRows = [...emptyPotentialRows, ...evictionRows]
     const potentialIncome = sumPotentialIncomeRows(potentialIncomeRows)
     const totalPotentialIncome = currentMonthlyIncome + potentialIncome
+
+    // Total Properties ∩ ¬Has Tenants ∩ ¬Potential Income (by property ID).
+    const {
+      rows: neitherOccupiedNorQualifyingRows,
+      count: neitherOccupiedNorQualifyingCount,
+    } = buildNeitherOccupiedNorQualifyingSummary(
+      validProperties,
+      allLeases || [],
+      potentialIncomeRows.map((row) => row.propertyId),
+    )
 
     // Properties with Tenants count = newest lease status is exactly occupied
     // (eviction stays in Potential Income; do not change isPhysicallyOccupied elsewhere)
@@ -289,6 +300,8 @@ export async function GET(request: Request) {
       emptyPotentialCount,
       evictionPotentialCount: evictionLeases.length,
       potentialIncomeRows,
+      neitherOccupiedNorQualifyingCount,
+      neitherOccupiedNorQualifyingRows,
       latePayments,
       totalOwed,
       ledgerVersion,

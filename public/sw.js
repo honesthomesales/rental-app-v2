@@ -1,5 +1,5 @@
 // Service Worker for Rental Management App PWA
-const CACHE_NAME = 'rental-app-v2-2026-09-14-neither';
+const CACHE_NAME = 'rental-app-v2-2026-09-14-profit';
 const urlsToCache = [
   '/',
   '/payments',

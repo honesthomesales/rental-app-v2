@@ -14,12 +14,8 @@ import {
   buildNeitherOccupiedNorQualifyingSummary,
   sumPotentialIncomeRows,
 } from '@/lib/dashboard-potential'
+import { buildDashboardProfit } from '@/lib/dashboard-profit'
 import { monthlyEquivalentRent } from '@/lib/monthly-equivalent'
-import {
-  isMiscIncome,
-  isOneTimeExpense,
-  isRecurringExpense,
-} from '@/lib/expenses/classification'
 
 // Cache this route for 5 seconds to balance performance and freshness
 export const revalidate = 5
@@ -208,68 +204,33 @@ export async function GET(request: Request) {
       else if (type === 'loan') propertyTypeBreakdown.loan++
     })
 
-    // Expenses for debt calculation
-    const totalInsurance = validProperties.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0)
-    const totalTaxes = validProperties.reduce((sum, p) => sum + (Number(p.property_tax) || 0), 0)
-
+    // Profit: insurance (monthly as stored), tax-section monthly tax, recurring,
+    // current-month one-time only, Full/No Debt via amount_owed > 0.
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')
-      .select('amount, amount_owed, interest_rate, balance, category, last_paid_date')
+      .select(
+        'id, amount, amount_owed, interest_rate, balance, category, last_paid_date, expense_date, mail_info, property_id',
+      )
 
     if (expensesError) {
       console.error('Error fetching expenses for debt calculation:', expensesError)
     }
 
-    const expenseRows = expenses || []
-    const recurringExpenses = expenseRows.filter(isRecurringExpense)
+    const profit = buildDashboardProfit({
+      occupiedMonthlyIncome: currentMonthlyIncome,
+      qualifyingPotentialIncome: potentialIncome,
+      properties: validProperties,
+      expenses: expenses || [],
+      businessDate: today,
+    })
 
-    // Recurring expenses only — Misc Income must not inflate debt.
-    const totalPayments = recurringExpenses.reduce(
-      (sum, expense) => sum + (Number(expense.amount) || 0),
-      0,
-    )
-
-    const potentialPayments = recurringExpenses
-      .filter((expense) => (Number(expense.balance) || 0) <= 0)
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0)
-
-    const otherExpenses = expenseRows
-      .filter(isOneTimeExpense)
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0)
-
-    // Current-month Misc Income credits income (and therefore profit).
-    const monthStart = `${today.slice(0, 7)}-01`
-    const monthEndDate = new Date(
-      Number(today.slice(0, 4)),
-      Number(today.slice(5, 7)),
-      0,
-    )
-    const monthEnd = monthEndDate.toISOString().slice(0, 10)
-    const currentMonthMiscIncome = expenseRows
-      .filter(isMiscIncome)
-      .filter((exp) => {
-        const d = String(exp.last_paid_date || '')
-        return d >= monthStart && d <= monthEnd
-      })
-      .reduce(
-        (sum, exp) => sum + (Number(exp.amount_owed) || Number(exp.amount) || 0),
-        0,
-      )
-
-    const totalFixedExpenses = totalInsurance + totalTaxes + totalPayments
-    const potentialFixedExpenses = totalInsurance + totalTaxes + potentialPayments
-    const totalDebt = totalFixedExpenses + otherExpenses
-    const potentialDebt = potentialFixedExpenses + otherExpenses
-
-    const incomeWithMisc = currentMonthlyIncome + currentMonthMiscIncome
-    const potentialIncomeWithMisc = totalPotentialIncome + currentMonthMiscIncome
-
-    // Profit calculations
-    // Current profit: rent income + current-month misc − debt (misc excluded from debt)
-    const currentProfit = incomeWithMisc - totalDebt
-    // Potential profit: all three income parts + misc
-    const potentialProfit = potentialIncomeWithMisc - totalDebt
-    const potentialProfitNoHouseDebt = potentialIncomeWithMisc - potentialDebt
+    const {
+      currentMonthMiscIncome,
+      totalDebt,
+      currentProfit,
+      potentialProfit,
+      potentialProfitNoHouseDebt,
+    } = profit
 
     // Portfolio-wide future-dated completed payment exclusion
     const { data: allCompletedPayments } = await supabaseServer
@@ -312,6 +273,20 @@ export async function GET(request: Request) {
       potentialProfitNoHouseDebt,
       /** Current calendar-month Misc Income credited into currentProfit (not in totalDebt). */
       currentMonthMiscIncome: Math.round(currentMonthMiscIncome * 100) / 100,
+      profitBreakdown: {
+        occupiedMonthlyIncome: profit.occupiedMonthlyIncome,
+        qualifyingPotentialIncome: profit.qualifyingPotentialIncome,
+        currentMonthMiscIncome: profit.currentMonthMiscIncome,
+        monthlyInsurance: profit.monthlyInsurance,
+        monthlyTaxes: profit.monthlyTaxes,
+        recurringMonthlyPayments: profit.recurringMonthlyPayments,
+        fullNoDebtRecurringPayments: profit.fullNoDebtRecurringPayments,
+        currentMonthOneTimeExpenses: profit.currentMonthOneTimeExpenses,
+        currentProfit: profit.currentProfit,
+        potentialProfit: profit.potentialProfit,
+        fullNoDebtProfit: profit.fullNoDebtProfit,
+        contributing: profit.contributing,
+      },
       businessDate: today,
       futureDatedCompletedPayments: {
         classification: 'future_dated_completed_payment_excluded',

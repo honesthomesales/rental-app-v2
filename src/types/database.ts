@@ -184,6 +184,53 @@ export interface DashboardMetrics {
   potentialProfit?: number
   potentialProfitNoHouseDebt?: number
   currentMonthMiscIncome?: number
+  profitBreakdown?: {
+    occupiedMonthlyIncome: number
+    qualifyingPotentialIncome: number
+    currentMonthMiscIncome: number
+    monthlyInsurance: number
+    monthlyTaxes: number
+    recurringMonthlyPayments: number
+    fullNoDebtRecurringPayments: number
+    currentMonthOneTimeExpenses: number
+    currentProfit: number
+    potentialProfit: number
+    fullNoDebtProfit: number
+    contributing: {
+      miscIncome: Array<{
+        id: string
+        category: string
+        description: string
+        amount: number
+        amountOwed: number | null
+        applicableDate: string | null
+      }>
+      recurringAll: Array<{
+        id: string
+        category: string
+        description: string
+        amount: number
+        amountOwed: number | null
+        applicableDate: string | null
+      }>
+      recurringFullNoDebt: Array<{
+        id: string
+        category: string
+        description: string
+        amount: number
+        amountOwed: number | null
+        applicableDate: string | null
+      }>
+      oneTimeCurrentMonth: Array<{
+        id: string
+        category: string
+        description: string
+        amount: number
+        amountOwed: number | null
+        applicableDate: string | null
+      }>
+    }
+  }
 }
 
 // Payments grid types

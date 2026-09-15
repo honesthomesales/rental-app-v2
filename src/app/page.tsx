@@ -23,6 +23,11 @@ import {
   countsTowardCurrentIncome,
   selectNewestLeaseByProperty,
 } from '@/lib/lease-status'
+import {
+  effectiveTaxPaid,
+  monthlyTaxPaymentForProperty,
+  taxesOwedForProperty,
+} from '@/lib/dashboard-tax'
 
 const DASHBOARD_FETCH_TIMEOUT_MS = 25_000
 
@@ -47,11 +52,19 @@ function isOverviewResidentialType(propertyType: string | null | undefined): boo
   )
 }
 
-/** DB sometimes stores -1 as a sentinel for tax paid fields; treat as $0 for display and math */
-function effectiveTaxPaid(value: unknown): number {
-  const n = parseFloat(String(value ?? ''))
-  if (!Number.isFinite(n) || n < 0) return 0
-  return n
+/** Same rows for Insurance and Tax: match any of these fields (String() avoids Map_ID number / null bugs) */
+function overviewSearchMatches(property: any, searchLower: string): boolean {
+  if (!searchLower) return true
+  const fields = [
+    property.name,
+    property.owner_name,
+    property.county,
+    property.Map_ID,
+    property.map_id_trailer,
+    property.insurance_provider,
+    property.insurance_policy_number,
+  ]
+  return fields.some((v) => String(v ?? '').toLowerCase().includes(searchLower))
 }
 
 function formatTaxPaidCell(value: unknown): string {
@@ -71,21 +84,6 @@ function formatInsurancePremium(value: unknown): string {
   const n = parseFloat(String(value ?? ''))
   if (!Number.isFinite(n) || n <= 0) return '—'
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-/** Same rows for Insurance and Tax: match any of these fields (String() avoids Map_ID number / null bugs) */
-function overviewSearchMatches(property: any, searchLower: string): boolean {
-  if (!searchLower) return true
-  const fields = [
-    property.name,
-    property.owner_name,
-    property.county,
-    property.Map_ID,
-    property.map_id_trailer,
-    property.insurance_provider,
-    property.insurance_policy_number,
-  ]
-  return fields.some((v) => String(v ?? '').toLowerCase().includes(searchLower))
 }
 
 export default function Dashboard() {
@@ -127,8 +125,10 @@ export default function Dashboard() {
   const [occupiedPropertiesTypeFilter, setOccupiedPropertiesTypeFilter] = useState<string>('all')
   const [occupiedPropertiesSortField, setOccupiedPropertiesSortField] = useState<'property' | 'address' | 'type' | 'hasTenants'>('property')
   const [occupiedPropertiesSortDirection, setOccupiedPropertiesSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [showProfitCalculation, setShowProfitCalculation] = useState(false)
 
   const potentialIncomeRows = metrics?.potentialIncomeRows || []
+  const profitBreakdown = metrics?.profitBreakdown
   
   // Color states: 0 = default (gray), 1 = yellow, 2 = light green, 3 = lime, 4 = medium red, 5 = bright red
 
@@ -788,7 +788,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
+        <div className="bg-white p-6 rounded-lg shadow" data-testid="dashboard-profit-card">
           <div className="flex items-start">
             <div className="flex-shrink-0">
               <CurrencyDollarIcon className="h-8 w-8 text-emerald-600" />
@@ -815,10 +815,101 @@ export default function Dashboard() {
                   </span>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowProfitCalculation((v) => !v)}
+                className="mt-2 text-xs font-medium text-emerald-700 hover:text-emerald-900"
+                data-testid="dashboard-profit-view-calculation"
+              >
+                {showProfitCalculation ? 'Hide calculation' : 'View calculation'}
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {showProfitCalculation && profitBreakdown && (
+        <div className="bg-white rounded-lg shadow p-6 mb-8 space-y-4" data-testid="dashboard-profit-breakdown">
+          <h2 className="text-lg font-semibold text-gray-900">Profit calculation</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="rounded-lg bg-gray-50 p-4 space-y-1">
+              <p className="font-semibold text-gray-900">Current</p>
+              <p>Occupied rent: {formatWholeDollarDisplay(profitBreakdown.occupiedMonthlyIncome)}</p>
+              <p>Misc income (month): {formatWholeDollarDisplay(profitBreakdown.currentMonthMiscIncome)}</p>
+              <p>− Insurance: {formatWholeDollarDisplay(profitBreakdown.monthlyInsurance)}</p>
+              <p>− Taxes: {formatWholeDollarDisplay(profitBreakdown.monthlyTaxes)}</p>
+              <p>− Recurring: {formatWholeDollarDisplay(profitBreakdown.recurringMonthlyPayments)}</p>
+              <p>− One-time (month): {formatWholeDollarDisplay(profitBreakdown.currentMonthOneTimeExpenses)}</p>
+              <p className="font-semibold pt-1">= {formatWholeDollarDisplay(profitBreakdown.currentProfit)}</p>
+            </div>
+            <div className="rounded-lg bg-gray-50 p-4 space-y-1">
+              <p className="font-semibold text-gray-900">Potential</p>
+              <p>Current profit: {formatWholeDollarDisplay(profitBreakdown.currentProfit)}</p>
+              <p>+ Potential rent: {formatWholeDollarDisplay(profitBreakdown.qualifyingPotentialIncome)}</p>
+              <p className="font-semibold pt-1">= {formatWholeDollarDisplay(profitBreakdown.potentialProfit)}</p>
+            </div>
+            <div className="rounded-lg bg-gray-50 p-4 space-y-1">
+              <p className="font-semibold text-gray-900">Full / No Debt</p>
+              <p>Occupied rent: {formatWholeDollarDisplay(profitBreakdown.occupiedMonthlyIncome)}</p>
+              <p>+ Potential rent: {formatWholeDollarDisplay(profitBreakdown.qualifyingPotentialIncome)}</p>
+              <p>+ Misc income (month): {formatWholeDollarDisplay(profitBreakdown.currentMonthMiscIncome)}</p>
+              <p>− Insurance: {formatWholeDollarDisplay(profitBreakdown.monthlyInsurance)}</p>
+              <p>− Taxes: {formatWholeDollarDisplay(profitBreakdown.monthlyTaxes)}</p>
+              <p>− Recurring (Amount Owed &gt; $0): {formatWholeDollarDisplay(profitBreakdown.fullNoDebtRecurringPayments)}</p>
+              <p>− One-time (month): {formatWholeDollarDisplay(profitBreakdown.currentMonthOneTimeExpenses)}</p>
+              <p className="font-semibold pt-1">= {formatWholeDollarDisplay(profitBreakdown.fullNoDebtProfit)}</p>
+            </div>
+          </div>
+
+          {(
+            [
+              ['Misc income (current month)', profitBreakdown.contributing.miscIncome],
+              ['Recurring monthly payments', profitBreakdown.contributing.recurringAll],
+              ['Full / No Debt recurring (Amount Owed > $0)', profitBreakdown.contributing.recurringFullNoDebt],
+              ['One-time expenses (current month)', profitBreakdown.contributing.oneTimeCurrentMonth],
+            ] as const
+          ).map(([title, rows]) => (
+            <div key={title}>
+              <p className="text-sm font-medium text-gray-900 mb-2">{title}</p>
+              {rows.length === 0 ? (
+                <p className="text-xs text-gray-500">None</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500">Category / description</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-500">Monthly / amount</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-500">Amount Owed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {rows.map((row) => (
+                        <tr key={`${title}-${row.id || row.description}-${row.applicableDate}`}>
+                          <td className="px-3 py-2 text-gray-900">
+                            <div className="font-medium">{row.category || '—'}</div>
+                            {row.description && row.description !== row.category && (
+                              <div className="text-gray-500">{row.description}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{row.applicableDate || '—'}</td>
+                          <td className="px-3 py-2 text-right text-gray-900">
+                            {formatWholeDollarDisplay(row.amount)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">
+                            {row.amountOwed == null ? '—' : formatWholeDollarDisplay(row.amountOwed)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Property Type Breakdown */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -1348,18 +1439,8 @@ export default function Dashboard() {
               getSortedTaxProperties().map((property) => {
                 const colorState = taxSelectedProperties.get(property.id) || 0
                 const rowColor = getTaxRowColor(colorState)
-                const annualTaxDue = (parseFloat(String(property.property_tax || 0)) * 12)
-                const totalTaxesPaid =
-                  effectiveTaxPaid(property.tax_paid_amount_current) +
-                  effectiveTaxPaid(property.tax_paid_amount_previous)
-                // Use manual tax_owed if set, otherwise calculate
-                const taxesOwed = property.tax_owed !== null && property.tax_owed !== undefined 
-                  ? parseFloat(String(property.tax_owed)) 
-                  : Math.max(0, annualTaxDue - totalTaxesPaid)
-                // For yellow (1), light green (2), or light red (6) rows, show $0.00 for monthly tax
-                const monthlyTaxOwed = (colorState === 1 || colorState === 2 || colorState === 6) 
-                  ? 0 
-                  : taxesOwed / 12
+                const taxesOwed = taxesOwedForProperty(property)
+                const monthlyTaxOwed = monthlyTaxPaymentForProperty(property, colorState)
 
                 const darkTaxRow = colorState === 5 || colorState === 7
                 const taxCellText = darkTaxRow ? 'text-xs text-white' : 'text-xs text-gray-500'

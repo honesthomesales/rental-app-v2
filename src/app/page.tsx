@@ -850,13 +850,8 @@ export default function Dashboard() {
             </div>
             <div className="rounded-lg bg-gray-50 p-4 space-y-1">
               <p className="font-semibold text-gray-900">Full / No Debt</p>
-              <p>Occupied rent: {formatWholeDollarDisplay(profitBreakdown.occupiedMonthlyIncome)}</p>
-              <p>+ Potential rent: {formatWholeDollarDisplay(profitBreakdown.qualifyingPotentialIncome)}</p>
-              <p>+ Misc income (month): {formatWholeDollarDisplay(profitBreakdown.currentMonthMiscIncome)}</p>
-              <p>− Insurance: {formatWholeDollarDisplay(profitBreakdown.monthlyInsurance)}</p>
-              <p>− Taxes: {formatWholeDollarDisplay(profitBreakdown.monthlyTaxes)}</p>
-              <p>− Recurring (Amount Owed &gt; $0): {formatWholeDollarDisplay(profitBreakdown.fullNoDebtRecurringPayments)}</p>
-              <p>− One-time (month): {formatWholeDollarDisplay(profitBreakdown.currentMonthOneTimeExpenses)}</p>
+              <p>Potential: {formatWholeDollarDisplay(profitBreakdown.potentialProfit)}</p>
+              <p>+ Balance &gt; $0 monthly payments: {formatWholeDollarDisplay(profitBreakdown.fullNoDebtBalanceAddBacks)}</p>
               <p className="font-semibold pt-1">= {formatWholeDollarDisplay(profitBreakdown.fullNoDebtProfit)}</p>
             </div>
           </div>
@@ -865,7 +860,7 @@ export default function Dashboard() {
             [
               ['Misc income (current month)', profitBreakdown.contributing.miscIncome],
               ['Recurring monthly payments', profitBreakdown.contributing.recurringAll],
-              ['Full / No Debt recurring (Amount Owed > $0)', profitBreakdown.contributing.recurringFullNoDebt],
+              ['Full / No Debt add-backs (balance > $0)', profitBreakdown.contributing.fullNoDebtAddBacks],
               ['One-time expenses (current month)', profitBreakdown.contributing.oneTimeCurrentMonth],
             ] as const
           ).map(([title, rows]) => (
@@ -881,6 +876,7 @@ export default function Dashboard() {
                         <th className="px-3 py-2 text-left font-medium text-gray-500">Category / description</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
                         <th className="px-3 py-2 text-right font-medium text-gray-500">Monthly / amount</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-500">Balance</th>
                         <th className="px-3 py-2 text-right font-medium text-gray-500">Amount Owed</th>
                       </tr>
                     </thead>
@@ -896,6 +892,9 @@ export default function Dashboard() {
                           <td className="px-3 py-2 text-gray-600">{row.applicableDate || '—'}</td>
                           <td className="px-3 py-2 text-right text-gray-900">
                             {formatWholeDollarDisplay(row.amount)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">
+                            {row.balance == null ? '—' : formatWholeDollarDisplay(row.balance)}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-600">
                             {row.amountOwed == null ? '—' : formatWholeDollarDisplay(row.amountOwed)}

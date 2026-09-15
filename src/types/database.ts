@@ -191,7 +191,7 @@ export interface DashboardMetrics {
     monthlyInsurance: number
     monthlyTaxes: number
     recurringMonthlyPayments: number
-    fullNoDebtRecurringPayments: number
+    fullNoDebtBalanceAddBacks: number
     currentMonthOneTimeExpenses: number
     currentProfit: number
     potentialProfit: number
@@ -203,6 +203,7 @@ export interface DashboardMetrics {
         description: string
         amount: number
         amountOwed: number | null
+        balance: number | null
         applicableDate: string | null
       }>
       recurringAll: Array<{
@@ -211,14 +212,16 @@ export interface DashboardMetrics {
         description: string
         amount: number
         amountOwed: number | null
+        balance: number | null
         applicableDate: string | null
       }>
-      recurringFullNoDebt: Array<{
+      fullNoDebtAddBacks: Array<{
         id: string
         category: string
         description: string
         amount: number
         amountOwed: number | null
+        balance: number | null
         applicableDate: string | null
       }>
       oneTimeCurrentMonth: Array<{
@@ -227,6 +230,7 @@ export interface DashboardMetrics {
         description: string
         amount: number
         amountOwed: number | null
+        balance: number | null
         applicableDate: string | null
       }>
     }

@@ -31,6 +31,7 @@ export type ProfitExpenseContribution = {
   description: string
   amount: number
   amountOwed: number | null
+  balance: number | null
   applicableDate: string | null
 }
 
@@ -41,7 +42,8 @@ export type DashboardProfitBreakdown = {
   monthlyInsurance: number
   monthlyTaxes: number
   recurringMonthlyPayments: number
-  fullNoDebtRecurringPayments: number
+  /** Monthly payments added back to Potential when balance > 0. */
+  fullNoDebtBalanceAddBacks: number
   currentMonthOneTimeExpenses: number
   currentProfit: number
   potentialProfit: number
@@ -52,7 +54,8 @@ export type DashboardProfitBreakdown = {
   contributing: {
     miscIncome: ProfitExpenseContribution[]
     recurringAll: ProfitExpenseContribution[]
-    recurringFullNoDebt: ProfitExpenseContribution[]
+    /** Recurring rows with balance > 0 whose monthly payment is added to Potential. */
+    fullNoDebtAddBacks: ProfitExpenseContribution[]
     oneTimeCurrentMonth: ProfitExpenseContribution[]
   }
 }
@@ -103,15 +106,16 @@ export function recurringMonthlyPayment(expense: ProfitExpenseRow): number {
 }
 
 /**
- * Full / No Debt includes the monthly payment only when Amount Owed > 0.
- * Missing / null / NaN amount_owed is excluded.
+ * Full / No Debt add-back: recurring rows with balance > 0.
+ * Their monthly payment is added to Potential (debt payments removed in the no-debt view).
+ * Zero, negative, missing, or non-numeric balance does not add back.
  */
-export function qualifiesForFullNoDebtRecurring(
+export function qualifiesForFullNoDebtAddBack(
   expense: ProfitExpenseRow,
 ): boolean {
-  if (expense.amount_owed == null || expense.amount_owed === '') return false
-  const owed = Number(expense.amount_owed)
-  return Number.isFinite(owed) && owed > 0
+  if (expense.balance == null || expense.balance === '') return false
+  const balance = Number(expense.balance)
+  return Number.isFinite(balance) && balance > 0
 }
 
 function toContribution(expense: ProfitExpenseRow): ProfitExpenseContribution {
@@ -125,6 +129,12 @@ function toContribution(expense: ProfitExpenseRow): ProfitExpenseContribution {
         ? null
         : Number.isFinite(Number(expense.amount_owed))
           ? Number(expense.amount_owed)
+          : null,
+    balance:
+      expense.balance == null || expense.balance === ''
+        ? null
+        : Number.isFinite(Number(expense.balance))
+          ? Number(expense.balance)
           : null,
     applicableDate: expenseApplicableDate(expense),
   }
@@ -180,9 +190,9 @@ export function buildDashboardProfit(args: {
   const recurringMonthlyPayments = round2(
     recurringRows.reduce((sum, e) => sum + recurringMonthlyPayment(e), 0),
   )
-  const fullNoDebtRecurringRows = recurringRows.filter(qualifiesForFullNoDebtRecurring)
-  const fullNoDebtRecurringPayments = round2(
-    fullNoDebtRecurringRows.reduce((sum, e) => sum + recurringMonthlyPayment(e), 0),
+  const fullNoDebtAddBackRows = recurringRows.filter(qualifiesForFullNoDebtAddBack)
+  const fullNoDebtBalanceAddBacks = round2(
+    fullNoDebtAddBackRows.reduce((sum, e) => sum + recurringMonthlyPayment(e), 0),
   )
 
   const oneTimeRows = args.expenses
@@ -200,19 +210,13 @@ export function buildDashboardProfit(args: {
     monthlyTaxes +
     recurringMonthlyPayments +
     currentMonthOneTimeExpenses
-  const expenseTotalFullNoDebt =
-    monthlyInsurance +
-    monthlyTaxes +
-    fullNoDebtRecurringPayments +
-    currentMonthOneTimeExpenses
 
   const incomeCurrent = occupiedMonthlyIncome + currentMonthMiscIncome
-  const incomeFull =
-    occupiedMonthlyIncome + qualifyingPotentialIncome + currentMonthMiscIncome
 
   const currentProfit = round2(incomeCurrent - expenseTotalCurrent)
   const potentialProfit = round2(currentProfit + qualifyingPotentialIncome)
-  const fullNoDebtProfit = round2(incomeFull - expenseTotalFullNoDebt)
+  // Full / No Debt = Potential + monthly payments for rows with balance > 0
+  const fullNoDebtProfit = round2(potentialProfit + fullNoDebtBalanceAddBacks)
 
   return {
     occupiedMonthlyIncome,
@@ -221,7 +225,7 @@ export function buildDashboardProfit(args: {
     monthlyInsurance,
     monthlyTaxes,
     recurringMonthlyPayments,
-    fullNoDebtRecurringPayments,
+    fullNoDebtBalanceAddBacks,
     currentMonthOneTimeExpenses,
     currentProfit,
     potentialProfit,
@@ -231,7 +235,7 @@ export function buildDashboardProfit(args: {
     contributing: {
       miscIncome: miscRows.map(miscContribution),
       recurringAll: recurringRows.map(toContribution),
-      recurringFullNoDebt: fullNoDebtRecurringRows.map(toContribution),
+      fullNoDebtAddBacks: fullNoDebtAddBackRows.map(toContribution),
       oneTimeCurrentMonth: oneTimeRows.map(oneTimeContribution),
     },
   }

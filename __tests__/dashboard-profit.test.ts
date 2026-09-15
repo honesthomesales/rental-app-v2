@@ -13,7 +13,7 @@ import {
   buildDashboardProfit,
   calendarMonthBounds,
   expenseApplicableDate,
-  qualifiesForFullNoDebtRecurring,
+  qualifiesForFullNoDebtAddBack,
 } from '@/lib/dashboard-profit'
 
 describe('dashboard tax monthly payment', () => {
@@ -30,7 +30,6 @@ describe('dashboard tax monthly payment', () => {
       tax_paid_amount_previous: 0,
       tax_color_state: 0,
     }
-    // annual 1200 − 200 = 1000 owed → 1000/12
     expect(taxesOwedForProperty(property)).toBe(1000)
     expect(monthlyTaxPaymentForProperty(property)).toBeCloseTo(1000 / 12)
 
@@ -68,64 +67,67 @@ describe('dashboard profit calculations', () => {
     ).toBe('2026-09-10')
   })
 
-  it('Full / No Debt includes recurring only when amount_owed > 0', () => {
+  it('Full / No Debt add-backs only when balance > 0', () => {
     expect(
-      qualifiesForFullNoDebtRecurring({ amount: 500, amount_owed: 1200 }),
+      qualifiesForFullNoDebtAddBack({ amount: 1800, balance: 50000 }),
     ).toBe(true)
-    expect(qualifiesForFullNoDebtRecurring({ amount: 500, amount_owed: 0 })).toBe(
+    expect(qualifiesForFullNoDebtAddBack({ amount: 1800, balance: 0 })).toBe(
+      false,
+    )
+    expect(qualifiesForFullNoDebtAddBack({ amount: 1800, balance: -1 })).toBe(
+      false,
+    )
+    expect(qualifiesForFullNoDebtAddBack({ amount: 1800, balance: null })).toBe(
       false,
     )
     expect(
-      qualifiesForFullNoDebtRecurring({ amount: 500, amount_owed: -1 }),
-    ).toBe(false)
-    expect(
-      qualifiesForFullNoDebtRecurring({ amount: 500, amount_owed: null }),
-    ).toBe(false)
-    expect(
-      qualifiesForFullNoDebtRecurring({ amount: 500, amount_owed: undefined }),
+      qualifiesForFullNoDebtAddBack({ amount: 1800, balance: undefined }),
     ).toBe(false)
   })
 
-  it('applies confirmed Current / Potential / Full No Debt formulas', () => {
+  it('Full / No Debt equals Potential plus monthly amounts for balance > 0', () => {
     const properties = [
       {
         id: 'a',
-        insurance_premium: 50, // monthly as stored — never ÷12
+        insurance_premium: 50,
         property_tax: 100,
         tax_paid_amount_current: 0,
         tax_paid_amount_previous: 0,
-        tax_color_state: 0, // monthly tax = 1200/12 = 100
+        tax_color_state: 0,
       },
       {
         id: 'b',
         insurance_premium: 25,
         property_tax: 80,
         tax_paid_amount_current: 0,
-        tax_color_state: 1, // waived in tax section
+        tax_color_state: 1,
       },
     ]
 
     const expenses = [
       {
-        id: 'r1',
+        id: 'equine',
         category: 'Mortgage',
-        amount: 1000,
-        amount_owed: 50000,
+        mail_info: '946 Equine',
+        amount: 1800,
+        amount_owed: 1800,
+        balance: 42000,
         interest_rate: 0.05,
       },
       {
-        id: 'r2',
-        category: 'Paid Off Loan',
+        id: 'paid-off',
+        category: 'Loan',
         amount: 200,
-        amount_owed: 0,
+        amount_owed: 200,
+        balance: 0,
         interest_rate: 0.05,
       },
       {
-        id: 'r3',
-        category: 'Legacy balance filter bait',
+        id: 'neg-balance',
+        category: 'Loan',
         amount: 300,
-        amount_owed: 10,
-        balance: -5, // old Full/No Debt used balance <= 0; must use amount_owed
+        amount_owed: 300,
+        balance: -5,
         interest_rate: 0.05,
       },
       {
@@ -162,31 +164,27 @@ describe('dashboard profit calculations', () => {
       businessDate,
     })
 
-    expect(profit.monthlyInsurance).toBe(75) // 50+25, no ÷12
-    expect(profit.monthlyTaxes).toBe(100) // only property a; b waived
+    expect(profit.monthlyInsurance).toBe(75)
+    expect(profit.monthlyTaxes).toBe(100)
     expect(sumMonthlyTaxPayments(properties)).toBe(profit.monthlyTaxes)
 
-    expect(profit.recurringMonthlyPayments).toBe(1500) // 1000+200+300
-    expect(profit.fullNoDebtRecurringPayments).toBe(1300) // 1000+300 (owed>0); excludes r2
-    expect(profit.currentMonthOneTimeExpenses).toBe(75) // excludes August 999
+    expect(profit.recurringMonthlyPayments).toBe(2300) // 1800+200+300
+    expect(profit.fullNoDebtBalanceAddBacks).toBe(1800) // only 946 Equine
+    expect(profit.currentMonthOneTimeExpenses).toBe(75)
     expect(profit.currentMonthMiscIncome).toBe(40)
 
-    // Current = 10000 + 40 − 75 − 100 − 1500 − 75 = 8290
-    expect(profit.currentProfit).toBe(8290)
-    // Potential = Current + potential rent
-    expect(profit.potentialProfit).toBe(9790)
+    // Current = 10000 + 40 − 75 − 100 − 2300 − 75 = 7490
+    expect(profit.currentProfit).toBe(7490)
+    expect(profit.potentialProfit).toBe(8990)
     expect(profit.potentialProfit - profit.currentProfit).toBe(1500)
 
-    // Full / No Debt = 10000 + 1500 + 40 − 75 − 100 − 1300 − 75 = 9990
-    expect(profit.fullNoDebtProfit).toBe(9990)
-    expect(profit.potentialProfitNoHouseDebt).toBe(9990)
+    // Full / No Debt = Potential + 1800 (946 Equine)
+    expect(profit.fullNoDebtProfit).toBe(10790)
+    expect(profit.potentialProfitNoHouseDebt).toBe(10790)
 
-    expect(profit.contributing.oneTimeCurrentMonth.map((r) => r.id)).toEqual([
-      'ot-cur',
+    expect(profit.contributing.fullNoDebtAddBacks.map((r) => r.description)).toEqual([
+      '946 Equine',
     ])
-    expect(profit.contributing.recurringFullNoDebt.map((r) => r.id)).toEqual([
-      'r1',
-      'r3',
-    ])
+    expect(profit.contributing.fullNoDebtAddBacks[0].amount).toBe(1800)
   })
 })

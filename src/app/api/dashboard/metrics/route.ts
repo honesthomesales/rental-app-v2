@@ -280,7 +280,7 @@ export async function GET(request: Request) {
         monthlyInsurance: profit.monthlyInsurance,
         monthlyTaxes: profit.monthlyTaxes,
         recurringMonthlyPayments: profit.recurringMonthlyPayments,
-        fullNoDebtRecurringPayments: profit.fullNoDebtRecurringPayments,
+        fullNoDebtBalanceAddBacks: profit.fullNoDebtBalanceAddBacks,
         currentMonthOneTimeExpenses: profit.currentMonthOneTimeExpenses,
         currentProfit: profit.currentProfit,
         potentialProfit: profit.potentialProfit,

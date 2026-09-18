@@ -5,8 +5,9 @@
  * Allocation truth (production-compatible): RENT_payments.invoice_id direct links.
  * Do not invent RENT_payment_allocations.
  *
- * Current tenant balance baseline: Payments page / calculateUnpaidInvoices
- * (OPEN invoices with due_date <= business date and positive recalculated balance).
+ * Current tenant balance baseline: charges minus completed payment rows
+ * (positive recalculated balance, due_date <= business date). Stale stored
+ * amount_paid / balance_due / PAID status never override payment rows.
  */
 
 import {
@@ -18,6 +19,11 @@ import {
   analyzeLeaseCadence,
   inferInvoiceCadence,
 } from "@/lib/invoice-cadence";
+import {
+  computeInvoiceChargeTotal,
+  computeRawInvoiceBalance,
+  isVoidOrCancelledStatus,
+} from "@/lib/invoice-real-balance";
 
 export const PORTFOLIO_LEDGER_VERSION = "portfolio-ledger-v3-monthly-default-due-day";
 
@@ -261,9 +267,9 @@ function classifyInvoice(
   inv: LedgerInvoiceDetail,
   asOf: string,
 ): InvoiceCollectionStatus {
-  if (inv.storedStatus === "VOID") return "void";
-  if (inv.storedStatus === "PAID") return "paid";
+  if (isVoidOrCancelledStatus(inv.storedStatus)) return "void";
   if (inv.isFuture) return "future";
+  // Real payment rows win over stale stored PAID/OPEN/PARTIAL status.
   if (inv.calculatedBalance < -0.009) return "credit";
   if (inv.calculatedBalance <= 0.009) return "paid";
   if (
@@ -327,18 +333,24 @@ export function buildAccountLedger(args: {
   );
 
   const invoiceDetails: LedgerInvoiceDetail[] = args.invoices
-    .filter((inv) => String(inv.status || "").toUpperCase() !== "VOID")
+    .filter((inv) => !isVoidOrCancelledStatus(inv.status))
     .map((inv) => {
       const dueDate = resolveInvoiceDueDate(lease, inv);
       const isFuture = dueDate > asOf;
       const storedRent = roundMoney(Number(inv.amount_rent) || 0);
       const storedLateFee = roundMoney(Number(inv.amount_late) || 0);
       const storedOtherCharges = roundMoney(Number(inv.amount_other) || 0);
-      const calculatedTotal = roundMoney(
-        storedRent + storedLateFee + storedOtherCharges,
-      );
+      const calculatedTotal = computeInvoiceChargeTotal({
+        amount_rent: storedRent,
+        amount_late: storedLateFee,
+        amount_other: storedOtherCharges,
+        amount_total: inv.amount_total,
+      });
       const eligiblePaidAmount = paidByInvoice.get(inv.id) || 0;
-      const calculatedBalance = roundMoney(calculatedTotal - eligiblePaidAmount);
+      const calculatedBalance = computeRawInvoiceBalance(
+        calculatedTotal,
+        eligiblePaidAmount,
+      );
       let remainingPaid = Math.max(0, eligiblePaidAmount);
       const paidToLate = Math.min(remainingPaid, storedLateFee);
       remainingPaid = roundMoney(remainingPaid - paidToLate);
@@ -380,10 +392,10 @@ export function buildAccountLedger(args: {
 
   const currentInvoices = invoiceDetails.filter((i) => !i.isFuture);
   const futureInvoices = invoiceDetails.filter((i) => i.isFuture);
+  // Collectible = real positive balance. Do not require OPEN/PARTIAL — stale PAID
+  // with unpaid payment rows must still count toward account totals.
   const collectibleCurrent = currentInvoices.filter(
-    (invoice) =>
-      (invoice.storedStatus === "OPEN" || invoice.storedStatus === "PARTIAL") &&
-      invoice.calculatedBalance > 0.009,
+    (invoice) => invoice.calculatedBalance > 0.009,
   );
   const totalBalanceDue = roundMoney(
     collectibleCurrent.reduce(

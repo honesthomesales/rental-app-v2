@@ -4,6 +4,12 @@ import {
   type AllocationPlan,
 } from "@/lib/payments/allocate-newest-first";
 import { allocateSelectedInvoiceForward } from "@/lib/payments/allocate-selected-forward";
+import {
+  buildCompletedPaidByInvoiceMap,
+  computeInvoiceChargeTotal,
+  computeRealAmountOwed,
+  type PaymentAmountFields,
+} from "@/lib/invoice-real-balance";
 
 export type InvoiceRowForAllocation = {
   id: string;
@@ -13,27 +19,32 @@ export type InvoiceRowForAllocation = {
   balance_due?: number | null;
   amount_total?: number | null;
   amount_paid?: number | null;
+  amount_rent?: number | null;
+  amount_late?: number | null;
+  amount_other?: number | null;
   status?: string | null;
 };
 
+export type PaymentRowForAllocation = PaymentAmountFields;
+
 /**
  * Map DB invoice rows into the shared allocator input shape.
+ * Balance is charges minus actual completed payment rows — never stored
+ * amount_paid / balance_due / PAID status.
  */
 export function toAllocatableInvoices(
   rows: InvoiceRowForAllocation[],
+  payments: PaymentRowForAllocation[] = [],
 ): AllocatableInvoice[] {
+  const paidByInvoice = buildCompletedPaidByInvoiceMap(payments);
   return rows.map((row) => {
-    const total = Number(row.amount_total ?? 0);
-    const paid = Number(row.amount_paid ?? 0);
-    const balance =
-      row.balance_due != null && Number.isFinite(Number(row.balance_due))
-        ? Number(row.balance_due)
-        : total - paid;
+    const chargeTotal = computeInvoiceChargeTotal(row);
+    const paidAmount = paidByInvoice.get(String(row.id)) || 0;
     return {
       id: String(row.id),
       dueDate: String(row.due_date || "").split("T")[0],
       sequence: row.period_end || row.period_start || null,
-      balanceDue: balance,
+      balanceDue: computeRealAmountOwed(chargeTotal, paidAmount),
       status: row.status,
     };
   });
@@ -43,11 +54,12 @@ export function planNewestFirstAllocation(args: {
   paymentAmount: number;
   paymentEffectiveDate: string;
   invoices: InvoiceRowForAllocation[];
+  payments?: PaymentRowForAllocation[];
 }): AllocationPlan {
   return allocateNewestEligibleFirst({
     paymentAmount: args.paymentAmount,
     paymentEffectiveDate: args.paymentEffectiveDate,
-    invoices: toAllocatableInvoices(args.invoices),
+    invoices: toAllocatableInvoices(args.invoices, args.payments || []),
   });
 }
 
@@ -55,11 +67,12 @@ export function planSelectedInvoiceForwardAllocation(args: {
   paymentAmount: number;
   selectedInvoiceId: string;
   invoices: InvoiceRowForAllocation[];
+  payments?: PaymentRowForAllocation[];
 }): AllocationPlan {
   return allocateSelectedInvoiceForward({
     paymentAmount: args.paymentAmount,
     selectedInvoiceId: args.selectedInvoiceId,
-    invoices: toAllocatableInvoices(args.invoices),
+    invoices: toAllocatableInvoices(args.invoices, args.payments || []),
   });
 }
 

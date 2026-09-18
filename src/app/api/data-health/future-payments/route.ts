@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
     const { data: invoices, error: invErr } = await supabaseServer
       .from("RENT_invoices")
       .select(
-        "id, due_date, period_start, period_end, balance_due, amount_total, amount_paid, status",
+        "id, due_date, period_start, period_end, balance_due, amount_total, amount_rent, amount_late, amount_other, amount_paid, status",
       )
       .eq("lease_id", payment.lease_id);
 
@@ -209,6 +209,23 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
+
+    const { data: existingPayments, error: payErr } = await supabaseServer
+      .from("RENT_payments")
+      .select("id, invoice_id, amount, status, payment_date")
+      .eq("lease_id", payment.lease_id);
+
+    if (payErr) {
+      return NextResponse.json(
+        { error: "Failed to load payments", details: payErr.message },
+        { status: 500 },
+      );
+    }
+
+    // Exclude the deferred payment being allocated so it does not inflate paid.
+    const paymentsForBalances = (existingPayments || []).filter(
+      (row) => String(row.id) !== String(payment.id),
+    );
 
     const selectedInvoiceId = getDeferredSelectedInvoiceId(payment.notes);
     if (
@@ -231,11 +248,13 @@ export async function POST(request: NextRequest) {
           paymentAmount: Number(payment.amount || 0),
           selectedInvoiceId,
           invoices: invoices || [],
+          payments: paymentsForBalances,
         })
       : planNewestFirstAllocation({
           paymentAmount: Number(payment.amount || 0),
           paymentEffectiveDate: toDateOnly(payment.payment_date),
           invoices: invoices || [],
+          payments: paymentsForBalances,
         });
 
     if (plan.splits.length === 0) {

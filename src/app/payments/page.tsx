@@ -431,12 +431,15 @@ return'<div class="s">'+l+'</div>';
               amount_total: invoice.calculatedTotal,
               amount_paid: Number(invoice.eligiblePaidAmount) || 0,
               balance_due: balanceDue,
-              status:
-                isFuture
-                  ? invoice.storedStatus
-                  : invoice.collectionStatus === 'paid'
-                    ? 'PAID'
-                    : invoice.storedStatus,
+            // Display status from real balance — never keep stale stored PAID when
+            // payment rows still leave a balance.
+            status: isFuture
+              ? invoice.storedStatus
+              : balanceDue <= 0.009
+                ? 'PAID'
+                : (Number(invoice.eligiblePaidAmount) || 0) > 0.009
+                  ? 'PARTIAL'
+                  : 'OPEN',
               paid_in_full_at: null,
               late_fee_waived: Boolean(invoice.lateFeeWaived),
               cadence_exception: Boolean(invoice.cadenceException),

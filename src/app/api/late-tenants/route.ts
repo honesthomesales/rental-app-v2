@@ -58,8 +58,7 @@ export async function GET(request: Request) {
         (inv) =>
           !inv.isFuture &&
           inv.calculatedBalance > 0 &&
-          inv.collectionStatus === 'past_due' &&
-          ['OPEN', 'PARTIAL'].includes(inv.storedStatus),
+          inv.collectionStatus === 'past_due',
       )
 
       if (unpaidInvoices.length === 0 || account.pastDueBalanceDue <= 0) {

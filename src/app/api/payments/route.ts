@@ -223,7 +223,7 @@ try {
     const { data: openInvoices, error: invoiceLoadError } = await supabaseServer
       .from('RENT_invoices')
       .select(
-        'id, due_date, period_start, period_end, balance_due, amount_total, amount_paid, status',
+        'id, due_date, period_start, period_end, balance_due, amount_total, amount_rent, amount_late, amount_other, amount_paid, status',
       )
       .eq('lease_id', leaseId)
 
@@ -233,6 +233,23 @@ try {
         {
           error: 'Failed to load invoices for payment allocation',
           details: invoiceLoadError.message,
+        },
+        { status: 500 },
+      )
+    }
+
+    const { data: existingPayments, error: paymentLoadError } =
+      await supabaseServer
+        .from('RENT_payments')
+        .select('id, invoice_id, amount, status, payment_date')
+        .eq('lease_id', leaseId)
+
+    if (paymentLoadError) {
+      console.error('Error loading payments for allocation:', paymentLoadError)
+      return NextResponse.json(
+        {
+          error: 'Failed to load payments for payment allocation',
+          details: paymentLoadError.message,
         },
         { status: 500 },
       )
@@ -265,17 +282,21 @@ try {
     // invoice selection retain the automatic newest-eligible-first fallback.
     // Production truth remains RENT_payments.invoice_id + DB triggers; waterfall
     // splits become one payment row per invoice leg (same logical payment).
+    // Real balances come from charges minus existing completed payment rows —
+    // never stale invoice.amount_paid / balance_due / PAID status.
     const allocationStrategy = invoiceId ? 'selected_forward' : 'newest_first'
     const plan = invoiceId
       ? planSelectedInvoiceForwardAllocation({
           paymentAmount: Number(amount),
           selectedInvoiceId: String(invoiceId),
           invoices: openInvoices || [],
+          payments: existingPayments || [],
         })
       : planNewestFirstAllocation({
           paymentAmount: Number(amount),
           paymentEffectiveDate: paymentDateOnly,
           invoices: openInvoices || [],
+          payments: existingPayments || [],
         })
 
     // No eligible invoices: still record the payment unallocated.

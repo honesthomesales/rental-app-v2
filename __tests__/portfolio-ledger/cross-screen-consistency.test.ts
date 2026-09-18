@@ -3,6 +3,7 @@ import {
   buildCollectionsSummary,
   buildCollectedMonthCollectionFacts,
 } from "@/lib/portfolio-ledger/service";
+import { buildLateTenantRowTotals } from "@/lib/late-tenants-summary";
 
 const lease = {
   id: "lease-1",
@@ -67,6 +68,51 @@ describe("portfolio ledger cross-screen consistency", () => {
     expect(account.collectionStatus).toBe("past_due");
     expect(account.rentBalance + account.lateFeeBalance + account.otherChargeBalance)
       .toBe(account.totalBalanceDue);
+  });
+
+  it("Payments totalOwed and Late accountTotalOwed both equal ledger totalBalanceDue", () => {
+    const invoices = [invoice("2026-07-01")];
+    const payments = [
+      {
+        id: "payment-1",
+        lease_id: lease.id,
+        invoice_id: invoices[0].id,
+        payment_date: "2026-07-02",
+        amount: 40,
+        status: "completed",
+      },
+      {
+        id: "payment-future",
+        lease_id: lease.id,
+        invoice_id: invoices[0].id,
+        payment_date: "2026-12-01",
+        amount: 50,
+        status: "completed",
+      },
+    ];
+    const asOfDate = "2026-07-07";
+    const account = buildAccountLedger({
+      lease,
+      invoices,
+      payments,
+      asOfDate,
+    });
+    const paymentsRow = buildCollectionsSummary({
+      leases: [lease],
+      invoicesByLease: new Map([[lease.id, invoices]]),
+      paymentsByLease: new Map([[lease.id, payments]]),
+      asOfDate,
+    }).rows[0];
+    const lateTotals = buildLateTenantRowTotals(
+      account.totalBalanceDue,
+      account.pastDueBalanceDue,
+    );
+
+    // Same source of truth across Payments list and Late Total Owed.
+    expect(paymentsRow.totalOwed).toBe(account.totalBalanceDue);
+    expect(lateTotals.accountTotalOwed).toBe(account.totalBalanceDue);
+    expect(lateTotals.accountTotalOwed).toBe(paymentsRow.totalOwed);
+    expect(account.invoices[0].calculatedBalance).toBe(account.totalBalanceDue);
   });
 
   it("five grace days are not late; the 6th calendar date is late for rent due on the 1st", () => {

@@ -384,17 +384,8 @@ return'<div class="s">'+l+'</div>';
 
     try {
       if (leaseRow.lease.id) {
-        // Ensure scheduled future invoices exist (new leases may have none yet).
-        try {
-          await fetch('/api/invoices/generate-missing', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leaseId: leaseRow.lease.id }),
-          })
-        } catch (scheduleError) {
-          console.warn('Could not ensure future invoices before opening payments')
-        }
-
+        // Do not auto-generate missing invoices here — that mutates balances before
+        // the user sees owed. Use the explicit "Review missing invoices" action instead.
         const accountResponse = await fetch(
           `/api/leases/${leaseRow.lease.id}/account`,
           { cache: 'no-store' },
@@ -403,6 +394,17 @@ return'<div class="s">'+l+'</div>';
           throw new Error('Failed to load lease account')
         }
         const account = await accountResponse.json()
+        const ledgerTotalOwed = Math.max(0, Number(account.totalBalanceDue) || 0)
+
+        // Keep Payments list + modal header aligned with portfolio-ledger totalBalanceDue.
+        const syncedRow: LeaseRow = { ...leaseRow, totalOwed: ledgerTotalOwed }
+        setSelectedLease(syncedRow)
+        setLeases((prev) =>
+          prev.map((row) =>
+            row.lease.id === leaseRow.lease.id ? { ...row, totalOwed: ledgerTotalOwed } : row,
+          ),
+        )
+
         const accountInvoices: Invoice[] = (account.invoices || [])
           .map((invoice: any) => ({
             id: invoice.invoiceId,
@@ -415,8 +417,9 @@ return'<div class="s">'+l+'</div>';
             amount_late: invoice.storedLateFee,
             amount_other: invoice.storedOtherCharges,
             amount_total: invoice.calculatedTotal,
-            amount_paid: invoice.eligiblePaidAmount,
-            balance_due: Math.max(0, invoice.calculatedBalance),
+            // Eligible paid + calculated balance from ledger (excludes future-dated payments).
+            amount_paid: Number(invoice.eligiblePaidAmount) || 0,
+            balance_due: Math.max(0, Number(invoice.calculatedBalance) || 0),
             status:
               invoice.collectionStatus === 'paid'
                 ? 'PAID'
@@ -429,47 +432,36 @@ return'<div class="s">'+l+'</div>';
             (a: Invoice, b: Invoice) =>
               new Date(b.due_date).getTime() - new Date(a.due_date).getTime(),
           )
-        const totals = new Map<string, number>()
+
+        // Paid-date column may still show the latest completed payment date (incl. future-dated).
+        // Do not use those payments to recompute Balance / amount owed.
+        const eligibleTotals = new Map<string, number>()
         const paidDates = new Map<string, string | null>()
         for (const invoice of accountInvoices) {
-          totals.set(invoice.id, 0)
+          eligibleTotals.set(invoice.id, Number(invoice.amount_paid) || 0)
           paidDates.set(invoice.id, null)
         }
-        // Payments page honors the entered payment_date even when it is in the future.
         for (const payment of account.payments || []) {
           if (!payment.invoiceId) continue
           if (String(payment.status || 'completed').toLowerCase() !== 'completed') continue
           const amount = Number(payment.amount) || 0
           if (amount <= 0) continue
-          totals.set(
-            payment.invoiceId,
-            (totals.get(payment.invoiceId) || 0) + amount,
-          )
           const currentDate = paidDates.get(payment.invoiceId)
           if (!currentDate || payment.paymentDate > currentDate) {
             paidDates.set(payment.invoiceId, payment.paymentDate)
           }
         }
-        const displayInvoices = accountInvoices.map((invoice: Invoice) => {
-          const paid = totals.get(invoice.id) ?? (Number(invoice.amount_paid) || 0)
-          const total = Number(invoice.amount_total) || 0
-          const balance = Math.max(0, total - paid)
-          return {
-            ...invoice,
-            amount_paid: paid,
-            balance_due: balance,
-            status: balance <= 0.009 ? 'PAID' : invoice.status,
-          }
-        })
-        setInvoicePaymentTotals(totals)
+
+        setInvoicePaymentTotals(eligibleTotals)
         setInvoicePaidDates(paidDates)
-        setInvoices(displayInvoices)
+        setInvoices(accountInvoices)
         setLoadingInvoices(false)
         return
       }
 
       // Fetch ALL invoices for this lease (no date filter to show history)
       // This ensures old invoices (before new lease_start_date) are also shown
+      // Read-only: never auto-POST generate-missing when opening invoice history.
       const today = new Date()
       const todayStr = today.toISOString().split('T')[0]
       const futureDate = new Date(today)
@@ -1232,10 +1224,16 @@ return'<div class="s">'+l+'</div>';
   }
 
   const getInvoiceStatusColor = (invoice: Invoice) => {
-    // Use actual payment total from payments API, same as invoice row rendering
-    const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
-    const amountTotal = parseFloat(invoice.amount_total as any)
-    const balance = amountTotal - actualPaid
+    // Use ledger balance_due (eligible payments only) — same as Payments list totalOwed.
+    const amountTotal = parseFloat(invoice.amount_total as any) || 0
+    const paidFallback =
+      invoicePaymentTotals.get(invoice.id) ??
+      (parseFloat(invoice.amount_paid as any) || 0)
+    const rawBalance =
+      invoice.balance_due != null && invoice.balance_due !== ('' as unknown)
+        ? Number(invoice.balance_due)
+        : amountTotal - paidFallback
+    const balance = Math.max(0, Number.isFinite(rawBalance) ? rawBalance : 0)
     
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -1245,26 +1243,32 @@ return'<div class="s">'+l+'</div>';
     const isFuture = dueDate > today
     
     // Bright green: Fully paid or overpaid
-    if (balance <= 0) return 'bg-green-200 border-green-400'
+    if (balance <= 0.009) return 'bg-green-200 border-green-400'
     
     // Green: Partially paid
-    if (balance > 0 && balance < amountTotal) return 'bg-green-50 border-green-200'
+    if (balance > 0.009 && balance < amountTotal) return 'bg-green-50 border-green-200'
     
     // Gray: Not yet owed (future invoice)
     if (isFuture) return 'bg-gray-100 border-gray-300'
     
     // Darker red: Not paid and past due
-    if (balance > 0 && isPastDue) return 'bg-red-200 border-red-400'
+    if (balance > 0.009 && isPastDue) return 'bg-red-200 border-red-400'
     
     // Default: Unpaid but not past due yet
     return 'bg-red-100 border-red-300'
   }
 
   const getInvoiceStatusBadge = (invoice: Invoice) => {
-    // Use actual payment total from payments API, same as invoice row rendering
-    const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
-    const amountTotal = parseFloat(invoice.amount_total as any)
-    const balance = amountTotal - actualPaid
+    // Use ledger balance_due (eligible payments only) — same as Payments list totalOwed.
+    const amountTotal = parseFloat(invoice.amount_total as any) || 0
+    const paidFallback =
+      invoicePaymentTotals.get(invoice.id) ??
+      (parseFloat(invoice.amount_paid as any) || 0)
+    const rawBalance =
+      invoice.balance_due != null
+        ? Number(invoice.balance_due)
+        : amountTotal - paidFallback
+    const balance = Math.max(0, Number.isFinite(rawBalance) ? rawBalance : 0)
     
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -1274,16 +1278,16 @@ return'<div class="s">'+l+'</div>';
     const isFuture = dueDate > today
     
     // Bright green: Fully paid or overpaid
-    if (balance <= 0) return <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">{balance < 0 ? 'Overpaid' : 'Paid'}</span>
+    if (balance <= 0.009) return <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">{rawBalance < -0.009 ? 'Overpaid' : 'Paid'}</span>
     
     // Green: Partially paid
-    if (balance > 0 && balance < amountTotal) return <span className="px-2 py-1 text-xs font-medium bg-green-400 text-green-900 rounded">Partial</span>
+    if (balance > 0.009 && balance < amountTotal) return <span className="px-2 py-1 text-xs font-medium bg-green-400 text-green-900 rounded">Partial</span>
     
     // Gray: Not yet owed (future invoice)
     if (isFuture) return <span className="px-2 py-1 text-xs font-medium bg-gray-400 text-gray-900 rounded">Future</span>
     
     // Darker red: Not paid and past due
-    if (balance > 0 && isPastDue) return <span className="px-2 py-1 text-xs font-medium bg-red-700 text-white rounded">Past Due</span>
+    if (balance > 0.009 && isPastDue) return <span className="px-2 py-1 text-xs font-medium bg-red-700 text-white rounded">Past Due</span>
     
     // Default: Unpaid but not past due yet
     return <span className="px-2 py-1 text-xs font-medium bg-red-500 text-white rounded">Unpaid</span>
@@ -2430,17 +2434,25 @@ return'<div class="s">'+l+'</div>';
                           </thead>
                           <tbody className="divide-y divide-gray-200">
                             {filteredInvoices.map((invoice, index) => {
-                              // Use actual payment total from payments API, not invoice.amount_paid
-                              const actualPaid = invoicePaymentTotals.get(invoice.id) ?? parseFloat(invoice.amount_paid as any)
-                              const amountTotal = parseFloat(invoice.amount_total as any)
+                              // Ledger balance_due / amount_paid (eligible only) — matches Payments list.
+                              const paid =
+                                invoicePaymentTotals.get(invoice.id) ??
+                                (parseFloat(invoice.amount_paid as any) || 0)
+                              const amountTotal = parseFloat(invoice.amount_total as any) || 0
                               const amountRent = parseFloat(invoice.amount_rent as any || 0)
-                              const balance = amountTotal - actualPaid
-                              const paid = actualPaid
+                              const rawBalance =
+                                invoice.balance_due != null
+                                  ? Number(invoice.balance_due)
+                                  : amountTotal - paid
+                              const balance = Math.max(
+                                0,
+                                Number.isFinite(rawBalance) ? rawBalance : 0,
+                              )
                               const hasPayments = paid > 0
                               // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
                               // BUT hide if paid >= rent (fully paid for rent amount)
                               const isMostRecent = index === 0
-                              const showPaymentButtons = (balance > 0 || isMostRecent) && paid < amountRent
+                              const showPaymentButtons = (balance > 0.009 || isMostRecent) && paid < amountRent
                               const isHighlighted = highlightedInvoiceId === invoice.id
                               
                               return (

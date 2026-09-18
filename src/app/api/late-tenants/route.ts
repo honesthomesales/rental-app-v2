@@ -4,7 +4,7 @@ import {
   buildLateTenantsSummary,
 } from '@/lib/late-tenants-summary'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
-import { getBusinessDate, resolveBusinessDate } from '@/lib/business-date'
+import { getBusinessDate } from '@/lib/business-date'
 import { buildAccountLedger } from '@/lib/portfolio-ledger/service'
 import {
   loadBillingLeases,
@@ -26,22 +26,8 @@ export async function GET(request: Request) {
   if (isAuthError(auth)) return auth
 
   try {
-    const { searchParams } = new URL(request.url)
-    const todayParam = searchParams.get('today')
-    const serverToday = getBusinessDate()
-
-    let today = serverToday
-    if (todayParam) {
-      const resolved = resolveBusinessDate(todayParam)
-      const clientDate = new Date(resolved)
-      const serverDate = new Date(serverToday)
-      const diffDays = Math.abs(
-        (clientDate.getTime() - serverDate.getTime()) / (1000 * 60 * 60 * 24),
-      )
-      if (diffDays <= 1) {
-        today = resolved
-      }
-    }
+    // Always use server America/New_York business date so Late matches Payments.
+    const today = getBusinessDate()
 
     const leases = await loadBillingLeases()
     const leaseIds = leases.map((l) => l.id)

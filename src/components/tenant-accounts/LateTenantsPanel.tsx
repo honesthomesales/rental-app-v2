@@ -61,9 +61,9 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
 
   const fetchLateTenants = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0]
+      // Use server business date (America/New_York) — do not send client UTC today.
       const timestamp = new Date().getTime()
-      const response = await fetch(`/api/late-tenants?t=${timestamp}&today=${today}`, {
+      const response = await fetch(`/api/late-tenants?t=${timestamp}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache'
@@ -146,9 +146,10 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
           aValue = (a.property?.name || '').toLowerCase()
           bValue = (b.property?.name || '').toLowerCase()
           break
+        case 'accountTotalOwed':
         case 'totalOwedLate':
-          aValue = a.totalOwedLate || 0
-          bValue = b.totalOwedLate || 0
+          aValue = a.accountTotalOwed ?? a.totalOwedLate ?? 0
+          bValue = b.accountTotalOwed ?? b.totalOwedLate ?? 0
           break
         case 'cadence':
           aValue = (a.lease?.rent_cadence || '').toLowerCase()
@@ -282,7 +283,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
     }
 
     if (formType === 'ejectment' || formType === 'both') {
-      if (ejectmentReason === 'nonpayment' && !tenant.totalOwedLate) {
+      if (ejectmentReason === 'nonpayment' && !(tenant.accountTotalOwed ?? tenant.totalOwedLate)) {
         alert('No amount owed found for this tenant')
         return
       }

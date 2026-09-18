@@ -115,6 +115,36 @@ describe("portfolio ledger cross-screen consistency", () => {
     expect(account.invoices[0].calculatedBalance).toBe(account.totalBalanceDue);
   });
 
+  it("displayed still-due (non-future balances) equals totalBalanceDue even when future invoices exist", () => {
+    const invoices = [
+      invoice("2026-07-01"),
+      {
+        ...invoice("2026-08-01"),
+        id: "invoice-future",
+        due_date: "2026-08-01",
+        period_start: "2026-08-01",
+        period_end: "2026-08-07",
+      },
+    ];
+    const account = buildAccountLedger({
+      lease,
+      invoices,
+      payments: [],
+      asOfDate: "2026-07-07",
+    });
+    const displayStillDue = account.invoices
+      .filter((inv) => !inv.isFuture)
+      .reduce((sum, inv) => sum + Math.max(0, inv.calculatedBalance), 0);
+    const lateTotals = buildLateTenantRowTotals(
+      account.totalBalanceDue,
+      account.pastDueBalanceDue,
+    );
+    expect(account.totalBalanceDue).toBe(175);
+    expect(displayStillDue).toBe(175);
+    expect(lateTotals.accountTotalOwed).toBe(175);
+    expect(account.invoices.some((inv) => inv.isFuture)).toBe(true);
+  });
+
   it("five grace days are not late; the 6th calendar date is late for rent due on the 1st", () => {
     const monthlyLease = {
       ...lease,

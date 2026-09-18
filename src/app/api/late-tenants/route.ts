@@ -18,8 +18,8 @@ const API_VERSION = 'v6.0-portfolio-ledger'
 
 /**
  * Late Tenants API — read-only.
- * Totals derive from portfolio-ledger (same baseline as Payments).
- * Future-dated completed payments are excluded from balances.
+ * Totals derive from portfolio-ledger (same baseline as Payments):
+ * accountTotalOwed / totalOwed = totalBalanceDue.
  */
 export async function GET(request: Request) {
   const auth = await requireApiAuth(request)
@@ -66,6 +66,7 @@ export async function GET(request: Request) {
         continue
       }
 
+      // Same source of truth as Payments list: ledger totalBalanceDue.
       const rowTotals = buildLateTenantRowTotals(
         account.totalBalanceDue,
         account.pastDueBalanceDue,
@@ -75,6 +76,11 @@ export async function GET(request: Request) {
       const lastPay = account.payments
         .filter((p) => p.eligible && p.amount > 0)
         .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))[0]
+
+      const totalLateFees = unpaidInvoices.reduce(
+        (sum, inv) => sum + Math.max(0, Number(inv.storedLateFee) || 0),
+        0,
+      )
 
       lateTenantsRows.push({
         leaseId: lease.id,
@@ -86,12 +92,18 @@ export async function GET(request: Request) {
           rent_cadence: lease.rent_cadence,
           lease_start_date: lease.lease_start_date,
           lease_end_date: lease.lease_end_date,
+          status: lease.status,
         },
         ...rowTotals,
+        // Aliases used by LateTenantsPanel columns / ejectment helpers.
+        totalOwed: rowTotals.accountTotalOwed,
         unpaidCount: account.pastDueInvoiceCount,
         unpaidInvoiceCount: account.pastDueInvoiceCount,
+        totalLatePeriods: account.pastDueInvoiceCount,
+        totalLateFees,
         unpaidInvoiceIds: unpaidInvoices.map((inv) => inv.invoiceId),
         daysLate,
+        lastPaymentDate: lastPay?.paymentDate || null,
         mostRecentPayment: lastPay
           ? {
               date: lastPay.paymentDate,

@@ -27,8 +27,15 @@ describe('owed amount display sources stay on portfolio ledger', () => {
   it('Late Tenants uses server business date and accountTotalOwed for Total Owed', () => {
     expect(latePanel).not.toContain('today=${today}')
     expect(latePanel).toContain('/api/late-tenants?t=${timestamp}')
-    expect(latePanel).toContain('accountTotalOwed ?? tenant.totalOwedLate')
+    expect(latePanel).toContain('accountTotalOwed')
     expect(lateRoute).toContain('getBusinessDate()')
     expect(lateRoute).not.toContain('todayParam')
+    expect(lateRoute).toContain('totalOwed: rowTotals.accountTotalOwed')
+  })
+
+  it('Payments modal zeros future invoice balances so still-due matches totalBalanceDue', () => {
+    expect(paymentsPage).toContain('isFuture')
+    expect(paymentsPage).toContain('invoice-modal-amount-owed')
+    expect(paymentsPage).toMatch(/balanceDue = isFuture[\s\S]*\? 0/)
   })
 })

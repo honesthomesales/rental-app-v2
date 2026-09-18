@@ -283,7 +283,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
     }
 
     if (formType === 'ejectment' || formType === 'both') {
-      if (ejectmentReason === 'nonpayment' && !(tenant.accountTotalOwed ?? tenant.totalOwedLate)) {
+      if (ejectmentReason === 'nonpayment' && !(tenant.accountTotalOwed ?? tenant.totalOwed ?? tenant.totalOwedLate)) {
         alert('No amount owed found for this tenant')
         return
       }
@@ -540,7 +540,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                     <div>
                       <p className="text-sm text-gray-500">Total Owed</p>
                       <p className="text-lg font-semibold text-gray-900">
-                        ${(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
+                        ${(tenant.accountTotalOwed ?? tenant.totalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -578,7 +578,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                             leaseId: tenant.lease?.id || null,
                             leaseStatus: tenant.lease?.status || null,
                             templateContext: {
-                              amount_due: `$${Number(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}`,
+                              amount_due: `$${Number(tenant.accountTotalOwed ?? tenant.totalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}`,
                             },
                           })
                         }
@@ -736,8 +736,11 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {tenant.lastPaymentDate 
-                            ? new Date(tenant.lastPaymentDate).toLocaleDateString('en-US', { 
+                          {tenant.lastPaymentDate || tenant.mostRecentPayment?.date
+                            ? new Date(
+                                tenant.lastPaymentDate ||
+                                  tenant.mostRecentPayment.date,
+                              ).toLocaleDateString('en-US', { 
                                 month: 'short', 
                                 day: 'numeric', 
                                 year: 'numeric' 
@@ -761,7 +764,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          ${(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
+                          ${(tenant.accountTotalOwed ?? tenant.totalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
                         </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -823,7 +826,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                   <div className="mb-3">
                     <div className="text-xs text-gray-500">Total Owed</div>
                     <div className="text-lg font-semibold text-gray-900">
-                      ${(tenant.accountTotalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
+                      ${(tenant.accountTotalOwed ?? tenant.totalOwed ?? tenant.totalOwedLate ?? 0).toLocaleString()}
                     </div>
                   </div>
 
@@ -961,7 +964,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <div className="text-red-600 font-medium">Amount Owed</div>
-                        <div className="text-gray-900">${(selectedTenantInfo?.accountTotalOwed ?? selectedTenantInfo?.totalOwedLate ?? 0).toLocaleString()}</div>
+                        <div className="text-gray-900">${(selectedTenantInfo?.accountTotalOwed ?? selectedTenantInfo?.totalOwed ?? selectedTenantInfo?.totalOwedLate ?? 0).toLocaleString()}</div>
                       </div>
                       <div>
                         <div className="text-red-600 font-medium">Date Owed</div>

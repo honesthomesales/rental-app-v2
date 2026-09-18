@@ -395,6 +395,7 @@ return'<div class="s">'+l+'</div>';
         }
         const account = await accountResponse.json()
         const ledgerTotalOwed = Math.max(0, Number(account.totalBalanceDue) || 0)
+        const asOfDate = String(account.asOfDate || '').split('T')[0]
 
         // Keep Payments list + modal header aligned with portfolio-ledger totalBalanceDue.
         const syncedRow: LeaseRow = { ...leaseRow, totalOwed: ledgerTotalOwed }
@@ -406,28 +407,41 @@ return'<div class="s">'+l+'</div>';
         )
 
         const accountInvoices: Invoice[] = (account.invoices || [])
-          .map((invoice: any) => ({
-            id: invoice.invoiceId,
-            invoice_no: invoice.invoiceId,
-            lease_id: account.leaseId,
-            due_date: invoice.dueDate,
-            period_start: invoice.periodStart,
-            period_end: invoice.periodEnd,
-            amount_rent: invoice.storedRent,
-            amount_late: invoice.storedLateFee,
-            amount_other: invoice.storedOtherCharges,
-            amount_total: invoice.calculatedTotal,
-            // Eligible paid + calculated balance from ledger (excludes future-dated payments).
-            amount_paid: Number(invoice.eligiblePaidAmount) || 0,
-            balance_due: Math.max(0, Number(invoice.calculatedBalance) || 0),
-            status:
-              invoice.collectionStatus === 'paid'
-                ? 'PAID'
-                : invoice.storedStatus,
-            paid_in_full_at: null,
-            late_fee_waived: Boolean(invoice.lateFeeWaived),
-            cadence_exception: Boolean(invoice.cadenceException),
-          }))
+          .map((invoice: any) => {
+            const dueDate = String(invoice.dueDate || '').split('T')[0]
+            const isFuture =
+              Boolean(invoice.isFuture) ||
+              (Boolean(asOfDate) && dueDate > asOfDate)
+            const calculatedBalance = Number(invoice.calculatedBalance) || 0
+            // Future invoices are scheduled, not yet owed — Balance must not inflate
+            // "still due" beyond ledger totalBalanceDue (Payments / Late source of truth).
+            const balanceDue = isFuture
+              ? 0
+              : Math.max(0, calculatedBalance)
+            return {
+              id: invoice.invoiceId,
+              invoice_no: invoice.invoiceId,
+              lease_id: account.leaseId,
+              due_date: invoice.dueDate,
+              period_start: invoice.periodStart,
+              period_end: invoice.periodEnd,
+              amount_rent: invoice.storedRent,
+              amount_late: invoice.storedLateFee,
+              amount_other: invoice.storedOtherCharges,
+              amount_total: invoice.calculatedTotal,
+              amount_paid: Number(invoice.eligiblePaidAmount) || 0,
+              balance_due: balanceDue,
+              status:
+                isFuture
+                  ? invoice.storedStatus
+                  : invoice.collectionStatus === 'paid'
+                    ? 'PAID'
+                    : invoice.storedStatus,
+              paid_in_full_at: null,
+              late_fee_waived: Boolean(invoice.lateFeeWaived),
+              cadence_exception: Boolean(invoice.cadenceException),
+            }
+          })
           .sort(
             (a: Invoice, b: Invoice) =>
               new Date(b.due_date).getTime() - new Date(a.due_date).getTime(),
@@ -1241,15 +1255,15 @@ return'<div class="s">'+l+'</div>';
     dueDate.setHours(0, 0, 0, 0)
     const isPastDue = dueDate < today
     const isFuture = dueDate > today
+
+    // Gray: Not yet owed (future invoice) — before paid check (future balance is 0 by design).
+    if (isFuture) return 'bg-gray-100 border-gray-300'
     
     // Bright green: Fully paid or overpaid
     if (balance <= 0.009) return 'bg-green-200 border-green-400'
     
     // Green: Partially paid
     if (balance > 0.009 && balance < amountTotal) return 'bg-green-50 border-green-200'
-    
-    // Gray: Not yet owed (future invoice)
-    if (isFuture) return 'bg-gray-100 border-gray-300'
     
     // Darker red: Not paid and past due
     if (balance > 0.009 && isPastDue) return 'bg-red-200 border-red-400'
@@ -1276,15 +1290,15 @@ return'<div class="s">'+l+'</div>';
     dueDate.setHours(0, 0, 0, 0)
     const isPastDue = dueDate < today
     const isFuture = dueDate > today
+
+    // Gray: Not yet owed (future invoice) — before paid check (future balance is 0 by design).
+    if (isFuture) return <span className="px-2 py-1 text-xs font-medium bg-gray-400 text-gray-900 rounded">Future</span>
     
     // Bright green: Fully paid or overpaid
     if (balance <= 0.009) return <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">{rawBalance < -0.009 ? 'Overpaid' : 'Paid'}</span>
     
     // Green: Partially paid
     if (balance > 0.009 && balance < amountTotal) return <span className="px-2 py-1 text-xs font-medium bg-green-400 text-green-900 rounded">Partial</span>
-    
-    // Gray: Not yet owed (future invoice)
-    if (isFuture) return <span className="px-2 py-1 text-xs font-medium bg-gray-400 text-gray-900 rounded">Future</span>
     
     // Darker red: Not paid and past due
     if (balance > 0.009 && isPastDue) return <span className="px-2 py-1 text-xs font-medium bg-red-700 text-white rounded">Past Due</span>
@@ -1918,6 +1932,16 @@ return'<div class="s">'+l+'</div>';
               <div className="min-w-0 pr-14 sm:pr-0">
                 <h2 className="text-2xl font-bold">{selectedLease.property?.name}</h2>
                 <p className="text-blue-100">{selectedLease.tenant?.full_name}</p>
+                <p className="mt-1 text-sm text-white/90" data-testid="invoice-modal-amount-owed">
+                  Amount owed:{' '}
+                  <span className="font-semibold">
+                    $
+                    {Number(selectedLease.totalOwed || 0).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </p>
               </div>
               <div
                 className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:gap-3"

@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildInvoiceSchedule } from "@/lib/invoice-schedule";
+import {
+  buildInvoiceSchedule,
+  listMissingPayPeriods,
+} from "@/lib/invoice-schedule";
 
 describe("cadence-safe invoice scheduling", () => {
   it("creates only consecutive 7-day weekly periods", () => {
@@ -134,5 +137,39 @@ describe("cadence-safe invoice scheduling", () => {
       "updateData.cadence_effective_date = explicitCadenceEffectiveDate",
     );
     expect(source).not.toContain(".delete().eq(\"lease_id\"");
+  });
+
+  it("includes the opening month when the due day is before the lease start", () => {
+    const missing = listMissingPayPeriods({
+      cadence: "monthly",
+      leaseStart: "2026-10-15",
+      scheduleEnd: "2026-12-31",
+      rentDueDay: 1,
+    });
+
+    expect(missing[0]).toEqual({
+      cadence: "monthly",
+      dueDate: "2026-10-01",
+      periodStart: "2026-10-01",
+      periodEnd: "2026-10-31",
+    });
+    expect(missing.map((period) => period.periodStart)).toEqual([
+      "2026-10-01",
+      "2026-11-01",
+      "2026-12-01",
+    ]);
+  });
+
+  it("omits pay periods that already have an invoice", () => {
+    const missing = listMissingPayPeriods({
+      cadence: "monthly",
+      leaseStart: "2026-10-15",
+      scheduleEnd: "2026-12-31",
+      rentDueDay: 1,
+      existingPeriodStarts: ["2026-10-01"],
+      existingDueDates: ["2026-11-01"],
+    });
+
+    expect(missing.map((period) => period.periodStart)).toEqual(["2026-12-01"]);
   });
 });

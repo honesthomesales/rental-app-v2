@@ -18,6 +18,12 @@ import {
   logoutRedirectPath,
 } from '@/lib/auth/session-state'
 import { MISC_INCOME_RATE } from '@/lib/expenses/classification'
+import { getBusinessDate } from '@/lib/business-date'
+import {
+  listMissingPayPeriods,
+  type ScheduledInvoicePeriod,
+} from '@/lib/invoice-schedule'
+import { resolveInvoiceScheduleEnd } from '@/lib/lease-status'
 
 interface Lease {
   id: string
@@ -27,6 +33,7 @@ interface Lease {
   rent_cadence: string
   rent_due_day: number
   lease_start_date: string
+  lease_end_date?: string | null
   status: string
 }
 
@@ -127,6 +134,8 @@ export default function PaymentsPage() {
   const [showAddInvoiceModal, setShowAddInvoiceModal] = useState(false)
   const [newInvoiceDueDate, setNewInvoiceDueDate] = useState('')
   const [newInvoiceAmount, setNewInvoiceAmount] = useState('')
+  const [missingPayPeriods, setMissingPayPeriods] = useState<ScheduledInvoicePeriod[]>([])
+  const [selectedPayPeriodKey, setSelectedPayPeriodKey] = useState('')
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [selectedTenantForGenerate, setSelectedTenantForGenerate] = useState<string>('')
@@ -681,9 +690,13 @@ return'<div class="s">'+l+'</div>';
     }
   }
 
-  const handleAddPayment = (invoice: Invoice) => {
+  const handleAddPayment = (invoice: Invoice, suggestedAmount?: number) => {
     setSelectedInvoice(invoice)
-    setPaymentAmount(invoice.balance_due.toString())
+    const amount =
+      suggestedAmount != null && Number.isFinite(suggestedAmount)
+        ? suggestedAmount
+        : Number(invoice.balance_due) || 0
+    setPaymentAmount(amount.toFixed(2))
     setPaymentDate(invoice.due_date) // Set to invoice due date instead of today
     setPaymentType('Rent')
     setPaymentNotes('')
@@ -1963,9 +1976,25 @@ return'<div class="s">'+l+'</div>';
                 <button
                   onClick={() => {
                     if (!selectedLease) return
-                    // Set default due date to today
-                    setNewInvoiceDueDate(new Date().toISOString().split('T')[0])
-                    // Set default amount to lease rent
+                    const scheduleEnd = resolveInvoiceScheduleEnd({
+                      status: selectedLease.lease.status,
+                      leaseEndDate: selectedLease.lease.lease_end_date,
+                      asOfDate: getBusinessDate(),
+                    })
+                    const periods = listMissingPayPeriods({
+                      cadence: selectedLease.lease.rent_cadence,
+                      leaseStart: selectedLease.lease.lease_start_date,
+                      scheduleEnd,
+                      rentDueDay: selectedLease.lease.rent_due_day,
+                      existingPeriodStarts: invoices.map((invoice) => invoice.period_start),
+                      existingDueDates: invoices.map((invoice) => invoice.due_date),
+                    })
+                    const first = periods[0]
+                    setMissingPayPeriods(periods)
+                    setSelectedPayPeriodKey(
+                      first ? `${first.dueDate}|${first.periodStart}` : '',
+                    )
+                    setNewInvoiceDueDate(first?.dueDate || '')
                     setNewInvoiceAmount(selectedLease.lease.rent?.toString() || '0')
                     setShowAddInvoiceModal(true)
                   }}
@@ -2460,7 +2489,7 @@ return'<div class="s">'+l+'</div>';
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
-                            {filteredInvoices.map((invoice, index) => {
+                            {filteredInvoices.map((invoice) => {
                               // Ledger balance_due / amount_paid (eligible only) — matches Payments list.
                               const paid =
                                 invoicePaymentTotals.get(invoice.id) ??
@@ -2475,11 +2504,21 @@ return'<div class="s">'+l+'</div>';
                                 0,
                                 Number.isFinite(rawBalance) ? rawBalance : 0,
                               )
-                              const hasPayments = paid > 0
-                              // Show payment buttons for invoices with balance OR for the most recent invoice (index 0) even if paid
-                              // BUT hide if paid >= rent (fully paid for rent amount)
-                              const isMostRecent = index === 0
-                              const showPaymentButtons = (balance > 0.009 || isMostRecent) && paid < amountRent
+                              const dueDateValue = new Date(
+                                `${String(invoice.due_date || '').split('T')[0]}T12:00:00`,
+                              )
+                              dueDateValue.setHours(0, 0, 0, 0)
+                              const today = new Date()
+                              today.setHours(0, 0, 0, 0)
+                              const isFuturePeriod = dueDateValue > today
+                              // Future rows display $0 balance so they are not counted as owed.
+                              // The payment amount is still the unpaid rent for that period.
+                              const suggestedPayment = isFuturePeriod
+                                ? Math.max(
+                                    0,
+                                    Math.round((amountRent - paid) * 100) / 100,
+                                  )
+                                : balance
                               const isHighlighted = highlightedInvoiceId === invoice.id
                               
                               return (
@@ -2543,16 +2582,18 @@ return'<div class="s">'+l+'</div>';
                                 >
                                   Payments
                                 </button>
-                                {showPaymentButtons && (
-                                  <button
-                                    onClick={() => handleAddPayment(invoice)}
-                                    className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
-                                    type="button"
-                                    title={balance > 0 ? "Add payment to this invoice" : "Add advance payment (invoice is paid)"}
-                                  >
-                                    Add Payment
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => handleAddPayment(invoice, suggestedPayment)}
+                                  className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
+                                  type="button"
+                                  title={
+                                    suggestedPayment > 0
+                                      ? 'Add payment to this invoice'
+                                      : 'Add payment to this pay period'
+                                  }
+                                >
+                                  Add Payment
+                                </button>
                                 <button
                                   onClick={() => openInvoiceEditor(invoice)}
                                   disabled={!['OPEN', 'PARTIAL'].includes(invoice.status.toUpperCase())}
@@ -3611,15 +3652,41 @@ return'<div class="s">'+l+'</div>';
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Due Date *
+                  Pay period *
                 </label>
-                <input
-                  type="date"
-                  value={newInvoiceDueDate}
-                  onChange={(e) => setNewInvoiceDueDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                  required
-                />
+                {missingPayPeriods.length === 0 ? (
+                  <p className="text-sm text-gray-600">
+                    Every pay period through the current schedule already has an invoice.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedPayPeriodKey}
+                    onChange={(e) => {
+                      const key = e.target.value
+                      setSelectedPayPeriodKey(key)
+                      const period = missingPayPeriods.find(
+                        (row) => `${row.dueDate}|${row.periodStart}` === key,
+                      )
+                      setNewInvoiceDueDate(period?.dueDate || '')
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    required
+                  >
+                    {missingPayPeriods.map((period) => (
+                      <option
+                        key={`${period.dueDate}|${period.periodStart}`}
+                        value={`${period.dueDate}|${period.periodStart}`}
+                      >
+                        {new Date(period.periodStart + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {' – '}
+                        {new Date(period.periodEnd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {' (due '}
+                        {new Date(period.dueDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        )
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -3639,12 +3706,6 @@ return'<div class="s">'+l+'</div>';
                   Default rent: ${selectedLease.lease.rent?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                 </p>
               </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800">
-                  <span className="font-medium">Note:</span> The system will automatically calculate the period dates based on the lease cadence and due date.
-                </p>
-              </div>
             </div>
 
             {/* Modal Footer */}
@@ -3654,6 +3715,8 @@ return'<div class="s">'+l+'</div>';
                   setShowAddInvoiceModal(false)
                   setNewInvoiceDueDate('')
                   setNewInvoiceAmount('')
+                  setSelectedPayPeriodKey('')
+                  setMissingPayPeriods([])
                 }}
                 disabled={creatingInvoice}
                 className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
@@ -3662,45 +3725,28 @@ return'<div class="s">'+l+'</div>';
               </button>
               <button
                 onClick={async () => {
-                  if (!selectedLease || !newInvoiceDueDate || !newInvoiceAmount) {
-                    alert('Please fill in all required fields')
+                  if (!selectedLease || !selectedPayPeriodKey || !newInvoiceAmount) {
+                    alert('Please choose a pay period and amount')
+                    return
+                  }
+
+                  const period = missingPayPeriods.find(
+                    (row) => `${row.dueDate}|${row.periodStart}` === selectedPayPeriodKey,
+                  )
+                  if (!period) {
+                    alert('Please choose a pay period')
                     return
                   }
 
                   setCreatingInvoice(true)
                   try {
-                    // Calculate period dates based on lease cadence
-                    const cadence = selectedLease.lease.rent_cadence?.toLowerCase() || 'monthly'
-                    const dueDate = new Date(newInvoiceDueDate + 'T12:00:00')
-                    let periodStart = ''
-                    let periodEnd = ''
-
-                    if (cadence === 'weekly') {
-                      periodStart = newInvoiceDueDate
-                      const periodEndDate = new Date(dueDate)
-                      periodEndDate.setDate(periodEndDate.getDate() + 6)
-                      periodEnd = periodEndDate.toISOString().split('T')[0]
-                    } else if (cadence === 'biweekly' || cadence === 'bi-weekly') {
-                      periodStart = newInvoiceDueDate
-                      const periodEndDate = new Date(dueDate)
-                      periodEndDate.setDate(periodEndDate.getDate() + 13)
-                      periodEnd = periodEndDate.toISOString().split('T')[0]
-                    } else {
-                      // Monthly
-                      const year = dueDate.getFullYear()
-                      const month = dueDate.getMonth()
-                      periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`
-                      const daysInMonth = new Date(year, month + 1, 0).getDate()
-                      periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
-                    }
-
                     const invoiceData = {
                       lease_id: selectedLease.lease.id,
                       property_id: selectedLease.property.id,
                       tenant_id: selectedLease.tenant.id,
-                      due_date: newInvoiceDueDate,
-                      period_start: periodStart,
-                      period_end: periodEnd,
+                      due_date: period.dueDate,
+                      period_start: period.periodStart,
+                      period_end: period.periodEnd,
                       amount_rent: parseFloat(newInvoiceAmount) || selectedLease.lease.rent || 0,
                       amount_late: 0,
                       amount_other: 0,
@@ -3729,6 +3775,8 @@ return'<div class="s">'+l+'</div>';
                     setShowAddInvoiceModal(false)
                     setNewInvoiceDueDate('')
                     setNewInvoiceAmount('')
+                    setSelectedPayPeriodKey('')
+                    setMissingPayPeriods([])
                   } catch (error) {
                     console.error('Error creating invoice:', error)
                     alert('Failed to create invoice: ' + (error instanceof Error ? error.message : 'Unknown error'))
@@ -3736,7 +3784,7 @@ return'<div class="s">'+l+'</div>';
                     setCreatingInvoice(false)
                   }
                 }}
-                disabled={creatingInvoice || !newInvoiceDueDate || !newInvoiceAmount}
+                disabled={creatingInvoice || !selectedPayPeriodKey || !newInvoiceAmount}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {creatingInvoice ? 'Creating...' : 'Create Invoice'}

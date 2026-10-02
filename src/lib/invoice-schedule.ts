@@ -72,3 +72,77 @@ export function buildInvoiceSchedule(args: {
   }
   return periods;
 }
+
+function openingMonthlyPeriod(
+  leaseStart: string,
+  rentDueDay: number,
+): ScheduledInvoicePeriod {
+  const start = parseDate(leaseStart);
+  const year = start.getUTCFullYear();
+  const monthIndex = start.getUTCMonth();
+  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+  const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
+  const dueDay = Math.min(
+    Math.max(1, Math.trunc(rentDueDay) || 1),
+    monthEnd.getUTCDate(),
+  );
+  return {
+    cadence: "monthly",
+    dueDate: dateOnly(new Date(Date.UTC(year, monthIndex, dueDay))),
+    periodStart: dateOnly(monthStart),
+    periodEnd: dateOnly(monthEnd),
+  };
+}
+
+/**
+ * Pay periods from the lease start through scheduleEnd that do not already
+ * have an invoice. Monthly leases include the opening calendar month even
+ * when the due day falls before the lease start date.
+ */
+export function listMissingPayPeriods(args: {
+  cadence: string | null | undefined;
+  leaseStart: string;
+  scheduleEnd: string;
+  rentDueDay?: number | null;
+  existingPeriodStarts?: Array<string | null | undefined>;
+  existingDueDates?: Array<string | null | undefined>;
+}): ScheduledInvoicePeriod[] {
+  const leaseStart = String(args.leaseStart || "").split("T")[0];
+  const scheduleEnd = String(args.scheduleEnd || "").split("T")[0];
+  if (!leaseStart || !scheduleEnd) return [];
+
+  const periods = buildInvoiceSchedule({
+    cadence: args.cadence,
+    scheduleStart: leaseStart,
+    scheduleEnd,
+    rentDueDay: args.rentDueDay,
+  });
+
+  if (normalizeCadence(args.cadence || "monthly") === "monthly") {
+    const opening = openingMonthlyPeriod(
+      leaseStart,
+      Math.max(1, Math.trunc(Number(args.rentDueDay) || 1)),
+    );
+    if (
+      opening.periodStart <= scheduleEnd &&
+      !periods.some((period) => period.periodStart === opening.periodStart)
+    ) {
+      periods.unshift(opening);
+    }
+  }
+
+  const starts = new Set(
+    (args.existingPeriodStarts || [])
+      .map((value) => String(value || "").split("T")[0])
+      .filter(Boolean),
+  );
+  const dues = new Set(
+    (args.existingDueDates || [])
+      .map((value) => String(value || "").split("T")[0])
+      .filter(Boolean),
+  );
+
+  return periods.filter(
+    (period) => !starts.has(period.periodStart) && !dues.has(period.dueDate),
+  );
+}

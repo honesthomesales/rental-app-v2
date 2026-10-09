@@ -4,9 +4,6 @@ import { useEffect } from 'react';
 
 export default function PWAInstaller() {
   useEffect(() => {
-    let isRefreshingForServiceWorker = false;
-    const hadServiceWorkerController = Boolean(navigator.serviceWorker?.controller);
-
     // Global error handlers for better mobile error handling
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error, event.message, event.filename, event.lineno);
@@ -20,58 +17,19 @@ export default function PWAInstaller() {
       event.preventDefault();
     };
 
-    const handleServiceWorkerControllerChange = () => {
-      if (!hadServiceWorkerController || isRefreshingForServiceWorker) return;
-      isRefreshingForServiceWorker = true;
-      window.location.reload();
+    const handleAppInstalled = () => {
+      console.log('PWA was installed');
     };
 
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener(
-        'controllerchange',
-        handleServiceWorkerControllerChange,
-      );
-
-      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
-        .then((registration) => {
-          console.log('SW registered: ', registration);
-          return registration.update();
-        })
-        .catch((registrationError) => {
-          console.log('SW registration failed: ', registrationError);
-        });
-    }
-
-    // Handle PWA install prompt
-    let deferredPrompt: any;
-    
-    window.addEventListener('beforeinstallprompt', (e) => {
-      // Prevent Chrome 67 and earlier from automatically showing the prompt
-      e.preventDefault();
-      // Stash the event so it can be triggered later
-      deferredPrompt = e;
-      
-      // Show install button or notification
-      console.log('PWA install prompt available');
-    });
-
-    window.addEventListener('appinstalled', () => {
-      console.log('PWA was installed');
-      deferredPrompt = null;
-    });
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     // Cleanup
     return () => {
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-      navigator.serviceWorker?.removeEventListener(
-        'controllerchange',
-        handleServiceWorkerControllerChange,
-      );
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 

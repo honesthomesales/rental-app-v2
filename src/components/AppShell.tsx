@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Navigation } from "@/components/Navigation";
 import PWAInstaller from "@/components/PWAInstaller";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -18,6 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="app-shell-main flex-1 min-w-0 max-w-full w-full pb-8">
           {children}
         </main>
+        <ServiceWorkerRegister />
         {!hideStaffChrome ? <PWAInstaller /> : null}
       </div>
     </AuthProvider>

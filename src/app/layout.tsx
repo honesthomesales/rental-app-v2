@@ -24,8 +24,8 @@ export const metadata: Metadata = {
     title: "Rental App",
   },
   icons: {
-    icon: "/icon-192.svg",
-    apple: "/icon-192.svg",
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
   },
 };
 

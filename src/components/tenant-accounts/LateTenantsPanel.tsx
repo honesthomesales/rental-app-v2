@@ -57,6 +57,15 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
 
   useEffect(() => {
     fetchLateTenants()
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchLateTenants()
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [])
 
   const fetchLateTenants = async () => {
@@ -610,7 +619,7 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
               {/* Expandable Late Periods Details */}
               {expandedTenant === tenant.lease.id && tenant.lateInvoices && (
                 <div className="mt-3 pt-3 border-t border-gray-200">
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">Late Periods Details</h4>
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Unpaid periods</h4>
                   <div className="space-y-2">
                     {tenant.lateInvoices.map((period: any, idx: number) => (
                       <div 
@@ -621,7 +630,10 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                       >
                         <div>
                           <span className="text-sm font-medium text-gray-900">
-                            {new Date(period.due_date).toLocaleDateString()}
+                            {new Date(String(period.due_date).split('T')[0] + 'T12:00:00').toLocaleDateString()}
+                          </span>
+                          <span className={`ml-2 text-xs ${period.isPastDue === false ? 'text-gray-500' : 'text-red-600'}`}>
+                            {period.isPastDue === false ? 'Current' : 'Late'}
                           </span>
                           <span className="text-xs text-gray-500 ml-2">
                             Due Date

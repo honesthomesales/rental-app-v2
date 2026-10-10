@@ -13,6 +13,7 @@ type RollingMonthRow = {
   label: string
   currentProfit: number
   potentialProfit: number
+  rentCollected: number
 }
 
 function rollingMonthCountForView(view: ProfitViewMode): 6 | 12 | null {
@@ -138,14 +139,18 @@ export default function ProfitPage() {
 
   const rollingMonthAverages = useMemo(() => {
     if (rollingMonthsSortedDesc.length === 0) {
-      return { currentProfit: 0, potentialProfit: 0 }
+      return { currentProfit: 0, potentialProfit: 0, rentCollected: 0 }
     }
     const n = rollingMonthsSortedDesc.length
     const currentProfit =
       rollingMonthsSortedDesc.reduce((sum, row) => sum + row.currentProfit, 0) / n
     const potentialProfit =
       rollingMonthsSortedDesc.reduce((sum, row) => sum + row.potentialProfit, 0) / n
-    return { currentProfit, potentialProfit }
+    const rentCollected = rollingMonthsSortedDesc.reduce(
+      (sum, row) => sum + (row.rentCollected || 0),
+      0,
+    )
+    return { currentProfit, potentialProfit, rentCollected }
   }, [rollingMonthsSortedDesc])
 
   const formatMonth = (date: Date) => {
@@ -243,6 +248,11 @@ export default function ProfitPage() {
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-green-400/80">
                 avg ({periodLabel})
               </span>
+              {!rollingMonthLoading && (
+                <span className="ml-1 text-xs font-semibold normal-case tracking-normal text-cyan-300">
+                  ({formatCurrency(rollingMonthAverages.rentCollected || 0)})
+                </span>
+              )}
             </p>
           </div>
           <div>
@@ -314,7 +324,10 @@ export default function ProfitPage() {
                         curPositive ? 'text-green-600' : 'text-rose-600'
                       }`}
                     >
-                      {formatCurrency(row.currentProfit)}
+                      {formatCurrency(row.currentProfit)}{' '}
+                      <span className="text-xs font-semibold text-cyan-500">
+                        ({formatCurrency(row.rentCollected || 0)})
+                      </span>
                     </p>
                     <p
                       className={`font-mono text-sm font-semibold tabular-nums leading-tight ${

@@ -5,7 +5,7 @@ import {
 } from '@/lib/late-tenants-summary'
 import { isAuthError, requireApiAuth } from '@/lib/auth/api-auth'
 import { getBusinessDate } from '@/lib/business-date'
-import { buildAccountLedger } from '@/lib/portfolio-ledger/service'
+import { buildAccountLedger, roundMoney } from '@/lib/portfolio-ledger/service'
 import {
   loadBillingLeases,
   loadInvoicesForLeases,
@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     ])
 
     const lateTenantsRows: Array<Record<string, unknown>> = []
+    let portfolioTotalOwed = 0
 
     for (const lease of leases) {
       const account = buildAccountLedger({
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
         payments: paymentsByLease.get(lease.id) || [],
         asOfDate: today,
       })
+      portfolioTotalOwed = roundMoney(portfolioTotalOwed + account.totalBalanceDue)
 
       if (
         account.collectionStatus !== 'past_due' ||
@@ -54,14 +56,17 @@ export async function GET(request: Request) {
         continue
       }
 
-      const unpaidInvoices = account.invoices.filter(
+      const pastDueInvoices = account.invoices.filter(
         (inv) =>
           !inv.isFuture &&
           inv.calculatedBalance > 0 &&
           inv.collectionStatus === 'past_due',
       )
+      const unpaidInvoices = account.invoices
+        .filter((inv) => !inv.isFuture && inv.calculatedBalance > 0.009)
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
 
-      if (unpaidInvoices.length === 0 || account.pastDueBalanceDue <= 0) {
+      if (pastDueInvoices.length === 0 || account.pastDueBalanceDue <= 0) {
         continue
       }
 
@@ -76,7 +81,7 @@ export async function GET(request: Request) {
         .filter((p) => p.eligible && p.amount > 0)
         .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))[0]
 
-      const totalLateFees = unpaidInvoices.reduce(
+      const totalLateFees = pastDueInvoices.reduce(
         (sum, inv) => sum + Math.max(0, Number(inv.storedLateFee) || 0),
         0,
       )
@@ -127,6 +132,7 @@ export async function GET(request: Request) {
             balance_due: inv.calculatedBalance,
             days_late: invoiceDaysLate,
             status: inv.storedStatus,
+            isPastDue: inv.collectionStatus === 'past_due',
           }
         }),
         ledgerVersion: account.ledgerVersion,
@@ -138,6 +144,7 @@ export async function GET(request: Request) {
     )
 
     const summary = buildLateTenantsSummary(lateTenantsRows)
+    summary.totalAllOwed = portfolioTotalOwed
 
     return NextResponse.json({
       version: API_VERSION,

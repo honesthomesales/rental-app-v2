@@ -143,6 +143,15 @@ export default function Dashboard() {
       return
     }
     void fetchDashboardData()
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchDashboardData(true)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [auth.status])
 
   useEffect(() => {
@@ -760,7 +769,8 @@ export default function Dashboard() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Monthly Income</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {formatWholeDollarDisplay(metrics?.monthlyIncome)}
+                {formatWholeDollarDisplay(metrics?.monthlyIncome)}{' '}
+                <span className="text-lg font-medium">({metrics?.occupiedProperties || 0})</span>
               </p>
               <p className="text-xs text-green-600 mt-1 font-medium">Click to view/edit</p>
             </div>

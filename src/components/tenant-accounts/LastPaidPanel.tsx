@@ -23,7 +23,8 @@ interface PaymentInvoice {
   amount_rent: number
   amount_late: number
   status: string
-  recalculated_balance: number
+  is_future?: boolean
+  recalculated_balance: number | null
 }
 
 interface PaymentEntry {
@@ -195,6 +196,15 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
 
   useEffect(() => {
     fetchData()
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchData()
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [])
 
   const fetchData = async () => {
@@ -1140,6 +1150,7 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
     if (s === 'PAID') return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">Paid</span>
     if (s === 'OPEN') return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">Open</span>
     if (s === 'VOID') return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">Void</span>
+    if (s === 'FUTURE') return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">Future</span>
     return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-700">{status}</span>
   }
 
@@ -1636,17 +1647,27 @@ export default function LastPaidPanel({ embedded = false }: { embedded?: boolean
                         <td className="px-3 py-2 text-center">
                           {payment.invoice ? (
                             (() => {
-                              const balance = parseFloat(payment.invoice.recalculated_balance as any || 0)
-                              const status = balance <= 0 ? 'PAID' : payment.invoice.status
+                              const balance = payment.invoice.recalculated_balance
+                              const status = payment.invoice.is_future
+                                ? 'FUTURE'
+                                : balance == null
+                                  ? payment.invoice.status
+                                  : Number(balance) <= 0
+                                    ? 'PAID'
+                                    : payment.invoice.status
                               return invoiceStatusBadge(status)
                             })()
                           ) : '-'}
                         </td>
                         <td className="px-3 py-2 text-sm text-right">
                           {payment.invoice ? (
-                            <span className={payment.invoice.recalculated_balance > 0 ? 'font-medium text-red-600' : 'text-green-700'}>
-                              {formatCurrency(payment.invoice.recalculated_balance)}
-                            </span>
+                            payment.invoice.recalculated_balance == null ? (
+                              <span className="text-gray-400">—</span>
+                            ) : (
+                              <span className={payment.invoice.recalculated_balance > 0 ? 'font-medium text-red-600' : 'text-green-700'}>
+                                {formatCurrency(payment.invoice.recalculated_balance)}
+                              </span>
+                            )
                           ) : '-'}
                         </td>
                       </tr>

@@ -92,6 +92,9 @@ export default function PaymentsPage() {
   const [selectedLease, setSelectedLease] = useState<LeaseRow | null>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [ledgerAsOfDate, setLedgerAsOfDate] = useState('')
+  const selectedLeaseRef = useRef(selectedLease)
+  selectedLeaseRef.current = selectedLease
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [invoicePaymentTotals, setInvoicePaymentTotals] = useState<Map<string, number>>(new Map())
   const [invoicePaidDates, setInvoicePaidDates] = useState<Map<string, string | null>>(new Map())
@@ -165,6 +168,18 @@ export default function PaymentsPage() {
     }
     void fetchLeases()
     void fetchProperties()
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return
+      void fetchLeases()
+      const openLease = selectedLeaseRef.current
+      if (openLease) void handleViewInvoices(openLease)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [auth.status])
 
   // Missing Information deep-link: /payments?id=<paymentId|leaseId|invoiceId>
@@ -290,7 +305,7 @@ return'<div class="s">'+l+'</div>';
       setLeasesNetworkError(false)
 
       const response = await fetch(
-        '/api/portfolio/collections-summary?pageSize=200&sort=totalOwed_desc',
+        '/api/portfolio/collections-summary?pageSize=2000&sort=totalOwed_desc',
         { credentials: 'include', cache: 'no-store' },
       )
 
@@ -405,6 +420,7 @@ return'<div class="s">'+l+'</div>';
         const account = await accountResponse.json()
         const ledgerTotalOwed = Math.max(0, Number(account.totalBalanceDue) || 0)
         const asOfDate = String(account.asOfDate || '').split('T')[0]
+        setLedgerAsOfDate(asOfDate)
 
         // Keep Payments list + modal header aligned with portfolio-ledger totalBalanceDue.
         const syncedRow: LeaseRow = { ...leaseRow, totalOwed: ledgerTotalOwed }
@@ -1265,7 +1281,7 @@ return'<div class="s">'+l+'</div>';
         : amountTotal - paidFallback
     const balance = Math.max(0, Number.isFinite(rawBalance) ? rawBalance : 0)
     
-    const today = new Date()
+    const today = new Date(`${ledgerAsOfDate || getBusinessDate()}T12:00:00`)
     today.setHours(0, 0, 0, 0)
     const dueDate = new Date(invoice.due_date + 'T12:00:00')
     dueDate.setHours(0, 0, 0, 0)
@@ -1300,7 +1316,7 @@ return'<div class="s">'+l+'</div>';
         : amountTotal - paidFallback
     const balance = Math.max(0, Number.isFinite(rawBalance) ? rawBalance : 0)
     
-    const today = new Date()
+    const today = new Date(`${ledgerAsOfDate || getBusinessDate()}T12:00:00`)
     today.setHours(0, 0, 0, 0)
     const dueDate = new Date(invoice.due_date + 'T12:00:00')
     dueDate.setHours(0, 0, 0, 0)
@@ -1649,6 +1665,9 @@ return'<div class="s">'+l+'</div>';
           <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Management</h1>
+              <p className="text-sm font-semibold text-gray-900">
+                ${leases.reduce((sum, row) => sum + (Number(row.totalOwed) || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
               <p className="text-xs text-gray-400 mt-1">Version: 2.2.0</p>
             </div>
             <div className="flex flex-wrap items-center gap-3" data-testid="payments-action-buttons">
@@ -3765,7 +3784,10 @@ return'<div class="s">'+l+'</div>';
                     const data = await response.json()
 
                     if (!response.ok) {
-                      throw new Error(data.error || 'Failed to create invoice')
+                      const detail = Array.isArray(data.details) ? data.details.join('; ') : ''
+                      throw new Error(
+                        (data.error || 'Failed to create invoice') + (detail ? `: ${detail}` : ''),
+                      )
                     }
 
                     // Refresh invoices list

@@ -229,6 +229,7 @@ try {
         label: labelForMonth(month),
         currentProfit: Math.round(currentProfit * 100) / 100,
         potentialProfit: Math.round(potentialProfit * 100) / 100,
+        rentCollected: Math.round(rent * 100) / 100,
       }
     })
 

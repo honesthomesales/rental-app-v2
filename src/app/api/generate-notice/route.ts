@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { getBusinessDate } from '@/lib/business-date'
+import { buildAccountLedger } from '@/lib/portfolio-ledger/service'
+import {
+  loadInvoicesForLeases,
+  loadPaymentsForLeases,
+} from '@/lib/portfolio-ledger/repository'
 
 export async function POST(request: Request) {
   try {
@@ -60,24 +66,38 @@ export async function POST(request: Request) {
     const rentDueDateFormatted = dateFormatter.format(new Date(invoice.due_date + 'T12:00:00'))
     const sevenDaysFromNowFormatted = dateFormatter.format(sevenDaysFromNow)
 
-    // Get only PAST DUE unpaid invoices for this lease to calculate total amount due
-    const today = new Date().toISOString().split('T')[0]
-    const { data: allUnpaidInvoices, error: invoicesError } = await supabaseServer
-      .from('RENT_invoices')
-      .select('amount_rent, amount_late, amount_other, balance_due, due_date')
-      .eq('lease_id', leaseId)
-      .eq('status', 'OPEN')
-      .gt('balance_due', 0)
-      .lt('due_date', today) // Only include invoices that are past due
-
-    if (invoicesError) {
-      console.error('Error fetching unpaid invoices:', invoicesError)
-      return NextResponse.json({ error: 'Failed to fetch invoice data' }, { status: 500 })
-    }
-
-    // Calculate total amounts across all unpaid invoices
-    // Calculate breakdown from actual unpaid amounts per invoice
-    const totalDue = allUnpaidInvoices?.reduce((sum, inv) => sum + parseFloat(inv.balance_due || 0), 0) || 0
+    const [invoicesByLease, paymentsByLease] = await Promise.all([
+      loadInvoicesForLeases([leaseId]),
+      loadPaymentsForLeases([leaseId]),
+    ])
+    const account = buildAccountLedger({
+      lease: {
+        id: leaseData.id,
+        property_id: leaseData.property_id,
+        tenant_id: leaseData.tenant_id,
+        status: leaseData.status,
+        rent: Number(leaseData.rent) || 0,
+        rent_cadence: leaseData.rent_cadence,
+        rent_due_day: leaseData.rent_due_day,
+        lease_start_date: leaseData.lease_start_date,
+        lease_end_date: leaseData.lease_end_date,
+        property_name: property?.name || property?.address || '',
+        tenant_name: tenant?.full_name || '',
+      },
+      invoices: invoicesByLease.get(leaseId) || [],
+      payments: paymentsByLease.get(leaseId) || [],
+      asOfDate: getBusinessDate(),
+    })
+    const allUnpaidInvoices = account.invoices
+      .filter((inv) => !inv.isFuture && inv.calculatedBalance > 0.009)
+      .map((inv) => ({
+        amount_rent: inv.storedRent,
+        amount_late: inv.storedLateFee,
+        amount_other: inv.storedOtherCharges,
+        balance_due: inv.calculatedBalance,
+        due_date: inv.dueDate,
+      }))
+    const totalDue = account.totalBalanceDue
     
     // For each invoice, calculate the unpaid portion of each category proportionally
     let rentAmount = 0
@@ -85,14 +105,14 @@ export async function POST(request: Request) {
     let otherAmount = 0
     
     allUnpaidInvoices?.forEach((inv: any) => {
-      const invoiceTotal = parseFloat(inv.amount_rent || 0) + parseFloat(inv.amount_late || 0) + parseFloat(inv.amount_other || 0)
-      const balanceDue = parseFloat(inv.balance_due || 0)
+      const invoiceTotal = Number(inv.amount_rent || 0) + Number(inv.amount_late || 0) + Number(inv.amount_other || 0)
+      const balanceDue = Number(inv.balance_due || 0)
       
       if (invoiceTotal > 0 && balanceDue > 0) {
         // Calculate unpaid portion of each category proportionally
-        const rentPortion = parseFloat(inv.amount_rent || 0) / invoiceTotal
-        const latePortion = parseFloat(inv.amount_late || 0) / invoiceTotal
-        const otherPortion = parseFloat(inv.amount_other || 0) / invoiceTotal
+        const rentPortion = Number(inv.amount_rent || 0) / invoiceTotal
+        const latePortion = Number(inv.amount_late || 0) / invoiceTotal
+        const otherPortion = Number(inv.amount_other || 0) / invoiceTotal
         
         rentAmount += balanceDue * rentPortion
         lateFeeAmount += balanceDue * latePortion

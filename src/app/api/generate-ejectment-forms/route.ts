@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { getBusinessDate } from '@/lib/business-date'
 import { getMagistrateDistrict, getNCSummaryEjectmentVenueNote } from '@/lib/magistrate-lookup'
 import { buildEjectmentCourtPdfFillData } from '@/lib/build-ejectment-pdf-fill-data'
+import { buildAccountLedger } from '@/lib/portfolio-ledger/service'
+import {
+  loadInvoicesForLeases,
+  loadPaymentsForLeases,
+} from '@/lib/portfolio-ledger/repository'
 
 export async function POST(request: Request) {
   try {
@@ -54,78 +60,44 @@ export async function POST(request: Request) {
       property.zip_code || property.postal_code
     )
 
-    // Use selected form date for invoice cutoff and all form date fields
-    const { data: allInvoices, error: invoicesError } = await supabaseServer
-      .from('RENT_invoices')
-      .select('*')
-      .eq('lease_id', leaseId)
-      .lte('due_date', formDateIso)
-      .order('due_date', { ascending: true })
-
-    if (invoicesError) {
-      console.error('Error fetching invoices:', invoicesError)
-      return NextResponse.json({ error: 'Failed to fetch invoice data' }, { status: 500 })
-    }
-
-    // Fetch all payments for this lease to recalculate balance_due (matching payments page logic)
-    const { data: allPayments, error: paymentsError } = await supabaseServer
-      .from('RENT_payments')
-      .select('*')
-      .eq('lease_id', leaseId)
-      .order('payment_date', { ascending: true })
-
-    if (paymentsError) {
-      console.error('Error fetching payments:', paymentsError)
-      // Continue without payments - will use invoice.amount_paid as fallback
-    }
-
-    // Group payments by invoice_id to calculate actual paid amounts (matching payments page logic)
-    const paymentsByInvoice = new Map<string, any[]>()
-    allPayments?.forEach(payment => {
-      if (payment.invoice_id) {
-        if (!paymentsByInvoice.has(payment.invoice_id)) {
-          paymentsByInvoice.set(payment.invoice_id, [])
-        }
-        paymentsByInvoice.get(payment.invoice_id)!.push(payment)
-      }
+    // Same owed total as the Payments screen: non-future positive invoice balances.
+    const [invoicesByLease, paymentsByLease] = await Promise.all([
+      loadInvoicesForLeases([leaseId]),
+      loadPaymentsForLeases([leaseId]),
+    ])
+    const account = buildAccountLedger({
+      lease: {
+        id: leaseData.id,
+        property_id: leaseData.property_id,
+        tenant_id: leaseData.tenant_id,
+        status: leaseData.status,
+        rent: Number(leaseData.rent) || 0,
+        rent_cadence: leaseData.rent_cadence,
+        rent_due_day: leaseData.rent_due_day,
+        lease_start_date: leaseData.lease_start_date,
+        lease_end_date: leaseData.lease_end_date,
+        property_name: property?.name || property?.address || '',
+        tenant_name: tenant?.full_name || '',
+      },
+      invoices: invoicesByLease.get(leaseId) || [],
+      payments: paymentsByLease.get(leaseId) || [],
+      asOfDate: getBusinessDate(),
     })
-
-    // Filter invoices within lease start date range (matching payments page logic)
-    const leaseStartDate = leaseData.lease_start_date
-    const validInvoices = allInvoices?.filter(invoice => 
-      !leaseStartDate || invoice.due_date >= leaseStartDate
-    ) || []
-
-    // Recalculate balance_due using actual payment totals (EXACT same as payments page)
-    const invoicesWithRecalculatedBalance = validInvoices.map(invoice => {
-      // Get actual payments linked to this invoice
-      const linkedPayments = paymentsByInvoice.get(invoice.id) || []
-      const actualPaid = linkedPayments.reduce((sum, payment) => 
-        sum + parseFloat(payment.amount || 0), 0
-      )
-      
-      // Recalculate balance_due using actual paid amount (matching payments page logic)
-      const amountTotal = parseFloat(invoice.amount_total || 0)
-      const recalculatedBalanceDue = amountTotal - actualPaid
-      
-      return {
-        ...invoice,
-        actualPaid,
-        balance_due: recalculatedBalanceDue // Use recalculated balance
-      }
-    })
-
-    // Find ALL unpaid invoices (not just late ones) - EXACT same logic as payments page
-    // Only count invoices with status='OPEN' and balance_due > 0 (matching payments page logic)
-    const allUnpaidInvoices = invoicesWithRecalculatedBalance.filter(invoice => 
-      invoice.status === 'OPEN' && parseFloat(invoice.balance_due as any || 0) > 0
-    )
-
-    // Calculate totals using EXACT same logic as payments page
-    // totalDue = sum of recalculated balance_due from ALL unpaid invoices (matching payments page)
-    const totalDue = allUnpaidInvoices.reduce((sum, invoice) => 
-      sum + parseFloat(invoice.balance_due as any || 0), 0
-    )
+    const allUnpaidInvoices = account.invoices
+      .filter((invoice) => !invoice.isFuture && invoice.calculatedBalance > 0.009)
+      .map((invoice) => ({
+        id: invoice.invoiceId,
+        due_date: String(invoice.dueDate).split('T')[0],
+        period_start: invoice.periodStart,
+        period_end: invoice.periodEnd,
+        amount_rent: invoice.storedRent,
+        amount_late: invoice.storedLateFee,
+        amount_other: invoice.storedOtherCharges,
+        amount_total: invoice.calculatedTotal,
+        balance_due: invoice.calculatedBalance,
+        status: 'OPEN',
+      }))
+    const totalDue = account.totalBalanceDue
     
     // Calculate rent and late fee amounts proportionally based on balance_due
     // This ensures the breakdown matches the total due
@@ -133,13 +105,13 @@ export async function POST(request: Request) {
     let lateFeeAmount = 0
     
     allUnpaidInvoices.forEach(invoice => {
-      const invoiceTotal = parseFloat(invoice.amount_total || 0)
-      const balanceDue = parseFloat(invoice.balance_due as any || 0)
+      const invoiceTotal = Number(invoice.amount_total || 0)
+      const balanceDue = Number(invoice.balance_due || 0)
       
       if (invoiceTotal > 0 && balanceDue > 0) {
         // Calculate the proportion of each component in the original invoice
-        const invoiceRent = parseFloat(invoice.amount_rent || 0)
-        const invoiceLate = parseFloat(invoice.amount_late || 0)
+        const invoiceRent = Number(invoice.amount_rent || 0)
+        const invoiceLate = Number(invoice.amount_late || 0)
         
         // Calculate proportional amounts based on balance due
         const rentProportion = invoiceRent / invoiceTotal
@@ -150,8 +122,8 @@ export async function POST(request: Request) {
         lateFeeAmount += balanceDue * lateProportion
       } else if (balanceDue > 0) {
         // Fallback: if no amount_total, use amount_rent and amount_late directly
-        rentAmount += parseFloat(invoice.amount_rent || 0)
-        lateFeeAmount += parseFloat(invoice.amount_late || 0)
+        rentAmount += Number(invoice.amount_rent || 0)
+        lateFeeAmount += Number(invoice.amount_late || 0)
       }
     })
     // Number of rent cycles = count of ALL unpaid invoices (matching payments page)
@@ -421,7 +393,7 @@ SCCA/732 — Official statewide form (SC Judicial Branch); Revised 12/2024`
             const dueDate = new Date(inv.due_date + 'T12:00:00')
             const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
             // Use amount_rent (base rent only) for itemization, NOT balance_due
-            const rentAmount = parseFloat(inv.amount_rent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            const rentAmount = Number(inv.amount_rent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             // Format: description text on left, spaces in middle, $amount aligned right
             const description = `Rent due ${formattedDueDate}`
             const amountStr = `$${rentAmount}`
@@ -545,7 +517,7 @@ SCCA/716 — Official statewide form (SC Judicial Branch)`
             day: 'numeric',
             year: 'numeric',
           })
-          const rentAmount = parseFloat(inv.amount_rent || 0).toLocaleString(undefined, {
+          const rentAmount = Number(inv.amount_rent || 0).toLocaleString(undefined, {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })

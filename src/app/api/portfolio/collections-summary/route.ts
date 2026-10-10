@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     const leaseId = url.searchParams.get("leaseId");
     const page = Math.max(1, Number(url.searchParams.get("page") || 1));
     const pageSize = Math.min(
-      200,
+      2000,
       Math.max(1, Number(url.searchParams.get("pageSize") || 100)),
     );
     const sort = url.searchParams.get("sort") || "totalOwed_desc";

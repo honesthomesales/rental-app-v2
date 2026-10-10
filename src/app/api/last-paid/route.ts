@@ -35,6 +35,15 @@ export async function GET(request: Request) {
       const invoiceById = new Map(
         account.invoices.map((invoice) => [invoice.invoiceId, invoice]),
       );
+      const balanceShownForInvoice = new Set<string>();
+      const displayBalance = (
+        invoice: (typeof account.invoices)[number] | null | undefined,
+      ) => {
+        if (!invoice || invoice.isFuture) return 0;
+        if (balanceShownForInvoice.has(invoice.invoiceId)) return null;
+        balanceShownForInvoice.add(invoice.invoiceId);
+        return Math.max(0, invoice.calculatedBalance);
+      };
       const paymentRows = account.payments
         .filter((payment) => payment.eligible && payment.amount > 0)
         .map((payment) => {
@@ -57,8 +66,13 @@ export async function GET(request: Request) {
                   amount_total: invoice.calculatedTotal,
                   amount_rent: invoice.storedRent,
                   amount_late: invoice.storedLateFee,
-                  status: invoice.collectionStatus === "paid" ? "PAID" : invoice.storedStatus,
-                  recalculated_balance: Math.max(0, invoice.calculatedBalance),
+                  status: invoice.isFuture
+                    ? "FUTURE"
+                    : invoice.collectionStatus === "paid"
+                      ? "PAID"
+                      : invoice.storedStatus,
+                  is_future: invoice.isFuture,
+                  recalculated_balance: displayBalance(invoice),
                 }
               : null,
           };
@@ -84,9 +98,14 @@ export async function GET(request: Request) {
             amount_total: invoice.calculatedTotal,
             amount_rent: invoice.storedRent,
             amount_late: invoice.storedLateFee,
-            status: invoice.collectionStatus === "paid" ? "PAID" : invoice.storedStatus,
-            recalculated_balance: Math.max(0, invoice.calculatedBalance),
-          },
+          status: invoice.isFuture
+            ? "FUTURE"
+            : invoice.collectionStatus === "paid"
+              ? "PAID"
+              : invoice.storedStatus,
+          is_future: invoice.isFuture,
+          recalculated_balance: displayBalance(invoice),
+        },
         });
       }
 

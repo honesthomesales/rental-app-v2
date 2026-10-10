@@ -126,69 +126,76 @@ export async function POST(request: Request) {
     
     // Normalize cadence
     const cadence = normalizeCadence(lease.rent_cadence)
-    
-    // Calculate or validate period_start and period_end for monthly leases
-    let periodStart = invoiceData.period_start
-    let periodEnd = invoiceData.period_end
-    const dueDate = new Date(invoiceData.due_date)
-    
-    // Validate due_date matches lease expectations
-    if (cadence === 'monthly' && lease.rent_due_day) {
-      const expectedDay = Math.min(lease.rent_due_day, new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0).getDate())
-      
-      if (dueDate.getDate() !== expectedDay) {
+
+    const dateOnly = (value: unknown): string => {
+      const text = String(value || '').split('T')[0]
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : ''
+    }
+
+    // Compare calendar dates only. Date objects treat "YYYY-MM-DD" as UTC
+    // midnight and shift the day, which rejects the first month of a new lease.
+    const dueDateStr = dateOnly(invoiceData.due_date)
+    if (!dueDateStr) {
+      return NextResponse.json(
+        { error: 'due_date must be YYYY-MM-DD' },
+        { status: 400 },
+      )
+    }
+    const dueUtc = new Date(`${dueDateStr}T12:00:00Z`)
+    const leaseStartStr = dateOnly(lease.lease_start_date)
+    const leaseEndStr = dateOnly(lease.lease_end_date)
+    const openingMonth =
+      cadence === 'monthly' &&
+      Boolean(leaseStartStr) &&
+      dueDateStr.slice(0, 7) === leaseStartStr.slice(0, 7)
+
+    let periodStart = dateOnly(invoiceData.period_start)
+    let periodEnd = dateOnly(invoiceData.period_end)
+
+    if (cadence === 'monthly' && lease.rent_due_day && !openingMonth) {
+      const monthEndDay = new Date(Date.UTC(dueUtc.getUTCFullYear(), dueUtc.getUTCMonth() + 1, 0)).getUTCDate()
+      const expectedDay = Math.min(Number(lease.rent_due_day), monthEndDay)
+
+      if (dueUtc.getUTCDate() !== expectedDay) {
         validationErrors.push(
-          `Due date (${dueDate.getDate()}) does not match lease rent_due_day (${lease.rent_due_day}). Expected day ${expectedDay} for month ${dueDate.getMonth() + 1}/${dueDate.getFullYear()}`
+          `Due date (${dueUtc.getUTCDate()}) does not match lease rent_due_day (${lease.rent_due_day}). Expected day ${expectedDay} for month ${dueUtc.getUTCMonth() + 1}/${dueUtc.getUTCFullYear()}`
         )
       }
     }
-    
+
     if (cadence === 'monthly') {
-      // Calculate expected period dates from due_date
-      const expectedPeriodStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)
-      const expectedPeriodEnd = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0)
-      
-      // If period_start/period_end not provided, calculate them
-      if (!periodStart) {
-        periodStart = expectedPeriodStart.toISOString().split('T')[0]
+      const year = dueUtc.getUTCFullYear()
+      const monthIndex = dueUtc.getUTCMonth()
+      const expectedPeriodStart = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`
+      const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
+      const expectedPeriodEnd = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+
+      if (!periodStart) periodStart = expectedPeriodStart
+      if (!periodEnd) periodEnd = expectedPeriodEnd
+
+      if (dateOnly(invoiceData.period_start) && dateOnly(invoiceData.period_start) !== expectedPeriodStart) {
+        validationErrors.push(
+          `period_start (${dateOnly(invoiceData.period_start)}) should be the first day of the month (${expectedPeriodStart})`
+        )
       }
-      if (!periodEnd) {
-        periodEnd = expectedPeriodEnd.toISOString().split('T')[0]
-      }
-      
-      // Validate if provided
-      if (invoiceData.period_start) {
-        const providedPeriodStart = new Date(invoiceData.period_start)
-        if (providedPeriodStart.getTime() !== expectedPeriodStart.getTime()) {
-          validationErrors.push(
-            `period_start (${providedPeriodStart.toISOString().split('T')[0]}) should be the first day of the month (${expectedPeriodStart.toISOString().split('T')[0]})`
-          )
-        }
-      }
-      
-      if (invoiceData.period_end) {
-        const providedPeriodEnd = new Date(invoiceData.period_end)
-        if (providedPeriodEnd.getTime() !== expectedPeriodEnd.getTime()) {
-          validationErrors.push(
-            `period_end (${providedPeriodEnd.toISOString().split('T')[0]}) should be the last day of the month (${expectedPeriodEnd.toISOString().split('T')[0]})`
-          )
-        }
+
+      if (dateOnly(invoiceData.period_end) && dateOnly(invoiceData.period_end) !== expectedPeriodEnd) {
+        validationErrors.push(
+          `period_end (${dateOnly(invoiceData.period_end)}) should be the last day of the month (${expectedPeriodEnd})`
+        )
       }
     }
-    
-    // Validate invoice is within lease period
-    const leaseStart = new Date(lease.lease_start_date)
-    const leaseEnd = lease.lease_end_date ? new Date(lease.lease_end_date) : null
-    
-    if (dueDate < leaseStart) {
+
+    // Opening calendar month is allowed even when its due day is before the lease start.
+    if (leaseStartStr && dueDateStr < leaseStartStr && !openingMonth) {
       validationErrors.push(
-        `Due date (${dueDate.toISOString().split('T')[0]}) is before lease start date (${leaseStart.toISOString().split('T')[0]})`
+        `Due date (${dueDateStr}) is before lease start date (${leaseStartStr})`
       )
     }
-    
-    if (leaseEnd && dueDate > leaseEnd) {
+
+    if (leaseEndStr && dueDateStr > leaseEndStr) {
       validationErrors.push(
-        `Due date (${dueDate.toISOString().split('T')[0]}) is after lease end date (${leaseEnd.toISOString().split('T')[0]})`
+        `Due date (${dueDateStr}) is after lease end date (${leaseEndStr})`
       )
     }
     

@@ -304,8 +304,8 @@ function PropertiesPageInner() {
         throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))
       }
 
-      // If lease_status was provided, update the lease (requires a linked lease row)
-      if (lease_status && editingProperty?.leaseId) {
+      // N/A means no lease status change. Never send it to the lease record.
+      if (lease_status && lease_status !== 'n/a' && editingProperty?.leaseId) {
         try {
           const leaseResponse = await fetch('/api/leases', {
             method: 'PUT',
@@ -331,7 +331,7 @@ function PropertiesPageInner() {
             `Property saved, but lease status update failed: ${leaseError instanceof Error ? leaseError.message : 'Unknown error'}`
           )
         }
-      } else if (lease_status && !editingProperty?.leaseId) {
+      } else if (lease_status && lease_status !== 'n/a' && !editingProperty?.leaseId) {
         alert(
           'Property saved. Lease status was not changed because no lease is linked to this property. Add or link a lease on the Leases page, then set Sold here.'
         )
@@ -562,6 +562,7 @@ function PropertiesPageInner() {
                         <select
                           value={property.leaseStatus}
                           onChange={async (e) => {
+                            if (e.target.value === 'n/a' || !property.leaseId) return
                             if (property.leaseId) {
                               try {
                                 const response = await fetch('/api/leases', {
@@ -594,6 +595,7 @@ function PropertiesPageInner() {
                               : 'bg-gray-100 text-gray-800'
                           }`}
                         >
+                          <option value="n/a">N/A</option>
                           <option value="empty">Empty</option>
                           <option value="occupied">Has Tenants</option>
                           <option value="sold">Sold</option>
@@ -603,9 +605,12 @@ function PropertiesPageInner() {
                           value={
                             property.status === 'retired' || property.status === 'sold'
                               ? 'sold'
-                              : 'empty'
+                              : 'n/a'
                           }
                           onChange={async (e) => {
+                            if (e.target.value === 'n/a' && property.status !== 'retired' && property.status !== 'sold') {
+                              return
+                            }
                             const nextStatus = e.target.value === 'sold' ? 'retired' : 'active'
                             try {
                               const response = await fetch('/api/properties', {
@@ -632,7 +637,7 @@ function PropertiesPageInner() {
                               : 'bg-gray-100 text-gray-800'
                           }`}
                         >
-                          <option value="empty">Empty</option>
+                          <option value="n/a">N/A</option>
                           <option value="sold">Sold</option>
                         </select>
                       )}
@@ -875,9 +880,10 @@ function PropertiesPageInner() {
                   <label className="block text-sm font-medium text-gray-700">Lease Status</label>
                   <select
                     name="lease_status"
-                    defaultValue={editingProperty?.leaseStatus || 'empty'}
+                    defaultValue={editingProperty?.leaseStatus || 'n/a'}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                   >
+                    <option value="n/a">N/A</option>
                     <option value="empty">Empty</option>
                     <option value="occupied">Has Tenants</option>
                     <option value="sold">Sold</option>

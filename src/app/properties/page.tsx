@@ -599,7 +599,42 @@ function PropertiesPageInner() {
                           <option value="sold">Sold</option>
                         </select>
                       ) : (
-                        <span className="text-xs text-gray-400">No lease</span>
+                        <select
+                          value={
+                            property.status === 'retired' || property.status === 'sold'
+                              ? 'sold'
+                              : 'empty'
+                          }
+                          onChange={async (e) => {
+                            const nextStatus = e.target.value === 'sold' ? 'retired' : 'active'
+                            try {
+                              const response = await fetch('/api/properties', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  id: property.id,
+                                  status: nextStatus,
+                                }),
+                              })
+                              if (response.ok) {
+                                await fetchProperties()
+                              } else {
+                                alert('Failed to update property status')
+                              }
+                            } catch (error) {
+                              console.error('Error updating property status:', error)
+                              alert('Failed to update property status')
+                            }
+                          }}
+                          className={`px-2 py-1 text-xs font-medium rounded border-0 capitalize focus:ring-2 focus:ring-blue-500 ${
+                            property.status === 'retired' || property.status === 'sold'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          <option value="empty">Empty</option>
+                          <option value="sold">Sold</option>
+                        </select>
                       )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">

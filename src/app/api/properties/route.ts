@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isTaxDecimalField } from '@/lib/dashboard-tax'
 
 // Cache properties for 60 seconds - they don't change frequently
 export const revalidate = 60
@@ -158,8 +159,7 @@ export async function PUT(request: Request) {
     Object.keys(updateData).forEach(key => {
       const value = updateData[key]
       // Handle numeric fields - DECIMAL fields need to be numbers, INTEGER fields can be numbers
-      if (key === 'tax_paid_amount_current' || key === 'tax_paid_amount_previous' || 
-          key === 'tax_owed' || key === 'property_tax' || key === 'insurance_premium' || key === 'rent_value') {
+      if (isTaxDecimalField(key) || key === 'insurance_premium' || key === 'rent_value') {
         // DECIMAL(10,2) fields - ensure proper number conversion with 2 decimal precision
         if (value === null || value === undefined || value === '' || value === 'null' || value === 'undefined') {
           cleanedData[key] = null

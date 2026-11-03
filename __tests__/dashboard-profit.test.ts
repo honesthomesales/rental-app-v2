@@ -47,6 +47,37 @@ describe('dashboard tax monthly payment', () => {
     }
     expect(monthlyTaxPaymentForProperty(property)).toBe(20)
   })
+
+  it('subtracts prior-year payments from land owed', () => {
+    const property = {
+      property_tax: 100,
+      tax_paid_amount_current: 200,
+      tax_paid_amount_previous: 300,
+      tax_color_state: 0,
+    }
+    expect(taxesOwedForProperty(property)).toBe(700)
+  })
+
+  it('adds the mobile home bill on double wide and single wide only', () => {
+    const mobileHome = {
+      property_type: 'doublewide' as const,
+      property_tax: 100,
+      tax_paid_amount_current: 0,
+      tax_paid_amount_previous: 0,
+      trailer_property_tax: 50,
+      trailer_tax_paid_amount_current: 100,
+      trailer_tax_paid_amount_previous: 50,
+      tax_color_state: 0,
+    }
+    expect(taxesOwedForProperty(mobileHome)).toBe(1200)
+    expect(monthlyTaxPaymentForProperty(mobileHome)).toBeCloseTo((1200 + 450) / 12)
+
+    const houseWithTrailerRate = {
+      ...mobileHome,
+      property_type: 'house' as const,
+    }
+    expect(monthlyTaxPaymentForProperty(houseWithTrailerRate)).toBeCloseTo(1200 / 12)
+  })
 })
 
 describe('dashboard profit calculations', () => {

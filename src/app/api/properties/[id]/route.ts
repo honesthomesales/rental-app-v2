@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { isTaxDecimalField } from '@/lib/dashboard-tax'
 
 export async function PATCH(
   request: Request,
@@ -20,8 +21,7 @@ export async function PATCH(
     Object.keys(updateData).forEach(key => {
       const value = updateData[key]
       // Handle numeric fields - DECIMAL fields need to be numbers, INTEGER fields can be numbers
-      if (key === 'tax_paid_amount_current' || key === 'tax_paid_amount_previous' || 
-          key === 'tax_owed' || key === 'property_tax' || key === 'insurance_premium' || key === 'rent_value') {
+      if (isTaxDecimalField(key) || key === 'insurance_premium' || key === 'rent_value') {
         // DECIMAL(10,2) fields - ensure proper number conversion with 2 decimal precision
         if (value === null || value === undefined || value === '' || value === 'null' || value === 'undefined') {
           cleanedData[key] = null
@@ -106,7 +106,15 @@ export async function PATCH(
       // Check for common errors and provide helpful messages
       let userMessage = error.message || 'Unknown database error'
       if (error.message?.includes('column') && error.message?.includes('does not exist')) {
-        if (fieldsToUpdate.tax_owed !== undefined) {
+        const trailerTaxFields = [
+          'trailer_property_tax',
+          'trailer_tax_paid_amount_current',
+          'trailer_tax_paid_amount_previous',
+          'trailer_tax_owed',
+        ]
+        if (trailerTaxFields.some((field) => fieldsToUpdate[field] !== undefined)) {
+          userMessage = 'Mobile home tax columns are missing. Run add-trailer-tax-columns.sql in the Supabase SQL editor.'
+        } else if (fieldsToUpdate.tax_owed !== undefined) {
           userMessage = 'The tax_owed column does not exist. Please run the add-tax-owed-column.sql script in your Supabase SQL editor.'
         }
       }

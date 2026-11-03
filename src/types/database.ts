@@ -25,6 +25,10 @@ export interface Property {
   tax_paid_amount_current?: number
   tax_paid_amount_previous?: number
   tax_owed?: number
+  trailer_property_tax?: number
+  trailer_tax_paid_amount_current?: number
+  trailer_tax_paid_amount_previous?: number
+  trailer_tax_owed?: number
   county?: string
   tax_color_state?: number
   purchase_payment?: number

@@ -26,6 +26,7 @@ import {
 import {
   effectiveTaxPaid,
   isMobileHomeType,
+  normalizeTaxColorState,
 } from '@/lib/dashboard-tax'
 import {
   currentYearMonthlyTax,
@@ -370,7 +371,7 @@ export default function Dashboard() {
           propertiesData.forEach((property: any) => {
             // Explicitly check for number type, including 0
             if (typeof property.tax_color_state === 'number') {
-              colorStates.set(property.id, property.tax_color_state)
+              colorStates.set(property.id, normalizeTaxColorState(property.tax_color_state))
             }
           })
           setTaxSelectedProperties(colorStates)
@@ -662,15 +663,22 @@ export default function Dashboard() {
 
       if (taxSortField === 'property_tax') {
         const asOf = new Date()
-        aValue = currentYearMonthlyTax(a, asOf)
-        bValue = currentYearMonthlyTax(b, asOf)
+        aValue = currentYearMonthlyTax(
+          a,
+          asOf,
+          normalizeTaxColorState(taxSelectedProperties.get(a.id) ?? a.tax_color_state),
+        )
+        bValue = currentYearMonthlyTax(
+          b,
+          asOf,
+          normalizeTaxColorState(taxSelectedProperties.get(b.id) ?? b.tax_color_state),
+        )
       }
 
       // Special handling for sorting by color state
       if (taxSortField === 'color_state') {
-        // Sort order: 0 (default) comes last, then 6, 1, 2, 3, 4, 5
-        const stateA = taxSelectedProperties.get(a.id) || 0
-        const stateB = taxSelectedProperties.get(b.id) || 0
+        const stateA = normalizeTaxColorState(taxSelectedProperties.get(a.id) || 0)
+        const stateB = normalizeTaxColorState(taxSelectedProperties.get(b.id) || 0)
         // Normalize: treat 0 as highest value for sorting (comes last)
         const normalizedA = stateA === 0 ? 999 : stateA
         const normalizedB = stateB === 0 ? 999 : stateB
@@ -688,58 +696,29 @@ export default function Dashboard() {
   }
 
   const getTaxRowColor = (state: number): string => {
-    // Color states: 
-    // 0 = default (gray)
-    // 1 = yellow (Customer owed taxes) - more yellow and darker
-    // 2 = light green (Customer paid)
-    // 3 = lime/fluorescent green (Paid)
-    // 4 = medium red (Customer Owed)
-    // 5 = red (Owed)
-    // 6 = light red (Unpaid taxes)
-    // 7 = dark green (Bank paid)
-    switch (state) {
+    switch (normalizeTaxColorState(state)) {
       case 1:
-        return 'bg-yellow-300' // More yellow and darker for Customer owed taxes
-      case 2:
-        return 'bg-green-100' // Light green for Customer paid
+        return 'bg-yellow-300'
       case 3:
-        return 'bg-lime-400' // Fluorescent green for Paid
-      case 4:
-        return 'bg-red-300' // Medium red for Customer Owed
-      case 5:
-        return 'bg-red-500' // Red for Owed
-      case 6:
-        return 'bg-red-100' // Light red for Unpaid taxes
+        return 'bg-lime-400'
       case 7:
-        return 'bg-green-800' // Dark green for Bank paid
+        return 'bg-green-800'
       default:
-        return 'bg-gray-50' // Default
+        return 'bg-gray-50'
     }
   }
 
+  const nextTaxColor = (state: number): number => {
+    const current = normalizeTaxColorState(state)
+    if (current === 0) return 1
+    if (current === 1) return 7
+    if (current === 7) return 3
+    return 0
+  }
+
   const handleTaxToggle = async (propertyId: string) => {
-    const currentState = taxSelectedProperties.get(propertyId) || 0
-    // Cycle through: 0 -> 6 -> 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 0
-    // 0 = Default (gray)
-    // 6 = Light red (Unpaid taxes)
-    // 1 = Yellow (Customer owed taxes)
-    // 2 = Light green (Customer paid)
-    // 3 = Lime (Paid)
-    // 4 = Med Red (Customer Owed)
-    // 5 = Red (Owed)
-    // 7 = Dark green (Bank paid)
-    let nextState: number
-    if (currentState === 0) {
-      nextState = 6
-    } else if (currentState === 6) {
-      nextState = 1
-    } else if (currentState === 5) {
-      nextState = 7
-    } else if (currentState === 7) {
-      nextState = 0
-    } else {
-      nextState = currentState + 1
-    }
+    const currentState = normalizeTaxColorState(taxSelectedProperties.get(propertyId) || 0)
+    const nextState = nextTaxColor(currentState)
     
     // Update local state immediately (always save state, including 0)
     setTaxSelectedProperties(prev => {
@@ -1462,32 +1441,16 @@ export default function Dashboard() {
               <div className="flex items-center gap-3 text-xs flex-wrap">
                 <span className="font-medium text-gray-600">Colors:</span>
                 <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-red-200 bg-red-100"></div>
-                  <span className="text-gray-600">Light red: Unpaid taxes</span>
-                </div>
-                <div className="flex items-center gap-1">
                   <div className="w-4 h-4 rounded border border-yellow-500 bg-yellow-300"></div>
-                  <span className="text-gray-600">Yellow: Customer owed taxes</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-lime-500 bg-lime-400"></div>
-                  <span className="text-gray-600">Lime: Paid</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-green-500 bg-green-100"></div>
-                  <span className="text-gray-600">Light green: Customer paid</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-red-400 bg-red-300"></div>
-                  <span className="text-gray-600">Med Red: Customer Owed</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 rounded border border-red-600 bg-red-500"></div>
-                  <span className="text-gray-600">Red: Owed</span>
+                  <span className="text-gray-600">Yellow: Customer</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-4 h-4 rounded border border-green-800 bg-green-800"></div>
-                  <span className="text-gray-600">Dark green: Bank paid</span>
+                  <span className="text-gray-600">Dark green: Bank</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 rounded border border-lime-500 bg-lime-400"></div>
+                  <span className="text-gray-600">Lime: HHS</span>
                 </div>
               </div>
             </div>
@@ -1546,13 +1509,24 @@ export default function Dashboard() {
                   )}
                 </div>
                 <div 
-                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
+                  className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex flex-col items-start"
                   onClick={() => handleTaxSort('property_tax')}
                 >
-                  Monthly Taxes
-                  {taxSortField === 'property_tax' && (
-                    <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
-                  )}
+                  <span>
+                    Monthly Taxes
+                    {taxSortField === 'property_tax' && (
+                      <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-900">
+                    {formatTaxMoney(getSortedTaxProperties().reduce((sum, property) => (
+                      sum + currentYearMonthlyTax(
+                        property,
+                        new Date(),
+                        normalizeTaxColorState(taxSelectedProperties.get(property.id) ?? property.tax_color_state),
+                      )
+                    ), 0))}
+                  </span>
                 </div>
                 {taxYearsForDate(new Date()).map((year) => (
                   <div
@@ -1607,16 +1581,16 @@ export default function Dashboard() {
               </div>
             ) : (
               getSortedTaxProperties().map((property) => {
-                const colorState = taxSelectedProperties.get(property.id) || 0
+                const colorState = normalizeTaxColorState(taxSelectedProperties.get(property.id) ?? property.tax_color_state)
                 const rowColor = getTaxRowColor(colorState)
-                const monthlyTaxOwed = currentYearMonthlyTax(property, new Date())
-                const isMobileHome = isMobileHomeType(property.property_type)
                 const taxAsOf = new Date()
+                const monthlyTaxOwed = currentYearMonthlyTax(property, taxAsOf, colorState)
+                const isMobileHome = isMobileHomeType(property.property_type)
                 const taxYears = taxYearsForDate(taxAsOf)
                 const landLedger = landTaxLedger(property, taxAsOf)
                 const homeLedger = homeTaxLedger(property, taxAsOf)
 
-                const darkTaxRow = colorState === 5 || colorState === 7
+                const darkTaxRow = colorState === 7
                 const taxCellText = darkTaxRow ? 'text-xs text-white' : 'text-xs text-gray-500'
                 const taxNameText = darkTaxRow
                   ? 'font-medium text-sm text-white break-words whitespace-normal leading-snug'
@@ -1632,25 +1606,15 @@ export default function Dashboard() {
                         handleTaxToggle(property.id)
                       }}
                       className={`w-4 h-4 rounded border-2 ${
-                        colorState === 0 
-                          ? 'border-gray-300 bg-gray-100' 
-                          : colorState === 6
-                          ? 'border-red-200 bg-red-100'
-                          : colorState === 1
+                        colorState === 1
                           ? 'border-yellow-500 bg-yellow-300'
-                          : colorState === 2
-                          ? 'border-green-500 bg-green-100'
                           : colorState === 3
                           ? 'border-lime-500 bg-lime-400'
-                          : colorState === 4
-                          ? 'border-red-400 bg-red-300'
-                          : colorState === 5
-                          ? 'border-red-600 bg-red-500'
                           : colorState === 7
                           ? 'border-green-800 bg-green-800'
                           : 'border-gray-300 bg-gray-100'
                       } hover:opacity-80 focus:outline-none`}
-                      title={`State: ${colorState === 0 ? 'Default' : colorState === 6 ? 'Light red: Unpaid taxes' : colorState === 1 ? 'Yellow: Customer owed taxes' : colorState === 2 ? 'Light green: Customer paid' : colorState === 3 ? 'Lime: Paid' : colorState === 4 ? 'Med Red: Customer Owed' : colorState === 5 ? 'Red: Owed' : colorState === 7 ? 'Dark green: Bank paid' : 'Default'}`}
+                      title={colorState === 1 ? 'Yellow: Customer' : colorState === 7 ? 'Dark green: Bank' : colorState === 3 ? 'Lime: HHS' : 'No color'}
                     />
                   </div>
                   <div className="min-w-0">

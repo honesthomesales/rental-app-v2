@@ -8,7 +8,7 @@ import {
   ONE_TIME_EXPENSE_RATE,
   isRecurringExpense,
 } from '@/lib/expenses/classification'
-import { storedMonthlyTaxRate } from '@/lib/dashboard-tax'
+import { sumMonthlyTaxPayments } from '@/lib/tax-years'
 
 export const revalidate = 60
 
@@ -105,10 +105,7 @@ try {
       (sum, p) => sum + (Number(p.insurance_premium) || 0),
       0
     )
-    const totalTaxes = nonSoldProperties.reduce(
-      (sum, p) => sum + storedMonthlyTaxRate(p),
-      0
-    )
+    const totalTaxes = sumMonthlyTaxPayments(nonSoldProperties)
 
     const { data: expenses, error: expensesError } = await supabaseServer
       .from('RENT_expenses')

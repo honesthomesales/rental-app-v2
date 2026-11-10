@@ -45,14 +45,19 @@ export function effectiveTaxPaid(value: unknown): number {
   return n
 }
 
-/**
- * Color states that zero the displayed Monthly Tax (Owed/12) column:
- * 1 yellow, 2 light green, 6 light red.
- */
+/** 0 none, 1 yellow customer, 3 lime HHS, 7 dark green bank. */
+export function normalizeTaxColorState(colorState: number | null | undefined): number {
+  const state = Number(colorState ?? 0)
+  if (state === 0 || state === 1 || state === 7) return state
+  return 3
+}
+
+/** Yellow customer and dark green bank contribute $0 monthly tax. */
 export function isMonthlyTaxWaivedByColorState(
   colorState: number | null | undefined,
 ): boolean {
-  return colorState === 1 || colorState === 2 || colorState === 6
+  const state = normalizeTaxColorState(colorState)
+  return state === 1 || state === 7
 }
 
 export function annualTaxDue(propertyTaxMonthly: unknown): number {
@@ -114,35 +119,10 @@ export function currentYearPaidForProperty(property: DashboardTaxProperty): numb
 }
 
 /**
- * Stored monthly rate used by profit totals that sum property_tax directly.
- * Mobile homes add the home rate.
+ * Kept for older callers. Profit totals use the dashboard Monthly Taxes column.
  */
 export function storedMonthlyTaxRate(property: DashboardTaxProperty): number {
   const land = Number(property.property_tax) || 0
   if (!isMobileHomeType(property.property_type)) return land
   return land + (Number(property.trailer_property_tax) || 0)
-}
-
-/**
- * Same value shown in the dashboard tax section "Monthly Tax (Owed/12)" column.
- */
-export function monthlyTaxPaymentForProperty(
-  property: DashboardTaxProperty,
-  colorState?: number | null,
-): number {
-  const state =
-    colorState !== undefined && colorState !== null
-      ? colorState
-      : property.tax_color_state ?? 0
-  if (isMonthlyTaxWaivedByColorState(state)) return 0
-  return totalTaxesOwedForProperty(property) / 12
-}
-
-export function sumMonthlyTaxPayments(
-  properties: readonly DashboardTaxProperty[],
-): number {
-  return properties.reduce(
-    (sum, property) => sum + monthlyTaxPaymentForProperty(property),
-    0,
-  )
 }

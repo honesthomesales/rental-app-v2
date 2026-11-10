@@ -8,7 +8,7 @@ import {
   ONE_TIME_EXPENSE_RATE,
   isRecurringExpense,
 } from '@/lib/expenses/classification'
-import { storedMonthlyTaxRate } from '@/lib/dashboard-tax'
+import { sumMonthlyTaxPayments } from '@/lib/tax-years'
 
 // Cache profit metrics for 60 seconds - historical data doesn't change
 export const revalidate = 60
@@ -153,10 +153,8 @@ try {
     const totalInsurance = nonSoldProperties
       ?.reduce((sum, p) => sum + (Number(p.insurance_premium) || 0), 0) || 0
     
-    // Calculate total taxes (annual tax, not divided by 12)
-    // Use all properties that are NOT sold (exclude sold properties only)
-    const totalTaxes = nonSoldProperties
-      ?.reduce((sum, p) => sum + storedMonthlyTaxRate(p), 0) || 0
+    // Same total as the dashboard Monthly Taxes column, for every property that is not sold.
+    const totalTaxes = sumMonthlyTaxPayments(nonSoldProperties || [])
     
     console.log('Total insurance:', totalInsurance)
     console.log('Total taxes:', totalTaxes)

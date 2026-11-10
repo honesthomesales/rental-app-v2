@@ -4,10 +4,8 @@ import {
   isRecurringExpense,
   type ExpenseLike,
 } from '@/lib/expenses/classification'
-import {
-  sumMonthlyTaxPayments,
-  type DashboardTaxProperty,
-} from '@/lib/dashboard-tax'
+import { type DashboardTaxProperty } from '@/lib/dashboard-tax'
+import { sumMonthlyTaxPayments } from '@/lib/tax-years'
 
 export type ProfitPropertyRow = DashboardTaxProperty & {
   insurance_premium?: number | string | null
@@ -159,7 +157,8 @@ function miscContribution(expense: ProfitExpenseRow): ProfitExpenseContribution 
 /**
  * Dashboard profit figures from confirmed V3 rules.
  * Insurance premium is already monthly (never ÷12).
- * Taxes use the tax-section Monthly Tax (Owed/12) helper.
+ * Taxes use the dashboard Monthly Taxes column: current-year land plus home, divided by 12.
+ * Yellow customer and dark green bank are $0.
  */
 export function buildDashboardProfit(args: {
   occupiedMonthlyIncome: number

@@ -93,6 +93,27 @@ describe('legacy tax ledger', () => {
         asOf,
       ),
     ).toBe(0)
+
+    expect(
+      currentYearMonthlyTax(
+        {
+          property_type: 'house',
+          tax_color_state: 1,
+          tax_by_year: { '2026': { owed: 120, paid: 0 } },
+        },
+        asOf,
+      ),
+    ).toBe(0)
+    expect(
+      currentYearMonthlyTax(
+        {
+          property_type: 'house',
+          tax_color_state: 5,
+          tax_by_year: { '2026': { owed: 120, paid: 0 } },
+        },
+        asOf,
+      ),
+    ).toBeCloseTo(120 / 12)
   })
 
   it('drops a year that is cleared back to blank', () => {

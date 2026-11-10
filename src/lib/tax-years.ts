@@ -6,7 +6,9 @@
 
 import {
   effectiveTaxPaid,
+  isMonthlyTaxWaivedByColorState,
   isMobileHomeType,
+  normalizeTaxColorState,
   taxesOwedForProperty,
   trailerTaxesOwedForProperty,
   type DashboardTaxProperty,
@@ -129,12 +131,39 @@ function yearOwedAmount(entry: TaxYearEntry | undefined): number {
 }
 
 /** Current tax year land bill plus home bill, divided by 12. Blank years count as 0. */
-export function currentYearMonthlyTax(property: TaxYearProperty, asOf: Date): number {
+export function currentYearMonthlyTax(
+  property: TaxYearProperty,
+  asOf: Date,
+  colorState?: number | null,
+): number {
+  const state = normalizeTaxColorState(
+    colorState !== undefined && colorState !== null ? colorState : property.tax_color_state,
+  )
+  if (isMonthlyTaxWaivedByColorState(state)) return 0
   const [current] = taxYearsForDate(asOf)
   const key = String(current)
   const land = yearOwedAmount(landTaxLedger(property, asOf)[key])
   const home = yearOwedAmount(homeTaxLedger(property, asOf)[key])
   return (land + home) / 12
+}
+
+/** Same figure as the dashboard Monthly Taxes column. */
+export function monthlyTaxPaymentForProperty(
+  property: TaxYearProperty,
+  colorState?: number | null,
+  asOf: Date = new Date(),
+): number {
+  return currentYearMonthlyTax(property, asOf, colorState)
+}
+
+export function sumMonthlyTaxPayments(
+  properties: readonly TaxYearProperty[],
+  asOf: Date = new Date(),
+): number {
+  return properties.reduce(
+    (sum, property) => sum + monthlyTaxPaymentForProperty(property, undefined, asOf),
+    0,
+  )
 }
 
 export function withTaxYearEntry(

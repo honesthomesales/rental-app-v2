@@ -1,10 +1,12 @@
 import {
   annualTaxDue,
   effectiveTaxPaid,
-  monthlyTaxPaymentForProperty,
-  sumMonthlyTaxPayments,
   taxesOwedForProperty,
 } from '@/lib/dashboard-tax'
+import {
+  monthlyTaxPaymentForProperty,
+  sumMonthlyTaxPayments,
+} from '@/lib/tax-years'
 import {
   ONE_TIME_EXPENSE_RATE,
   MISC_INCOME_RATE,
@@ -22,7 +24,8 @@ describe('dashboard tax monthly payment', () => {
     expect(effectiveTaxPaid(-1)).toBe(0)
   })
 
-  it('matches tax-section Monthly Tax (Owed/12), including color waivers', () => {
+  it('uses the current-year bill divided by 12, and zeros yellow and dark green', () => {
+    const asOf = new Date(2026, 10, 9)
     const property = {
       id: 'p1',
       property_tax: 100,
@@ -31,11 +34,12 @@ describe('dashboard tax monthly payment', () => {
       tax_color_state: 0,
     }
     expect(taxesOwedForProperty(property)).toBe(1000)
-    expect(monthlyTaxPaymentForProperty(property)).toBeCloseTo(1000 / 12)
+    expect(monthlyTaxPaymentForProperty(property, undefined, asOf)).toBeCloseTo(1000 / 12)
 
-    expect(monthlyTaxPaymentForProperty(property, 1)).toBe(0)
-    expect(monthlyTaxPaymentForProperty(property, 2)).toBe(0)
-    expect(monthlyTaxPaymentForProperty(property, 6)).toBe(0)
+    expect(monthlyTaxPaymentForProperty(property, 1, asOf)).toBe(0)
+    expect(monthlyTaxPaymentForProperty(property, 7, asOf)).toBe(0)
+    expect(monthlyTaxPaymentForProperty(property, 2, asOf)).toBeCloseTo(1000 / 12)
+    expect(monthlyTaxPaymentForProperty(property, 5, asOf)).toBeCloseTo(1000 / 12)
   })
 
   it('honors manual tax_owed override', () => {
@@ -45,7 +49,7 @@ describe('dashboard tax monthly payment', () => {
       tax_paid_amount_current: 0,
       tax_color_state: 0,
     }
-    expect(monthlyTaxPaymentForProperty(property)).toBe(20)
+    expect(monthlyTaxPaymentForProperty(property, undefined, new Date(2026, 10, 9))).toBe(20)
   })
 
   it('subtracts prior-year payments from land owed', () => {
@@ -70,13 +74,14 @@ describe('dashboard tax monthly payment', () => {
       tax_color_state: 0,
     }
     expect(taxesOwedForProperty(mobileHome)).toBe(1200)
-    expect(monthlyTaxPaymentForProperty(mobileHome)).toBeCloseTo((1200 + 450) / 12)
+    const asOf = new Date(2026, 10, 9)
+    expect(monthlyTaxPaymentForProperty(mobileHome, undefined, asOf)).toBeCloseTo((1200 + 450) / 12)
 
     const houseWithTrailerRate = {
       ...mobileHome,
       property_type: 'house' as const,
     }
-    expect(monthlyTaxPaymentForProperty(houseWithTrailerRate)).toBeCloseTo(1200 / 12)
+    expect(monthlyTaxPaymentForProperty(houseWithTrailerRate, undefined, asOf)).toBeCloseTo(1200 / 12)
   })
 })
 

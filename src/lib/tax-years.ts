@@ -123,6 +123,20 @@ export function homeTaxLedger(property: TaxYearProperty, asOf: Date): TaxYearLed
   )
 }
 
+function yearOwedAmount(entry: TaxYearEntry | undefined): number {
+  if (!entry || entry.owed == null || !Number.isFinite(entry.owed) || entry.owed <= 0) return 0
+  return entry.owed
+}
+
+/** Current tax year land bill plus home bill, divided by 12. Blank years count as 0. */
+export function currentYearMonthlyTax(property: TaxYearProperty, asOf: Date): number {
+  const [current] = taxYearsForDate(asOf)
+  const key = String(current)
+  const land = yearOwedAmount(landTaxLedger(property, asOf)[key])
+  const home = yearOwedAmount(homeTaxLedger(property, asOf)[key])
+  return (land + home) / 12
+}
+
 export function withTaxYearEntry(
   ledger: TaxYearLedger,
   year: number,

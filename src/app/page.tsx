@@ -26,9 +26,9 @@ import {
 import {
   effectiveTaxPaid,
   isMobileHomeType,
-  monthlyTaxPaymentForProperty,
 } from '@/lib/dashboard-tax'
 import {
+  currentYearMonthlyTax,
   homeTaxLedger,
   isTaxYearBlank,
   isTaxYearPaid,
@@ -661,10 +661,9 @@ export default function Dashboard() {
       }
 
       if (taxSortField === 'property_tax') {
-        const stateA = taxSelectedProperties.get(a.id) ?? a.tax_color_state
-        const stateB = taxSelectedProperties.get(b.id) ?? b.tax_color_state
-        aValue = monthlyTaxPaymentForProperty(a, stateA)
-        bValue = monthlyTaxPaymentForProperty(b, stateB)
+        const asOf = new Date()
+        aValue = currentYearMonthlyTax(a, asOf)
+        bValue = currentYearMonthlyTax(b, asOf)
       }
 
       // Special handling for sorting by color state
@@ -1550,7 +1549,7 @@ export default function Dashboard() {
                   className="cursor-pointer hover:bg-gray-200 px-2 py-1 rounded flex items-center"
                   onClick={() => handleTaxSort('property_tax')}
                 >
-                  Monthly Tax (Owed/12)
+                  Monthly Taxes
                   {taxSortField === 'property_tax' && (
                     <span className="ml-1">{taxSortDirection === 'asc' ? '↑' : '↓'}</span>
                   )}
@@ -1610,7 +1609,7 @@ export default function Dashboard() {
               getSortedTaxProperties().map((property) => {
                 const colorState = taxSelectedProperties.get(property.id) || 0
                 const rowColor = getTaxRowColor(colorState)
-                const monthlyTaxOwed = monthlyTaxPaymentForProperty(property, colorState)
+                const monthlyTaxOwed = currentYearMonthlyTax(property, new Date())
                 const isMobileHome = isMobileHomeType(property.property_type)
                 const taxAsOf = new Date()
                 const taxYears = taxYearsForDate(taxAsOf)

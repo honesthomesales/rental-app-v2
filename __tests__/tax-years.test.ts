@@ -1,4 +1,5 @@
 import {
+  currentYearMonthlyTax,
   homeTaxLedger,
   isTaxYearPaid,
   landTaxLedger,
@@ -71,6 +72,27 @@ describe('legacy tax ledger', () => {
     expect(ledger['2026']).toEqual({ owed: 400, paid: 50 })
     expect(ledger['2025']).toEqual({ owed: null, paid: 25 })
     expect(homeTaxLedger({ property_type: 'house', trailer_tax_owed: 400 }, asOf)).toEqual({})
+  })
+
+  it('uses the current year land and home bills divided by 12', () => {
+    const asOf = new Date(2026, 10, 9)
+    expect(
+      currentYearMonthlyTax(
+        {
+          property_type: 'doublewide',
+          tax_by_year: { '2026': { owed: 120, paid: 0 }, '2025': { owed: 999, paid: 0 } },
+          trailer_tax_by_year: { '2026': { owed: 60, paid: 10 } },
+        },
+        asOf,
+      ),
+    ).toBeCloseTo(180 / 12)
+
+    expect(
+      currentYearMonthlyTax(
+        { property_type: 'house', tax_by_year: { '2025': { owed: 400, paid: 0 } } },
+        asOf,
+      ),
+    ).toBe(0)
   })
 
   it('drops a year that is cleared back to blank', () => {

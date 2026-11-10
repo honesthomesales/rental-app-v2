@@ -29,6 +29,8 @@ export interface Property {
   trailer_tax_paid_amount_current?: number
   trailer_tax_paid_amount_previous?: number
   trailer_tax_owed?: number
+  tax_by_year?: Record<string, { owed?: number | null; paid?: number }> | null
+  trailer_tax_by_year?: Record<string, { owed?: number | null; paid?: number }> | null
   county?: string
   tax_color_state?: number
   purchase_payment?: number

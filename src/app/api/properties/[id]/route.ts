@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
 import { isTaxDecimalField } from '@/lib/dashboard-tax'
+import { sanitizeTaxYearLedger } from '@/lib/tax-years'
 
 export async function PATCH(
   request: Request,
@@ -44,6 +45,8 @@ export async function PATCH(
             cleanedData[key] = parseFloat(roundedValue.toFixed(2))
           }
         }
+      } else if (key === 'tax_by_year' || key === 'trailer_tax_by_year') {
+        cleanedData[key] = sanitizeTaxYearLedger(value)
       } else if (key === 'tax_color_state') {
         // INTEGER field
         if (value === null || value === undefined || value === '' || value === 'null') {
@@ -112,7 +115,12 @@ export async function PATCH(
           'trailer_tax_paid_amount_previous',
           'trailer_tax_owed',
         ]
-        if (trailerTaxFields.some((field) => fieldsToUpdate[field] !== undefined)) {
+        if (
+          fieldsToUpdate.tax_by_year !== undefined ||
+          fieldsToUpdate.trailer_tax_by_year !== undefined
+        ) {
+          userMessage = 'Tax year columns are missing. Run add-tax-by-year.sql in the Supabase SQL editor.'
+        } else if (trailerTaxFields.some((field) => fieldsToUpdate[field] !== undefined)) {
           userMessage = 'Mobile home tax columns are missing. Run add-trailer-tax-columns.sql in the Supabase SQL editor.'
         } else if (fieldsToUpdate.tax_owed !== undefined) {
           userMessage = 'The tax_owed column does not exist. Please run the add-tax-owed-column.sql script in your Supabase SQL editor.'

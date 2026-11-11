@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
+import { generateNoticeHTML } from '@/lib/form-html-generator'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
@@ -3394,78 +3395,9 @@ return'<div class="s">'+l+'</div>';
                   <div className="mt-3 flex justify-end space-x-2">
                     <button
                       onClick={() => {
-                        const printWin = window.open('', '_blank', 'width=900,height=1100')
-                        if (!printWin) { alert('Please allow popups'); return }
-                        
-                        // Convert formatting to HTML with better styling
-                        let htmlContent = generatedForms.notice
-                          .split('\n')
-                          .map(line => {
-                            const trimmedLine = line.trim()
-                            if (trimmedLine === '') return '<div style="margin-bottom:8px;"></div>'
-                            
-                            // Bold all ALL CAPS lines (section headers)
-                            if (trimmedLine === trimmedLine.toUpperCase() && trimmedLine.length > 2 && /^[A-Z\s:]+$/.test(trimmedLine)) {
-                              return `<div style="font-weight:bold;margin-top:12px;margin-bottom:8px;font-size:14pt;">${trimmedLine}</div>`
-                            }
-                            
-                            // Title formatting
-                            if (trimmedLine.startsWith('7-DAY NOTICE TO PAY RENT')) {
-                              return `<h1 style="font-size:18pt;font-weight:bold;text-align:center;margin-bottom:8px;">${trimmedLine}</h1>`
-                            }
-                            if (trimmedLine.startsWith('(INTENT TO EVICT)')) {
-                              return `<div style="font-size:14pt;font-weight:bold;text-align:center;margin-bottom:16px;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format labels
-                            if (trimmedLine.startsWith('To:') || trimmedLine.startsWith('Property Address:')) {
-                              return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format breakdown section
-                            if (trimmedLine.startsWith('Rent Due:') || trimmedLine.startsWith('Late Fee:')) {
-                              return `<div style="margin-left:20px;margin-bottom:4px;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format TOTAL AMOUNT DUE
-                            if (trimmedLine.startsWith('TOTAL AMOUNT DUE:')) {
-                              return `<div style="font-weight:bold;font-size:14pt;margin-top:10px;margin-bottom:10px;background-color:#fef3cd;padding:8px;border-left:4px solid #ffc107;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format date labels
-                            if (trimmedLine.startsWith('Date of Notice:') || trimmedLine.startsWith('Deadline to Pay or Vacate:') || trimmedLine.startsWith('Date Notice Delivered:')) {
-                              return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format option numbers
-                            if (trimmedLine.match(/^[123]\)/)) {
-                              return `<div style="font-weight:bold;margin-top:10px;margin-bottom:4px;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format Landlord section
-                            if (trimmedLine.startsWith('Landlord:') || trimmedLine.startsWith('Text:') || trimmedLine.startsWith('Email:') || trimmedLine.startsWith('Method of Delivery:')) {
-                              return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${trimmedLine}</div>`
-                            }
-                            
-                            // Format violation headers (they end with colon)
-                            if (trimmedLine.match(/^[A-Z][^:]+:$/) && !trimmedLine.includes('**')) {
-                              return `<div style="font-weight:bold;margin-top:8px;margin-bottom:4px;">${trimmedLine}</div>`
-                            }
-                            
-                            return `<div style="margin-bottom:6px;">${trimmedLine}</div>`
-                          })
-                          .join('')
-                        
-                        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>7-Day Notice</title><style>
-                          @page { size: letter; margin: 0.5in; }
-                          body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.4; padding: 0.5in; margin: 0; }
-                          @media print {
-                            body { padding: 0; margin: 0; }
-                            @page { margin: 0.5in; }
-                          }
-                        </style></head><body>${htmlContent}<script>window.onload=function(){setTimeout(function(){window.print();window.close();},250);};</script></body></html>`
-                        printWin.document.write(html)
-                        printWin.document.close()
+                        const html =
+                          generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
+                        printFormDocument(html)
                       }}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
@@ -3473,10 +3405,12 @@ return'<div class="s">'+l+'</div>';
                     </button>
                     <button
                       onClick={() => {
+                        const html =
+                          generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf')
+                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf', html)
                         } else {
-                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx')
+                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx', html)
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"

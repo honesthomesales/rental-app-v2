@@ -9,10 +9,65 @@
 /**
  * Download form as PDF - uses HTML if available for better formatting, otherwise uses text
  */
+async function downloadNoticePdf(htmlContent: string, filename: string) {
+  const html2canvas = (await import('html2canvas')).default
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  Object.assign(iframe.style, {
+    position: 'absolute',
+    left: '-10000px',
+    top: '0',
+    width: '8.5in',
+    height: '11in',
+    border: '0',
+  })
+  document.body.appendChild(iframe)
+  const frameDoc = iframe.contentDocument
+  if (!frameDoc) {
+    document.body.removeChild(iframe)
+    throw new Error('Could not prepare the notice for PDF')
+  }
+  frameDoc.open()
+  frameDoc.write(htmlContent)
+  frameDoc.close()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+
+  const body = frameDoc.body
+  const canvas = await html2canvas(body, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    windowWidth: 816,
+    width: 816,
+  })
+  document.body.removeChild(iframe)
+
+  const { default: jsPDF } = await import('jspdf')
+  const pdf = new jsPDF('p', 'in', 'letter')
+  const heightIn = (canvas.height * 8.5) / canvas.width
+  const img = canvas.toDataURL('image/png')
+  if (heightIn <= 11.05) {
+    pdf.addImage(img, 'PNG', 0, 0, 8.5, heightIn)
+  } else {
+    const scale = 11 / heightIn
+    const width = 8.5 * scale
+    pdf.addImage(img, 'PNG', (8.5 - width) / 2, 0, width, 11)
+  }
+  pdf.save(filename)
+}
+
 export async function downloadAsPDF(content: string, filename: string, htmlContent?: string) {
   // If HTML content is provided, use it for better formatting with html2canvas
   // Only run in browser environment (client-side only)
   if (htmlContent && typeof window !== 'undefined' && typeof document !== 'undefined') {
+    if (htmlContent.includes('notice-sheet')) {
+      try {
+        await downloadNoticePdf(htmlContent, filename)
+        return
+      } catch (error) {
+        console.error('Error generating notice PDF:', error)
+      }
+    }
     try {
       // Dynamically import html2canvas - client-side only
       const html2canvas = (await import('html2canvas')).default
@@ -135,7 +190,64 @@ export async function downloadAsPDF(content: string, filename: string, htmlConte
  */
 export async function downloadAsWord(content: string, filename: string, htmlContent?: string) {
   // Dynamically import docx - client-side only
-  const { Document, Paragraph, TextRun, Packer } = await import('docx')
+  const { Document, Paragraph, TextRun, Packer, AlignmentType } = await import('docx')
+
+  if (
+    htmlContent &&
+    htmlContent.includes('notice-sheet') &&
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined'
+  ) {
+    const parser = new DOMParser()
+    const parsed = parser.parseFromString(htmlContent, 'text/html')
+    const paragraphs = Array.from(parsed.querySelectorAll('.notice-sheet > div')).map((element) => {
+      const centered =
+        element.classList.contains('notice-title') || element.classList.contains('notice-subtitle')
+      const bold =
+        centered ||
+        element.classList.contains('notice-heading') ||
+        element.classList.contains('notice-total') ||
+        element.classList.contains('notice-option') ||
+        element.classList.contains('notice-label')
+      return new Paragraph({
+        alignment: centered ? AlignmentType.CENTER : AlignmentType.LEFT,
+        spacing: {
+          before: element.classList.contains('notice-gap') ? 120 : 0,
+          after: 20,
+          line: 240,
+        },
+        children: [
+          new TextRun({
+            text: element.textContent || '',
+            font: 'Times New Roman',
+            size: element.classList.contains('notice-title') ? 28 : 22,
+            bold,
+          }),
+        ],
+      })
+    })
+
+    if (paragraphs.length > 0) {
+      const wordDoc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+            },
+          },
+          children: paragraphs,
+        }],
+      })
+      const blob = await Packer.toBlob(wordDoc)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      URL.revokeObjectURL(url)
+      return
+    }
+  }
   
   // If HTML content is provided, try to use it (client-side only)
   if (htmlContent && typeof window !== 'undefined' && typeof document !== 'undefined') {

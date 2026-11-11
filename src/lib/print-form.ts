@@ -12,7 +12,7 @@ export function injectPrintToolbar(html: string): string {
 <div style="color:#334155;max-width:560px;line-height:1.45;">
 <strong>Clean print (like a downloaded court PDF):</strong><br/>
 In <strong>Chrome / Edge</strong>, in the print dialog turn <strong>off</strong> <em>Headers and footers</em>. Otherwise the browser adds the page title, date/time, URL (often &quot;about:blank&quot;), and page numbers (e.g. 1/2) outside our layout.<br/>
-Set <strong>Margins</strong> to <strong>Default</strong> (the form already uses 0.5&quot; Letter margins). This toolbar does not print.
+Set <strong>Margins</strong> to <strong>Default</strong> so this form keeps its own Letter margins. This toolbar does not print.
 </div>
 </div><style>@media print{.no-print,.form-print-toolbar{display:none!important}}</style>`
   return html.replace(/<body([^>]*)>/i, `<body$1>${toolbar}`)

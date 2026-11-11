@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { ExclamationTriangleIcon, EnvelopeIcon, CurrencyDollarIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { downloadAsPDF, downloadAsWord } from '@/lib/form-downloads'
+import { generateNoticeHTML } from '@/lib/form-html-generator'
 import { EjectmentFormDownloadActions } from '@/components/EjectmentFormDownloadActions'
 import { openPrintPreview, printFormDocument } from '@/lib/print-form'
 import { TenantCommunicationActions } from '@/components/communications/TenantCommunicationActions'
@@ -1292,10 +1293,12 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                   <div className="mt-3 flex justify-end">
                     <button
                       onClick={() => {
+                        const html =
+                          generatedForms.noticeHTML ?? generateNoticeHTML(generatedForms.notice)
                         if (downloadFormat === 'pdf') {
-                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf')
+                          downloadAsPDF(generatedForms.notice, '7-Day-Notice.pdf', html)
                         } else {
-                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx')
+                          downloadAsWord(generatedForms.notice, '7-Day-Notice.docx', html)
                         }
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"

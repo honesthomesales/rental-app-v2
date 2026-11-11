@@ -12,8 +12,111 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** Printable 7-day notice from plain text (matches generated notice body). */
+function noticeLineClass(line: string): string {
+  if (line.startsWith('7-DAY NOTICE')) return 'notice-title'
+  if (line.startsWith('(INTENT')) return 'notice-subtitle'
+  if (
+    line === 'OPTIONS' ||
+    line === 'BREAKDOWN OF AMOUNTS DUE:' ||
+    line.startsWith('FAILURE TO PAY') ||
+    line.startsWith('ADDITIONAL GROUNDS')
+  ) {
+    return 'notice-heading'
+  }
+  if (line.startsWith('TOTAL AMOUNT DUE')) return 'notice-total'
+  if (/^[123]\)/.test(line)) return 'notice-option'
+  if (
+    line.startsWith('To:') ||
+    line.startsWith('Property Address:') ||
+    line.startsWith('Landlord:') ||
+    line.startsWith('Date of Notice:') ||
+    line.startsWith('Deadline to Pay') ||
+    line.startsWith('Date Notice Delivered:') ||
+    line.startsWith('Method of Delivery:')
+  ) {
+    return 'notice-label'
+  }
+  return 'notice-line'
+}
+
+const NOTICE_PAIR = '\u0001'
+
+type NoticeRow = { lines: string[]; gap: boolean }
+
+function mergeNoticeRows(rows: NoticeRow[], match: (current: string, next: string) => boolean, join: (lines: string[]) => string) {
+  for (let i = 0; i < rows.length - 1; i++) {
+    const current = rows[i].lines[0]
+    const next = rows[i + 1].lines[0]
+    if (!current || !next || rows[i].lines.length !== 1 || rows[i + 1].lines.length !== 1) continue
+    if (!match(current, next)) continue
+    rows[i] = { lines: [join([current, next])], gap: rows[i].gap }
+    rows.splice(i + 1, 1)
+    i--
+  }
+}
+
+/** Printable 7-day notice. Same words as the plain text, set to one Letter page with 1 inch margins. */
 export function generateNoticeHTML(plainText: string): string {
+  const rows: NoticeRow[] = []
+  let afterBlank = false
+  for (const raw of plainText.replace(/\r\n/g, '\n').split('\n')) {
+    const line = raw.trim()
+    if (!line) {
+      afterBlank = rows.length > 0
+      continue
+    }
+    rows.push({ lines: [line], gap: afterBlank })
+    afterBlank = false
+  }
+
+  mergeNoticeRows(
+    rows,
+    (current, next) => current === 'To:' && !next.endsWith(':'),
+    ([label, name]) => `${label} ${name}`,
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current.startsWith('Date of Notice:') && next.startsWith('Deadline to Pay'),
+    (lines) => lines.join(NOTICE_PAIR),
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current.startsWith('Rent Due:') && next.startsWith('Late Fee:'),
+    (lines) => lines.join(NOTICE_PAIR),
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current === 'Landlord:' && next.startsWith('Honest Home Sales'),
+    ([label, company]) => `${label} ${company}`,
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current.startsWith('Landlord:') && next.startsWith('Member:'),
+    (lines) => lines.join(', '),
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current.startsWith('PO Box') && next.startsWith('Cowpens'),
+    (lines) => lines.join(', '),
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current.startsWith('Text:') && next.startsWith('Email:'),
+    (lines) => lines.join(NOTICE_PAIR),
+  )
+  mergeNoticeRows(
+    rows,
+    (current, next) => current.startsWith('Date Notice Delivered:') && next.startsWith('Method of Delivery:'),
+    (lines) => lines.join(NOTICE_PAIR),
+  )
+
+  const blocks = rows.map((row) => {
+    const text = row.lines[0]
+    const gap = row.gap ? ' notice-gap' : ''
+    const html = escapeHtml(text).replaceAll(NOTICE_PAIR, ' &nbsp;&nbsp;|&nbsp;&nbsp; ')
+    return `<div class="${noticeLineClass(text)}${gap}">${html}</div>`
+  })
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -21,24 +124,50 @@ export function generateNoticeHTML(plainText: string): string {
   <title>${COURT_FORM_DOC_TITLE}</title>
   <style>
     ${COURT_FORM_PRINT_BASE}
-    body.court-form-root {
+    @page {
+      size: letter portrait;
+      margin: 1in;
+    }
+    body.court-form-root.notice-sheet {
       font-family: 'Times New Roman', Times, serif;
+      font-size: 11pt;
+      line-height: 1.15;
+      padding: 1in;
+      width: 8.5in;
+      box-sizing: border-box;
+      background: #fff;
+      color: #000;
+    }
+    .notice-title {
+      text-align: center;
+      font-weight: bold;
+      font-size: 14pt;
+      line-height: 1.15;
+    }
+    .notice-subtitle {
+      text-align: center;
+      font-weight: bold;
       font-size: 12pt;
-      line-height: 1.5;
+      margin-bottom: 2pt;
     }
-    pre.notice-body {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      font-family: inherit;
-      margin: 0;
+    .notice-heading,
+    .notice-total,
+    .notice-option,
+    .notice-label {
+      font-weight: bold;
     }
+    .notice-gap { margin-top: 5pt; }
     @media print {
       .form-print-toolbar { display: none !important; }
+      body.court-form-root.notice-sheet {
+        padding: 0;
+        width: auto;
+      }
     }
   </style>
 </head>
-<body class="court-form-root">
-<pre class="notice-body">${escapeHtml(plainText)}</pre>
+<body class="court-form-root notice-sheet">
+${blocks.join('\n')}
 </body>
 </html>`
 }

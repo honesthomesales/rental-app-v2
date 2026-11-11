@@ -257,9 +257,17 @@ export default function PaymentsPage() {
         .replace(/>/g, '&gt;')
     const parts: string[] = []
     const landlord: string[] = []
+    let inAddress = false
+    const plain = (value: string) => value.replace(/\*\*/g, '').trim()
+    const labeled = (value: string) => {
+      const clean = plain(value)
+      const splitAt = clean.indexOf(':')
+      if (splitAt <= 0) return escapeHtml(clean)
+      return `<strong>${escapeHtml(clean.slice(0, splitAt))}:</strong> ${escapeHtml(clean.slice(splitAt + 1).trim())}`
+    }
     const flushLandlord = () => {
       if (landlord.length === 0) return
-      parts.push(`<div class="ll">${landlord.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}</div>`)
+      parts.push(`<div class="landlord">${landlord.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}</div>`)
       landlord.length = 0
     }
     for (const raw of noticeContent.split('\n')) {
@@ -270,41 +278,60 @@ export default function PaymentsPage() {
         line.startsWith('Text:') ||
         line.startsWith('Email:')
       if (isLandlordLine) {
-        landlord.push(line.replace(/\*\*/g, ''))
+        inAddress = false
+        landlord.push(plain(line))
         continue
       }
       flushLandlord()
       if (!line || line === '---') continue
-      const text = escapeHtml(line.replace(/\*\*/g, ''))
-      if (line.startsWith('**NOTICE TO PAY')) parts.push(`<div class="t">${text}</div>`)
-      else if (line.startsWith('7-DAY NOTICE')) parts.push(`<div class="lr">${text}</div>`)
-      else if (line.startsWith('**BREAKDOWN') || line.startsWith('**LANDLORD') || line.startsWith('**NOTICE DELIVERY')) parts.push(`<div class="h">${text}</div>`)
-      else if (line.startsWith('**TOTAL DUE:')) parts.push(`<div class="td">${text}</div>`)
-      else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other')) parts.push(`<div class="in">${text}</div>`)
-      else if (line.startsWith('**IMPORTANT:')) parts.push(`<div class="i">${text}</div>`)
-      else if (line.startsWith('Date:') || line.startsWith('To:') || line.startsWith('Property:') || line.includes('Date Notice') || line.includes('Method of')) {
-        const splitAt = line.replace(/\*\*/g, '').indexOf(':')
-        if (splitAt > 0) {
-          parts.push(`<div class="s"><strong>${escapeHtml(line.replace(/\*\*/g, '').slice(0, splitAt))}:</strong> ${escapeHtml(line.replace(/\*\*/g, '').slice(splitAt + 1).trim())}</div>`)
-        } else {
-          parts.push(`<div class="s">${text}</div>`)
-        }
-      } else parts.push(`<div class="s">${text}</div>`)
+      const text = escapeHtml(plain(line))
+      if (line.startsWith('**NOTICE TO PAY')) {
+        parts.push(`<div class="title">${text}</div>`)
+      } else if (line.startsWith('7-DAY NOTICE')) {
+        parts.push(`<div class="subtitle">${text}</div>`)
+      } else if (line.startsWith('**BREAKDOWN') || line.startsWith('**NOTICE DELIVERY')) {
+        inAddress = false
+        parts.push(`<div class="heading">${text}</div>`)
+      } else if (line.startsWith('**LANDLORD')) {
+        inAddress = false
+        parts.push(`<div class="heading landlord-label">${text}</div>`)
+      } else if (line.startsWith('**TOTAL DUE:')) {
+        parts.push(`<div class="total">${text}</div>`)
+      } else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other')) {
+        parts.push(`<div class="amount">${text}</div>`)
+      } else if (line.startsWith('**IMPORTANT:')) {
+        inAddress = false
+        parts.push(`<div class="important">${text}</div>`)
+      } else if (line.startsWith('To:')) {
+        inAddress = true
+        parts.push(`<div class="who">${labeled(line)}</div>`)
+      } else if (inAddress && plain(line).length < 80) {
+        parts.push(`<div class="address">${text}</div>`)
+      } else if (line.includes('Date Notice') || line.includes('Method of') || line.startsWith('Date:') || line.startsWith('Property:')) {
+        inAddress = false
+        parts.push(`<div class="meta">${labeled(line)}</div>`)
+      } else {
+        inAddress = false
+        parts.push(`<p>${text}</p>`)
+      }
     }
     flushLandlord()
     const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title></title><style>
-@page{size:letter portrait;margin:0.5in}
-html,body{height:auto}
-body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;margin:0;padding:0}
-.t{font-size:13pt;font-weight:bold;text-align:center;line-height:1.1}
-.lr{text-align:center;font-size:10pt;margin:0 0 6pt}
-.s{margin:4pt 0 0}
-.h{font-weight:bold;margin:6pt 0 0}
-.td{font-weight:bold;margin:2pt 0 0}
-.i{font-weight:bold;margin:6pt 0 0}
-.in{margin:0 0 0 10pt}
-.ll{margin:2pt 0 0}
+@page{size:letter portrait;margin:0.7in}
+body{font-family:'Times New Roman',Times,serif;font-size:12pt;line-height:1.4;color:#000;margin:0}
+.title{text-align:center;font-weight:bold;font-size:16pt;letter-spacing:.03em;line-height:1.2;margin:0}
+.subtitle{text-align:center;font-size:11pt;margin:3pt 0 0;padding-bottom:10pt;border-bottom:1.5px solid #000}
+.meta{margin-top:16pt}
+.who{margin-top:12pt}
+.address{margin-top:1pt}
+p{margin:12pt 0 0}
+.heading{font-weight:bold;margin:16pt 0 4pt}
+.amount{margin:0 0 0 16pt;line-height:1.35}
+.total{font-weight:bold;margin-top:8pt}
+.important{font-weight:bold;margin-top:14pt}
+.landlord-label{margin-bottom:2pt}
+.landlord{line-height:1.35}
 </style></head><body>${parts.join('')}<script>window.onload=function(){setTimeout(function(){window.print()},250)};<\/script></body></html>`
     printWin.document.write(html)
     printWin.document.close()

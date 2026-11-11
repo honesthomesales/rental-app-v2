@@ -1160,6 +1160,8 @@ export default function LateTenantsPanel({ embedded = false }: LateTenantsPanelP
                   <option value="Cherokee">Cherokee</option>
                   <option value="Union">Union</option>
                   <option value="Saluda">Saluda</option>
+                  <option value="Laurens">Laurens</option>
+                  <option value="Gaston">Gaston (NC)</option>
                 </select>
               </div>
 

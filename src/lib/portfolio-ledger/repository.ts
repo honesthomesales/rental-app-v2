@@ -28,6 +28,17 @@ async function fetchAll<T>(
   return out;
 }
 
+function pushUnique<T extends { id: string }>(
+  map: Map<string, T[]>,
+  key: string,
+  row: T,
+) {
+  const list = map.get(key) || [];
+  if (list.some((item) => item.id === row.id)) return;
+  list.push(row);
+  map.set(key, list);
+}
+
 export async function loadBillingLeases(): Promise<LedgerLease[]> {
   const rows = await fetchAll<Record<string, unknown>>((from, to) =>
     supabaseServer
@@ -42,10 +53,17 @@ export async function loadBillingLeases(): Promise<LedgerLease[]> {
       `,
       )
       .in("status", ["occupied", "eviction"])
+      .order("id", { ascending: true })
       .range(from, to),
   );
 
-  return rows.map((r) => {
+  const seen = new Set<string>();
+  return rows.filter((r) => {
+    const id = String(r.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).map((r) => {
     const prop = (r.RENT_properties || {}) as Record<string, unknown>;
     const ten = (r.RENT_tenants || {}) as Record<string, unknown>;
     const tenantName =
@@ -96,12 +114,12 @@ export async function loadInvoicesForLeases(
           "id, lease_id, due_date, period_start, period_end, status, amount_rent, amount_late, amount_other, amount_total, amount_paid, balance_due, late_fee_waived, rent_cadence, created_at",
         )
         .in("lease_id", slice)
+        .order("id", { ascending: true })
         .range(from, to),
     );
     for (const r of rows) {
       const leaseId = String(r.lease_id);
-      const list = map.get(leaseId) || [];
-      list.push({
+      pushUnique(map, leaseId, {
         id: String(r.id),
         lease_id: leaseId,
         due_date: String(r.due_date),
@@ -118,7 +136,6 @@ export async function loadInvoicesForLeases(
         rent_cadence: (r.rent_cadence as string) || null,
         created_at: (r.created_at as string) || null,
       });
-      map.set(leaseId, list);
     }
   }
   return map;
@@ -140,12 +157,12 @@ export async function loadPaymentsForLeases(
           "id, lease_id, invoice_id, payment_date, amount, status, payment_method",
         )
         .in("lease_id", slice)
+        .order("id", { ascending: true })
         .range(from, to),
     );
     for (const r of rows) {
       const leaseId = String(r.lease_id);
-      const list = map.get(leaseId) || [];
-      list.push({
+      pushUnique(map, leaseId, {
         id: String(r.id),
         lease_id: leaseId,
         invoice_id: r.invoice_id ? String(r.invoice_id) : null,
@@ -154,7 +171,6 @@ export async function loadPaymentsForLeases(
         status: (r.status as string) || "completed",
         payment_method: (r.payment_method as string) || null,
       });
-      map.set(leaseId, list);
     }
   }
   return map;

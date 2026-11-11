@@ -9,6 +9,32 @@ import {
   loadPaymentsForLeases,
 } from '@/lib/portfolio-ledger/repository'
 
+function affidavitDisplayLines(
+  invoices: Array<{ due_date: string; balance_due: number }>,
+  maxItems = 5,
+) {
+  const formatMoney = (amount: number) =>
+    amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const rows = invoices
+    .filter((invoice) => Number(invoice.balance_due) > 0.009)
+    .map((invoice) => ({
+      description: `Amount due ${new Date(invoice.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
+      amount: Number(invoice.balance_due) || 0,
+    }))
+  const shown = rows.slice(0, maxItems)
+  if (rows.length > maxItems) {
+    const rest = rows.slice(maxItems - 1).reduce((sum, row) => sum + row.amount, 0)
+    shown.splice(maxItems - 1, 1, {
+      description: 'Additional amounts due',
+      amount: Math.round(rest * 100) / 100,
+    })
+  }
+  return shown.map((row) => ({
+    description: row.description,
+    amount: formatMoney(row.amount),
+  }))
+}
+
 export async function POST(request: Request) {
   try {
     const { tenantId, county, formType, ejectmentReason, violationDescription, evictionReasons, leaseId, formDate: formDateParam } = await request.json()
@@ -99,33 +125,36 @@ export async function POST(request: Request) {
       }))
     const totalDue = account.totalBalanceDue
     
-    // Calculate rent and late fee amounts proportionally based on balance_due
-    // This ensures the breakdown matches the total due
+    // Same split as the 7-day notice: unpaid balance shared across rent, late, and other.
     let rentAmount = 0
     let lateFeeAmount = 0
-    
+    let otherAmount = 0
+
     allUnpaidInvoices.forEach(invoice => {
-      const invoiceTotal = Number(invoice.amount_total || 0)
+      const invoiceRent = Number(invoice.amount_rent || 0)
+      const invoiceLate = Number(invoice.amount_late || 0)
+      const invoiceOther = Number(invoice.amount_other || 0)
+      const invoiceTotal = invoiceRent + invoiceLate + invoiceOther
       const balanceDue = Number(invoice.balance_due || 0)
-      
+
       if (invoiceTotal > 0 && balanceDue > 0) {
-        // Calculate the proportion of each component in the original invoice
-        const invoiceRent = Number(invoice.amount_rent || 0)
-        const invoiceLate = Number(invoice.amount_late || 0)
-        
-        // Calculate proportional amounts based on balance due
-        const rentProportion = invoiceRent / invoiceTotal
-        const lateProportion = invoiceLate / invoiceTotal
-        
-        // Apply proportions to balance due
-        rentAmount += balanceDue * rentProportion
-        lateFeeAmount += balanceDue * lateProportion
+        rentAmount += balanceDue * (invoiceRent / invoiceTotal)
+        lateFeeAmount += balanceDue * (invoiceLate / invoiceTotal)
+        otherAmount += balanceDue * (invoiceOther / invoiceTotal)
       } else if (balanceDue > 0) {
-        // Fallback: if no amount_total, use amount_rent and amount_late directly
-        rentAmount += Number(invoice.amount_rent || 0)
-        lateFeeAmount += Number(invoice.amount_late || 0)
+        rentAmount += balanceDue
       }
     })
+    rentAmount = Math.round(rentAmount * 100) / 100
+    lateFeeAmount = Math.round(lateFeeAmount * 100) / 100
+    otherAmount = Math.round(otherAmount * 100) / 100
+    const breakdownSum = rentAmount + lateFeeAmount + otherAmount
+    const breakdownDiff = Math.round((totalDue - breakdownSum) * 100) / 100
+    if (Math.abs(breakdownDiff) > 0.01) {
+      rentAmount = Math.round((rentAmount + breakdownDiff) * 100) / 100
+    }
+    const money = (amount: number) =>
+      amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     // Number of rent cycles = count of ALL unpaid invoices (matching payments page)
     const numberOfPeriods = allUnpaidInvoices.length
     
@@ -177,10 +206,9 @@ ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_cod
 ${hasOverdueReason ? 'FAILURE TO PAY RENT\n\n' : ''}You are hereby notified that rent in the total amount of $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the property located at ${property.address}, ${property.city ? `${property.city}, ` : ''}${property.state} ${property.zip_code} is past due and remains unpaid.
 
 BREAKDOWN OF AMOUNTS DUE:
-Rent Due: $${rentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-${lateFeeAmount > 0 ? `Late Fee: $${lateFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-
-TOTAL AMOUNT DUE: $${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+Rent Due: $${money(rentAmount)}
+${lateFeeAmount > 0 ? `Late Fee: $${money(lateFeeAmount)}\n` : ''}${otherAmount > 0 ? `Other Charges: $${money(otherAmount)}\n` : ''}
+TOTAL AMOUNT DUE: $${money(totalDue)}
 
 ${legalReference}
 
@@ -381,28 +409,19 @@ SCCA/732 — Official statewide form (SC Judicial Branch); Revised 12/2024`
 
       // Generate Affidavit / rent ledger itemization for nonpayment (SC: SCCA/716; NC: rent ledger for summary ejectment)
       if ((formType === 'ejectment' || formType === 'both') && ejectmentReason === 'nonpayment') {
-        // Create itemization lines (form shows exactly 5 lines with dollar signs at the end)
-        // IMPORTANT: Itemization shows only RENT amounts (amount_rent), not balance_due (which includes late fees)
-        // The TOTAL shows totalDue (which includes all balances with late fees)
+        // Each line is the unpaid balance counted in the notice total.
         const maxItems = 5
         const invoiceItems: string[] = []
-        const lineWidth = 80 // Characters per line for proper alignment
-        
-        if (unpaidInvoices && unpaidInvoices.length > 0) {
-          unpaidInvoices.slice(0, maxItems).forEach((inv) => {
-            const dueDate = new Date(inv.due_date + 'T12:00:00')
-            const formattedDueDate = dueDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            // Use amount_rent (base rent only) for itemization, NOT balance_due
-            const rentAmount = Number(inv.amount_rent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            // Format: description text on left, spaces in middle, $amount aligned right
-            const description = `Rent due ${formattedDueDate}`
-            const amountStr = `$${rentAmount}`
-            // Calculate padding to align dollar amounts to the right
-            const spacesNeeded = lineWidth - description.length - amountStr.length
-            const padding = spacesNeeded > 0 ? ' '.repeat(spacesNeeded) : ' '
-            invoiceItems.push(`${description}${padding}${amountStr}`)
-          })
-        }
+        const lineWidth = 80
+        const displayLines = affidavitDisplayLines(unpaidInvoices || [], maxItems)
+        forms.affidavitDisplayLines = displayLines
+
+        displayLines.forEach((line) => {
+          const amountStr = `$${line.amount}`
+          const spacesNeeded = lineWidth - line.description.length - amountStr.length
+          const padding = spacesNeeded > 0 ? ' '.repeat(spacesNeeded) : ' '
+          invoiceItems.push(`${line.description}${padding}${amountStr}`)
+        })
         
         // Fill remaining lines if less than maxItems (form always shows exactly 5 lines)
         while (invoiceItems.length < maxItems) {
@@ -508,24 +527,7 @@ SCCA/716 — Official statewide form (SC Judicial Branch)`
     }
 
     if (forms.affidavit) {
-      // Use amount_rent for itemization (not balance_due); TOTAL uses totalDue (includes late fees)
-      const invoiceItemsForHTML =
-        unpaidInvoices?.slice(0, 5).map((inv) => {
-          const dueDate = new Date(inv.due_date + 'T12:00:00')
-          const formattedDueDate = dueDate.toLocaleDateString('en-US', {
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          })
-          const rentAmount = Number(inv.amount_rent || 0).toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })
-          return {
-            description: `Rent due ${formattedDueDate}`,
-            amount: rentAmount,
-          }
-        }) || []
+      const invoiceItemsForHTML = forms.affidavitDisplayLines || affidavitDisplayLines(unpaidInvoices || [])
 
       if (forms.affidavitFormKind === 'NC') {
         const { generateNCRentLedgerHTML } = await import('@/lib/form-html-generator')

@@ -250,38 +250,64 @@ export default function PaymentsPage() {
   const handlePrintNotice = () => {
     const printWin = window.open('', '_blank', 'width=900,height=1100')
     if (!printWin) { alert('Please allow popups'); return }
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+    const parts: string[] = []
+    const landlord: string[] = []
+    const flushLandlord = () => {
+      if (landlord.length === 0) return
+      parts.push(`<div class="ll">${landlord.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}</div>`)
+      landlord.length = 0
+    }
+    for (const raw of noticeContent.split('\n')) {
+      const line = raw.trim()
+      const isLandlordLine =
+        line.includes('Honest Home') ||
+        line.includes('PO Box') ||
+        line.startsWith('Text:') ||
+        line.startsWith('Email:')
+      if (isLandlordLine) {
+        landlord.push(line.replace(/\*\*/g, ''))
+        continue
+      }
+      flushLandlord()
+      if (!line || line === '---') continue
+      const text = escapeHtml(line.replace(/\*\*/g, ''))
+      if (line.startsWith('**NOTICE TO PAY')) parts.push(`<div class="t">${text}</div>`)
+      else if (line.startsWith('7-DAY NOTICE')) parts.push(`<div class="lr">${text}</div>`)
+      else if (line.startsWith('**BREAKDOWN') || line.startsWith('**LANDLORD') || line.startsWith('**NOTICE DELIVERY')) parts.push(`<div class="h">${text}</div>`)
+      else if (line.startsWith('**TOTAL DUE:')) parts.push(`<div class="td">${text}</div>`)
+      else if (line.startsWith('Rent:') || line.startsWith('Late Fee:') || line.startsWith('Other')) parts.push(`<div class="in">${text}</div>`)
+      else if (line.startsWith('**IMPORTANT:')) parts.push(`<div class="i">${text}</div>`)
+      else if (line.startsWith('Date:') || line.startsWith('To:') || line.startsWith('Property:') || line.includes('Date Notice') || line.includes('Method of')) {
+        const splitAt = line.replace(/\*\*/g, '').indexOf(':')
+        if (splitAt > 0) {
+          parts.push(`<div class="s"><strong>${escapeHtml(line.replace(/\*\*/g, '').slice(0, splitAt))}:</strong> ${escapeHtml(line.replace(/\*\*/g, '').slice(splitAt + 1).trim())}</div>`)
+        } else {
+          parts.push(`<div class="s">${text}</div>`)
+        }
+      } else parts.push(`<div class="s">${text}</div>`)
+    }
+    flushLandlord()
     const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title></title><style>
-@page{margin:.5in;size:letter portrait}*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#000;background:#fff;padding:20px}
-.t{font-size:22px;font-weight:bold;text-align:center;margin-bottom:20px}
-.lr{font-size:11px;text-align:center;margin-bottom:15px}
-.s{margin-bottom:12px}.h{font-weight:bold;font-size:14px;margin-top:15px;margin-bottom:8px}
-.td{font-weight:bold;font-size:16px;background:#fef3cd;padding:12px;border-left:4px solid #ffc107;margin:15px 0}
-.i{font-weight:bold;color:#dc3545;background:#f8d7da;padding:10px;margin:15px 0;border-radius:4px}
-.ll{background:#f8f9fa;padding:12px;border-left:4px solid #007bff;margin:10px 0}
-.d{background:#d4edda;padding:12px;border-left:4px solid #28a745;margin:10px 0}
-.in{margin-left:20px;margin-bottom:4px}.dv{border-top:1px solid #ccc;margin:20px 0}
-@media print{body{padding:0}}
-</style></head><body>${noticeContent.split('\n').map(l=>{
-if(l.startsWith('**NOTICE TO PAY'))return'<div class="t">'+l.replace(/\*\*/g,'')+'</div>';
-if(l.startsWith('7-DAY NOTICE PURSUANT'))return'<div class="lr">'+l+'</div>';
-if(l.startsWith('**BREAKDOWN'))return'<div class="h">'+l.replace(/\*\*/g,'')+'</div>';
-if(l.startsWith('**TOTAL DUE:'))return'<div class="td">'+l.replace(/\*\*/g,'')+'</div>';
-if(l.startsWith('Rent:')||l.startsWith('Late Fee:')||l.startsWith('Other'))return'<div class="in">'+l+'</div>';
-if(l.startsWith('**IMPORTANT:'))return'<div class="i">'+l.replace(/\*\*/g,'')+'</div>';
-if(l.startsWith('**LANDLORD:'))return'<div class="h">'+l.replace(/\*\*/g,'')+'</div>';
-if(l.startsWith('**NOTICE DELIVERY:'))return'<div class="h">'+l.replace(/\*\*/g,'')+'</div>';
-if(l.includes('Honest Home')||l.includes('PO Box')||l.includes('Text:')||l.includes('Email:'))return'<div class="ll">'+l+'</div>';
-if(l.includes('Date Notice')||l.includes('Method of'))return'<div class="d">'+l+'</div>';
-if(l.trim()==='---')return'<div class="dv"></div>';
-if(l.trim()==='')return'<br>';
-if(l.startsWith('Date:')||l.startsWith('To:')||l.startsWith('Property:')){
-const p=l.split(':');return'<div class="s"><strong>'+p[0]+':</strong>'+p.slice(1).join(':')+'</div>';}
-return'<div class="s">'+l+'</div>';
-}).join('')}<script>window.onload=function(){setTimeout(function(){window.print()},250)};</script></body></html>`;
-    printWin.document.write(html);
-    printWin.document.close();
+@page{size:letter portrait;margin:0.5in}
+html,body{height:auto}
+body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;margin:0;padding:0}
+.t{font-size:13pt;font-weight:bold;text-align:center;line-height:1.1}
+.lr{text-align:center;font-size:10pt;margin:0 0 6pt}
+.s{margin:4pt 0 0}
+.h{font-weight:bold;margin:6pt 0 0}
+.td{font-weight:bold;margin:2pt 0 0}
+.i{font-weight:bold;margin:6pt 0 0}
+.in{margin:0 0 0 10pt}
+.ll{margin:2pt 0 0}
+</style></head><body>${parts.join('')}<script>window.onload=function(){setTimeout(function(){window.print()},250)};<\/script></body></html>`
+    printWin.document.write(html)
+    printWin.document.close()
   }
 
   const fetchProperties = async () => {

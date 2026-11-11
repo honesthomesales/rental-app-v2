@@ -109,16 +109,19 @@ export async function GET(request: Request) {
     const start = (page - 1) * pageSize;
     const pageRows = rowsWithLeaseFacts.slice(start, start + pageSize);
 
-    return NextResponse.json({
-      ledgerVersion: summary.ledgerVersion,
-      asOfDate: summary.asOfDate,
-      totalOwed: summary.totalOwed,
-      total,
-      page,
-      pageSize,
-      rows: pageRows,
-      writePerformed: false,
-    });
+    return NextResponse.json(
+      {
+        ledgerVersion: summary.ledgerVersion,
+        asOfDate: summary.asOfDate,
+        totalOwed: summary.totalOwed,
+        total,
+        page,
+        pageSize,
+        rows: pageRows,
+        writePerformed: false,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("collections-summary error:", error);
     return NextResponse.json(
